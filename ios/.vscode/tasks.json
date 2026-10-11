@@ -1,0 +1,8 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {"label": "BrakeCheck: build iPhone app", "type": "shell", "command": "xtool", "args": ["dev", "build"], "options": {"cwd": "${workspaceFolder}"}, "group": {"kind": "build", "isDefault": true}, "problemMatcher": []},
+    {"label": "BrakeCheck: build and install on iPhone", "type": "shell", "command": "xtool", "args": ["dev"], "options": {"cwd": "${workspaceFolder}"}, "problemMatcher": []},
+    {"label": "BrakeCheck: test GPS and math", "type": "shell", "command": "swift", "args": ["test", "--package-path", "Core", "--jobs", "1", "--disable-swift-testing"], "options": {"cwd": "${workspaceFolder}"}, "group": "test", "problemMatcher": []}
+  ]
+}

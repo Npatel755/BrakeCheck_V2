@@ -1,0 +1,18 @@
+{
+  "source_weights_sha256": "0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1",
+  "source": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n.pt",
+  "export": {
+    "format": "coreml",
+    "nms": true,
+    "imgsz": 640,
+    "conf": 0.4,
+    "iou": 0.5
+  },
+  "ultralytics": "8.4.175",
+  "coremltools": "9.0",
+  "package_files": {
+    "Data/com.apple.CoreML/model.mlmodel": "71074a31f651ce7bff9596ccfc36e36025557f9ef9a7f16a136253932cbf1a4b",
+    "Data/com.apple.CoreML/weights/weight.bin": "7e28de4c897432a4413e15432685334a7c983e92f23d14936f2e5ca38c800785",
+    "Manifest.json": "5a5897814546934665efaf7c81c513bc50c3e6c18d2f558e43459a8eb9c81262"
+  }
+}
