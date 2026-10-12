@@ -12,6 +12,7 @@ struct NavigationView: View {
     var openCamera: () -> Void
     @FocusState private var searchFocused: Bool
     @State private var recenterTrigger = 0
+    @State private var showCameraWindow = true
 
     private var canStart: Bool {
         navigation.route != nil && !navigation.isCalculating && navigation.hasFreshLocation
@@ -69,6 +70,16 @@ struct NavigationView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open Camera page")
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showCameraWindow.toggle() }
+            } label: {
+                Image(systemName: showCameraWindow ? "pip.fill" : "pip")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .background(BrakeTheme.panel, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showCameraWindow ? "Hide floating camera" : "Show floating camera")
         }
         .padding(.horizontal, 20)
     }
@@ -258,9 +269,12 @@ struct NavigationView: View {
     @ViewBuilder private func guidanceLayout(landscape: Bool) -> some View {
         if landscape {
             HStack(alignment: .top, spacing: 12) {
-                routeMap(follow: !navigation.isPaused && navigation.hasFreshLocation)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                ZStack(alignment: .topTrailing) {
+                    routeMap(follow: !navigation.isPaused && navigation.hasFreshLocation)
+                    floatingCameraWindow
+                        .padding(10)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 16))
                 ScrollView {
                     VStack(spacing: 12) {
                         maneuverCard
@@ -278,8 +292,12 @@ struct NavigationView: View {
         } else {
             VStack(spacing: 10) {
                 maneuverCard.padding(.horizontal, 16)
-                routeMap(follow: !navigation.isPaused && navigation.hasFreshLocation)
-                    .frame(minHeight: 140, maxHeight: .infinity)
+                ZStack(alignment: .topTrailing) {
+                    routeMap(follow: !navigation.isPaused && navigation.hasFreshLocation)
+                    floatingCameraWindow
+                        .padding(10)
+                }
+                .frame(minHeight: 140, maxHeight: .infinity)
                 VStack(spacing: 10) {
                     if let error = navigation.errorMessage { activeErrorCard(error) }
                     activeJourneyCard
@@ -288,6 +306,18 @@ struct NavigationView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
             }
+        }
+    }
+
+    @ViewBuilder private var floatingCameraWindow: some View {
+        if showCameraWindow && model.tripActive && !model.demo && !model.replaying {
+            FloatingCameraView(model: model, showDetections: true, showLanes: true,
+                               onOpenCamera: openCamera,
+                               onClose: { withAnimation(.easeInOut(duration: 0.2)) { showCameraWindow = false } })
+                .frame(width: 180, height: 142)
+                .background(BrakeTheme.background, in: RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
         }
     }
 
