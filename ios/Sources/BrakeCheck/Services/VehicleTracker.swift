@@ -133,7 +133,7 @@ final class VehicleTracker {
                 do {
                     self.lowLightDetector = try self.makeDetector(from: self.locateLowLightModel(), name: "night")
                     self.lowLightError = nil
-                    self.report("N14 · standard YOLO11n + traffic-trained night YOLOv8s ready")
+                    self.report("N15 · standard YOLO11n + traffic-trained night YOLOv8s ready")
                 } catch {
                     self.lowLightError = error.localizedDescription
                     self.report("Standard YOLO ready · low-light fallback: \(error.localizedDescription)")

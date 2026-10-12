@@ -2,15 +2,22 @@ import BrakeCheckCore
 import SwiftUI
 import UIKit
 
-/// Home holds controls; Camera keeps the driving readouts over the road.
+/// Home holds controls; Camera and Navigation share the live driving pipeline.
 /// Both pages share one model, so swiping never restarts the trip or tracker.
 struct ContentView: View {
     private enum Page: Int, CaseIterable {
-        case home, camera
-        var title: String { self == .home ? "Home" : "Camera" }
+        case home, camera, navigation
+        var title: String {
+            switch self {
+            case .home: return "Home"
+            case .camera: return "Camera"
+            case .navigation: return "Navigate"
+            }
+        }
     }
     @ObservedObject var model: DriveModel
     @ObservedObject private var safety: SafetyService
+    @ObservedObject private var navigation: NavigationService
     @AppStorage("display.mph") private var useMPH = true
     @AppStorage("display.detectionBoxes") private var showDetections = true
     @AppStorage("display.lanes") private var showLanes = true
@@ -31,6 +38,7 @@ struct ContentView: View {
     init(model: DriveModel) {
         self.model = model
         _safety = ObservedObject(wrappedValue: model.safety)
+        _navigation = ObservedObject(wrappedValue: model.navigation)
     }
     private var factor: Double { useMPH ? 2.2369362921 : 3.6 }
     private var unit: String { useMPH ? "mph" : "km/h" }
@@ -69,6 +77,9 @@ struct ContentView: View {
                         TabView(selection: $page) {
                             homePage.tag(Page.home)
                             cameraPage(portrait: portrait).tag(Page.camera)
+                            NavigationView(navigation: navigation, model: model, useMPH: useMPH,
+                                startDrive: model.startNavigationDrive, openCamera: { page = .camera })
+                                .tag(Page.navigation)
                         }
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         pageNavigation
@@ -110,7 +121,13 @@ struct ContentView: View {
         .onChange(of: model.changingCameraGeometry) { _, changing in
             if changing { selecting = false; selection = nil }
         }
-        .onChange(of: model.tripActive) { _, active in if active { page = .camera } }
+        .onChange(of: model.tripActive) { _, active in
+            if active { page = navigation.isNavigating ? .navigation : .camera }
+        }
+        .onChange(of: navigation.isNavigating) { _, active in if active { page = .navigation } }
+        .onChange(of: page) { _, destination in navigation.setPageVisible(destination == .navigation && !selecting) }
+        .onChange(of: selecting) { _, active in navigation.setPageVisible(page == .navigation && !active) }
+        .onChange(of: useMPH) { _, miles in navigation.useMPH = miles }
         .onChange(of: model.replaying) { _, active in if active { page = .camera } }
         .onChange(of: model.demo) { _, active in if active { page = .camera } }
         .task { await safety.connectIfPaired() }
@@ -120,7 +137,7 @@ struct ContentView: View {
         HomeView(model: model, service: safety,
                  useMPH: $useMPH, showDetections: $showDetections,
                  showLanes: $showLanes, showFullFrame: $showFullFrame,
-                 openCamera: { page = .camera }, tripAction: performTripAction,
+                 openCamera: { page = .camera }, openNavigation: { page = .navigation }, tripAction: performTripAction,
                  openSettings: { showingSettings = true },
                  openContacts: { showingContacts = true },
                  openIncidents: { showingIncidents = true },
@@ -150,7 +167,7 @@ struct ContentView: View {
                         Text(destination.title).font(.system(size: 13, weight: .semibold))
                     }
                     .foregroundStyle(page == destination ? BrakeTheme.accent : BrakeTheme.muted)
-                    .frame(width: 106, height: 44)
+                    .frame(maxWidth: .infinity, minHeight: 44)
                     .background(page == destination ? Color.white.opacity(0.05) : .clear, in: Capsule())
                 }
                 .accessibilityValue(page == destination ? "Selected" : "")
@@ -159,6 +176,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .padding(4)
+        .frame(maxWidth: 360)
         .background(.black.opacity(0.25), in: Capsule())
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)

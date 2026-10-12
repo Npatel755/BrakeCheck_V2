@@ -13,6 +13,7 @@ final class DriveModel: ObservableObject {
 
     let camera = CameraService()
     let safety = SafetyService()
+    let navigation = NavigationService()
     let replay = ReplayService()
     private let speedLog = SpeedLogWriter()
     // Replay mode: a recorded drive runs through the live tracker and risk estimator.
@@ -41,7 +42,7 @@ final class DriveModel: ObservableObject {
 
     private var estimator = LeadRiskContinuity()
     private var cameraRangeEstimator = CameraRangeEstimator()
-    let measurementRevision = "N14"
+    let measurementRevision = "N15"
     private var detectorMeasurementGeneration: Int?
 
     private var speedReading: GPSSpeedSample?
@@ -153,6 +154,16 @@ final class DriveModel: ObservableObject {
     }
 
     init() {
+
+        navigation.useMPH = UserDefaults.standard.object(forKey: "display.mph") as? Bool ?? true
+        navigation.canSpeak = { [weak self] in
+            guard let self else { return false }
+            return self.foreground && self.tripActive && !self.demo && !self.replaying
+                && !self.brakeWarningActive && !self.safety.checkinPresented && !self.safety.audio.isBusy
+        }
+        safety.beforePriorityAudio = { [weak self] in
+            self?.navigation.stopSpeaking(deactivateSession: false)
+        }
 
         speedService.onSpeed = { [weak self] reading in
 
@@ -409,6 +420,12 @@ final class DriveModel: ObservableObject {
 
     }
 
+    func startNavigationDrive() {
+        guard !stopping, !demo, !replaying, navigation.hasFreshLocation, navigation.route != nil else { return }
+        navigation.startGuidance()
+        if navigation.isNavigating && !tripActive { startTrip() }
+    }
+
     private func requestCameraIfNeeded() {
 
         guard !permissionPending else { return }
@@ -440,6 +457,8 @@ final class DriveModel: ObservableObject {
     func endTrip() {
 
         guard tripActive, !stopping else { return }
+
+        navigation.stopGuidance()
 
         tripActive = false
         safety.sendTrip(minutes: Date().timeIntervalSince(tripStarted) / 60,
@@ -482,6 +501,8 @@ final class DriveModel: ObservableObject {
     }
 
     func sceneChanged(_ phase: ScenePhase) {
+
+        navigation.setForeground(phase == .active)
 
         if phase == .background {
 
@@ -627,6 +648,8 @@ final class DriveModel: ObservableObject {
     func setDemo(_ enabled: Bool) {
 
         guard !tripActive, !stopping, !replaying else { return }
+
+        navigation.setLiveModeAllowed(!enabled)
 
         demo = enabled
         gpsSpeedEstimated = false
@@ -1093,7 +1116,10 @@ final class DriveModel: ObservableObject {
         let critical = risk.level == .critical
         let now = ProcessInfo.processInfo.systemUptime
         let alreadyVisible = brakeWarningLatch.isActive(at: now)
-        if critical { brakeWarningLatch.trigger(at: now) }
+        if critical {
+            navigation.stopSpeaking()
+            brakeWarningLatch.trigger(at: now)
+        }
         brakeWarningActive = brakeWarningLatch.isActive(at: now)
         if critical && !alreadyVisible {
             safety.brakeWarning()
@@ -1116,6 +1142,7 @@ final class DriveModel: ObservableObject {
     /// without one, `assumedSpeed` (m/s) is used and labelled as an assumption on screen.
     func startReplay(_ clips: [ReplayService.Clip], track: SpeedTrack?, assumedSpeed: Double?, offset: TimeInterval) {
         guard !tripActive, !stopping, !demo, !replaying, !clips.isEmpty else { return }
+        navigation.setLiveModeAllowed(false)
         gpsSpeedEstimated = false
         estimatedLeadSpeed = nil
         replayTrack = track
@@ -1145,6 +1172,7 @@ final class DriveModel: ObservableObject {
         replay.stop()
         replayGeneration = nil
         replaying = false
+        navigation.setLiveModeAllowed(true)
         replayStatus = status
         replayFrame = nil
         speed = nil

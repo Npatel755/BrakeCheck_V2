@@ -148,7 +148,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             self.wantsRunning = false
             self.tracker.clear()
             if self.session.isRunning { self.session.stopRunning() }
-            self.recorder.pause(reason: "Background: GPS continues; camera and recording are paused.", completion: completion)
+            self.recorder.pause(reason: "Background: camera tracking and recording are paused. Return to BrakeCheck to resume.", completion: completion)
             self.onCameraStatus?("Camera paused in background", false)
         }
     }

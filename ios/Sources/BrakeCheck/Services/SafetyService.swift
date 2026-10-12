@@ -6,6 +6,8 @@ import UIKit
 final class SafetyService: ObservableObject {
     let settings = ConnectionSettings()
     let audio = VoiceAudio()
+    /// Safety audio takes ownership before asynchronous playback can begin.
+    var beforePriorityAudio: (() -> Void)?
     @Published var connectionStatus = "Connect your backend"
     @Published var voiceStatus = "Voice not prepared"
     @Published var contacts: [EmergencyContact] = []
@@ -89,6 +91,7 @@ final class SafetyService: ObservableObject {
     func brakeWarning() {
         let now = ProcessInfo.processInfo.systemUptime
         guard !checkinPresented, now - lastBrake > 8 else { return }
+        beforePriorityAudio?()
         lastBrake = now
         // Use the voice cooldown so a persistent critical state does not
         // vibrate on every camera frame or add a second warning timer.
@@ -167,6 +170,7 @@ final class SafetyService: ObservableObject {
     func beginCheckin(location: CrashLocation?, speedMPH: Double?, dryRun: Bool) {
         guard !checkinPresented else { return }
         guard let client = settings.client else { error = "Connect the backend before starting a check-in."; return }
+        beforePriorityAudio?()
         sessionGeneration = UUID()
         let generation = sessionGeneration
         awaitingAlertDelivery = false

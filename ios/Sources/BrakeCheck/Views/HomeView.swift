@@ -10,6 +10,7 @@ struct HomeView: View {
     @Binding var showFullFrame: Bool
 
     var openCamera: () -> Void
+    var openNavigation: () -> Void
     var tripAction: () -> Void
     var openSettings: () -> Void
     var openContacts: () -> Void
@@ -52,7 +53,7 @@ struct HomeView: View {
                         displayCard
                         targetCard
                     }
-                    Text("Swipe between Home and Camera.")
+                    Text("Swipe between Home, Camera, and Navigation.")
                         .font(.footnote)
                         .foregroundStyle(BrakeTheme.muted)
                         .frame(maxWidth: .infinity)
@@ -189,8 +190,8 @@ struct HomeView: View {
         if model.demo { return "Practice with sample readings on the Camera page." }
         if model.replaying { return "See vehicle tracking and estimated risk on the Camera page." }
         if model.stopping { return "Finishing the recording before your next drive." }
-        if model.tripActive { return "Your road view and driving readings are on the Camera page." }
-        return "Start a trip when you are ready, then switch to the road view."
+        if model.tripActive { return "Keep BrakeCheck on screen for camera tracking and recording. Your road view is on the Camera page." }
+        return "Start a trip when you are ready. Camera tracking and recording work while BrakeCheck is on screen."
     }
 
     private var primaryTitle: String {
@@ -233,6 +234,8 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("Your essentials", icon: "square.grid.2x2")
                 .padding(.bottom, 6)
+            navigationRow("Navigation", detail: "Directions with camera tracking still active", icon: "location.north.line", action: openNavigation)
+            rowDivider
             navigationRow("Settings", detail: "Connection, voice, safety, and permissions", icon: "slider.horizontal.3", action: openSettings)
             rowDivider
             navigationRow("Emergency contacts", detail: service.contacts.isEmpty ? "Choose who can receive a check-in" : "\(service.contacts.count) saved contact\(service.contacts.count == 1 ? "" : "s")", icon: "person.2", action: openContacts)

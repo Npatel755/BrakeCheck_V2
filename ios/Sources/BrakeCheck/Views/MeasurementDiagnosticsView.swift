@@ -20,7 +20,7 @@ struct MeasurementDiagnosticsView: View {
                     LabeledContent("Lead speed continuity estimate", value: model.estimatedLeadSpeed.map { String(format: "~%.1f m/s · display only", $0) } ?? "Unavailable")
                     Text(model.frameAlignmentStatus)
                     Text(model.risk.reason)
-                    Text("A confirmed lead uses fresh camera range and gap motion without needing lane detection or GPS. Closure acceleration describes the relative gap, not the lead's absolute acceleration. Stale or clipped measurements pause the numbers. A triggered BRAKE NOW warning remains visible for at least five seconds.")
+                    Text("A confirmed lead uses fresh camera range and gap motion without needing lane detection or GPS. Closure acceleration describes the relative gap, not the lead's absolute acceleration. Stale or clipped measurements pause the numbers. A triggered brake warning remains visible for at least five seconds. It says BRAKE ALERT once current risk is no longer critical.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Camera and models") {
