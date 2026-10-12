@@ -2,7 +2,8 @@ import BrakeCheckCore
 import SwiftUI
 
 /// The collision-risk pill, top center: the main focus of the dashboard. It grows a little at high risk and more
-/// at critical, where it turns red and reads BRAKE, at the same moment as the "Brake" voice and haptic.
+/// at critical, where it turns red at the same moment as the "Brake" voice and haptic.
+/// A recent alert remains visible without describing a recovered target as critical.
 struct RiskPill: View {
     let risk: RiskSnapshot
     let critical: Bool
@@ -11,19 +12,27 @@ struct RiskPill: View {
     /// The box is visible, but fresh detection or direction evidence is missing.
     var paused = false
     var selectionStatus = "Looking for a car ahead"
+    var meter: DangerMeterSnapshot? = nil
     /// Larger base size for the vertical layout.
     var large = false
 
-    private var scale: CGFloat { critical ? 1.3 : risk.level == .high ? 1.12 : 1 }
+    private var meterLevel: RiskLevel { meter?.level ?? risk.level }
+    private var meterScore: Double? {
+        if let meter { return meter.score }
+        return risk.score
+    }
+    private var scale: CGFloat { critical ? 1.3 : meterLevel == .high ? 1.12 : 1 }
+    private var currentCritical: Bool { risk.level == .critical }
     private var title: String {
-        if critical { return "BRAKE NOW" }
+        if critical { return currentCritical ? "BRAKE NOW" : "BRAKE ALERT" }
+        if meter?.isHeld == true { return "\(BrakeTheme.name(for: meterLevel)) · checking" }
         if paused || searching { return selectionStatus }
         if risk.level == .unknown, risk.distance != nil { return selectionStatus }
         if let ttc = risk.timeToCollision,
            selectionStatus.hasPrefix("Possible obstacle") || selectionStatus.hasPrefix("Possible collision") {
             return String(format: "Possible collision · %.1f s", ttc)
         }
-        return BrakeTheme.name(for: risk.level)
+        return BrakeTheme.name(for: meterLevel)
     }
 
     var body: some View {
@@ -31,14 +40,14 @@ struct RiskPill: View {
             if critical {
                 Image(systemName: "exclamationmark.triangle.fill")
             } else {
-                Circle().fill(BrakeTheme.color(for: risk.level)).frame(width: 7, height: 7)
+                Circle().fill(BrakeTheme.color(for: meterLevel)).frame(width: 7, height: 7)
             }
             Text(title).tracking(critical ? 1.2 : 0).monospacedDigit().lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .foregroundStyle(critical ? Color.white : BrakeTheme.color(for: risk.level))
-            // In the vertical layout the grown BRAKE pill would overflow the screen; every step is lit then anyway.
-            if !(critical && large) {
-                DangerSteps(score: risk.score, onAlert: critical, large: large)
+                .foregroundStyle(critical ? Color.white : BrakeTheme.color(for: meterLevel))
+            // A latched alert must not light every step after current danger has fallen.
+            if !(critical && currentCritical && large) {
+                DangerSteps(score: meterScore, onAlert: critical && currentCritical, large: large)
             }
         }
         .font(.system(size: large ? 17 : 14, weight: critical ? .heavy : .bold))
@@ -51,7 +60,10 @@ struct RiskPill: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: scale)
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(critical ? "Brake warning. \(title)" : "Collision risk: \(title)")
+        .accessibilityLabel(critical
+            ? currentCritical ? "Brake warning. Brake now."
+                : "Recent brake warning. Current collision risk: \(BrakeTheme.name(for: meterLevel))."
+            : "Collision risk: \(title)")
     }
 }
 

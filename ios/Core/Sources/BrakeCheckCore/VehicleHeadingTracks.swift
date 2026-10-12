@@ -62,9 +62,12 @@ public struct VehicleHeadingTracks {
         for (detection, vehicle) in vehicles.enumerated() {
             for (index, track) in tracks.enumerated() where Self.sameDetectorFamily(track.label, vehicle.label,
                                                                                   night: allowNightClassAliases) {
-                let dt = min(0.20, max(0, time - track.seenAt))
-                let predicted = track.box.offsetBy(dx: max(-0.06, min(0.06, track.velocityX * dt)),
-                    dy: max(-0.04, min(0.04, track.velocityY * dt)))
+                // Predict association over a brief missed detector frame, not
+                // just one normal frame interval. This is an expected position
+                // for matching; the returned box remains a real detection.
+                let dt = min(0.60, max(0, time - track.seenAt))
+                let predicted = track.box.offsetBy(dx: max(-0.12, min(0.12, track.velocityX * dt)),
+                    dy: max(-0.08, min(0.08, track.velocityY * dt)))
                 let visual = trackedBox.flatMap { box -> CGRect? in
                     guard track.id == preferredID, LeadVehicle.validBox(box),
                           Self.overlap(box, track.box) >= 0.12,
@@ -148,7 +151,20 @@ public struct VehicleHeadingTracks {
             result.append(LeadVehicle(box: vehicle.box, label: track.label, confidence: vehicle.confidence,
                 viewpoint: track.history.latest(at: time), trackID: track.id))
         }
-        tracks.removeAll { retiredIDs.contains($0.id) }
+        let freshIDs = Set(result.compactMap(\.trackID))
+        // A changed crop can require a replacement identity without passing
+        // the normal association gates. Retire its old overlapping identity
+        // so it cannot keep competing when the crop returns to its old shape.
+        tracks.removeAll { track in
+            if retiredIDs.contains(track.id) { return true }
+            guard !freshIDs.contains(track.id) else { return false }
+            return result.contains { vehicle in
+                Self.sameDetectorFamily(track.label, vehicle.label, night: allowNightClassAliases)
+                    && Self.overlap(track.box, vehicle.box) >= 0.55
+                    && abs(track.box.midX - vehicle.box.midX) <= min(track.box.width, vehicle.box.width) * 0.25
+                    && abs(track.box.midY - vehicle.box.midY) <= min(track.box.height, vehicle.box.height) * 0.25
+            }
+        }
         // Bound retained state during crowded scenes and repeated ambiguity.
         if tracks.count > 128 { tracks = Array(tracks.sorted { $0.seenAt > $1.seenAt }.prefix(128)) }
         return result

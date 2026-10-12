@@ -20,7 +20,8 @@ public struct LeadRiskContinuity {
         return RiskSnapshot(reason: reason)
     }
     public mutating func update(time: TimeInterval, distance: Double, egoSpeed: Double?,
-                                gpsAge: TimeInterval, confidence: Double) -> RiskSnapshot {
+                                gpsAge: TimeInterval, confidence: Double,
+                                camera: CameraRangeSnapshot? = nil) -> RiskSnapshot {
         guard time.isFinite, lastInput.map({ time > $0 }) ?? true,
               distance.isFinite, (1...150).contains(distance),
               confidence.isFinite, (0...1).contains(confidence) else {
@@ -31,7 +32,7 @@ public struct LeadRiskContinuity {
         }
         lastInput = time
         let result = estimator.update(time: time, distance: distance, egoSpeed: egoSpeed,
-                                      gpsAge: gpsAge, confidence: confidence)
+                                      gpsAge: gpsAge, confidence: confidence, camera: camera)
         // No GPS or rejected geometry must not preserve absolute-speed history.
         if result.distance == nil { lastReliable = nil }
         else { lastReliable = time }

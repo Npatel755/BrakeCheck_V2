@@ -3,6 +3,18 @@ import Foundation
 /// Save the accurate visual tracker for weak/missing or ambiguous detections.
 /// This gate never creates a detection, ID, orientation or numeric sample.
 public enum VehicleTrackSupport {
+    /// A visual tracker can move a displayed box during a brief detector gap,
+    /// but cannot drift to a nearby object or replace a fresh range sample.
+    public static func supportsVisualBox(_ box: CGRect, relativeTo previous: CGRect) -> Bool {
+        guard LeadVehicle.validBox(box), LeadVehicle.validBox(previous) else { return false }
+        let width = Double(box.width / previous.width)
+        let height = Double(box.height / previous.height)
+        return (0.60...1.65).contains(width) && (0.60...1.65).contains(height)
+            && (0.75...1.33).contains(width / height)
+            && abs(box.midX - previous.midX) <= max(0.025, previous.width * 0.60)
+            && abs(box.midY - previous.midY) <= max(0.020, previous.height * 0.60)
+            && overlap(box, previous) >= 0.20
+    }
     public static func needsVisualTracking(_ vehicles: [LeadVehicle], previousBox: CGRect?) -> Bool {
         guard let previous = previousBox, LeadVehicle.validBox(previous) else { return true }
         let overlaps = vehicles.filter { overlap($0.box, previous) >= 0.20 }

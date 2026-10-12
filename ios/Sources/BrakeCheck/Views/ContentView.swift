@@ -2,9 +2,13 @@ import BrakeCheckCore
 import SwiftUI
 import UIKit
 
-/// The dashboard adapts to portrait and either landscape orientation. The
-/// camera and all overlays use the geometry of the actual upright frame.
+/// Home holds controls; Camera keeps the driving readouts over the road.
+/// Both pages share one model, so swiping never restarts the trip or tracker.
 struct ContentView: View {
+    private enum Page: Int, CaseIterable {
+        case home, camera
+        var title: String { self == .home ? "Home" : "Camera" }
+    }
     @ObservedObject var model: DriveModel
     @ObservedObject private var safety: SafetyService
     @AppStorage("display.mph") private var useMPH = true
@@ -22,6 +26,7 @@ struct ContentView: View {
     @State private var showingReplay = false
     @State private var requestDemo = false
     @State private var showCheckin = false
+    @State private var page: Page = .home
 
     init(model: DriveModel) {
         self.model = model
@@ -50,10 +55,25 @@ struct ContentView: View {
         GeometryReader { geometry in
             let portrait = geometry.size.height > geometry.size.width
             ZStack {
-                roadView(portrait: portrait).ignoresSafeArea()
-                if showsPlaceholder { placeholder }
-                scrims(portrait: portrait).ignoresSafeArea().allowsHitTesting(false)
-                if portrait { portraitHUD } else { landscapeHUD }
+                VStack(spacing: 0) {
+                    if critical && page == .home && !selecting {
+                        riskPill(large: portrait)
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                            .frame(maxWidth: .infinity)
+                            .background(BrakeTheme.danger.opacity(0.12))
+                    }
+                    if selecting {
+                        // Drawing a calibration box must not compete with a paging gesture.
+                        cameraPage(portrait: portrait)
+                    } else {
+                        TabView(selection: $page) {
+                            homePage.tag(Page.home)
+                            cameraPage(portrait: portrait).tag(Page.camera)
+                        }
+                        .tabViewStyle(.page(indexDisplayMode: .never))
+                        pageNavigation
+                    }
+                }
                 if critical { BrakeEdgeGlow() }
             }
         }
@@ -76,7 +96,7 @@ struct ContentView: View {
             Button("OK", role: .cancel) { model.message = nil }
         } message: { Text(model.message ?? "") }
         .confirmationDialog("End this trip? Remaining post-event recording will stop.", isPresented: $stopping, titleVisibility: .visible) {
-            Button("End trip", role: .destructive) { selecting = false; model.endTrip() }
+            Button("End trip", role: .destructive) { selecting = false; model.endTrip(); page = .home }
         }
         .onChange(of: safety.checkinPresented) { _, presented in
             if !presented { showCheckin = false }
@@ -90,7 +110,82 @@ struct ContentView: View {
         .onChange(of: model.changingCameraGeometry) { _, changing in
             if changing { selecting = false; selection = nil }
         }
+        .onChange(of: model.tripActive) { _, active in if active { page = .camera } }
+        .onChange(of: model.replaying) { _, active in if active { page = .camera } }
+        .onChange(of: model.demo) { _, active in if active { page = .camera } }
         .task { await safety.connectIfPaired() }
+    }
+
+    private var homePage: some View {
+        HomeView(model: model, service: safety,
+                 useMPH: $useMPH, showDetections: $showDetections,
+                 showLanes: $showLanes, showFullFrame: $showFullFrame,
+                 openCamera: { page = .camera }, tripAction: performTripAction,
+                 openSettings: { showingSettings = true },
+                 openContacts: { showingContacts = true },
+                 openIncidents: { showingIncidents = true },
+                 openDiagnostics: { showingDiagnostics = true },
+                 openReplay: { showingReplay = true }, beginCalibration: beginCalibration)
+    }
+
+    private func cameraPage(portrait: Bool) -> some View {
+        ZStack {
+            roadView(portrait: portrait).ignoresSafeArea()
+            if showsPlaceholder { placeholder }
+            scrims(portrait: portrait).ignoresSafeArea().allowsHitTesting(false)
+            if portrait { portraitHUD } else { landscapeHUD }
+        }
+        .clipped()
+    }
+
+    private var pageNavigation: some View {
+        HStack(spacing: 4) {
+            ForEach(Page.allCases, id: \.rawValue) { destination in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) { page = destination }
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle().fill(page == destination ? BrakeTheme.accent : BrakeTheme.muted.opacity(0.45))
+                            .frame(width: 5, height: 5)
+                        Text(destination.title).font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(page == destination ? BrakeTheme.accent : BrakeTheme.muted)
+                    .frame(width: 106, height: 44)
+                    .background(page == destination ? Color.white.opacity(0.05) : .clear, in: Capsule())
+                }
+                .accessibilityValue(page == destination ? "Selected" : "")
+                .accessibilityHint("Swipe left or right to change pages.")
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(4)
+        .background(.black.opacity(0.25), in: Capsule())
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .background(BrakeTheme.background)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Pages")
+    }
+
+    private func performTripAction() {
+        if model.replaying { model.stopReplay() }
+        else if model.tripActive { stopping = true }
+        else { model.startTrip() }
+    }
+
+    private func beginCalibration() {
+        guard model.cameraReady, !model.replaying, !model.demo, !model.changingCameraGeometry else { return }
+        model.clearTarget()
+        selection = nil
+        measuredDistance = ""
+        page = .camera
+        selecting = true
+    }
+
+    private func riskPill(large: Bool) -> some View {
+        RiskPill(risk: model.risk, critical: critical, searching: searching,
+                 paused: model.trackingCoasting, selectionStatus: model.leadSelectionStatus,
+                 meter: model.dangerMeter, large: large)
     }
 
     private func presentPendingCheckin() {
@@ -101,7 +196,7 @@ struct ContentView: View {
     // MARK: - Road
 
     /// The camera (or replay frame) and its overlays share one box with the video's shape. The box fills the
-    /// screen, fitting the whole camera frame by default; the scope menu also offers a cropped fill view.
+    /// screen, fitting the whole camera frame by default; Home also offers a cropped fill view.
     private func roadView(portrait: Bool) -> some View {
         let frameSize = model.replaying ? model.replayFrame?.size : nil
         let aspect = frameSize.map { Double($0.width / max($0.height, 1)) } ?? model.captureGeometry.aspect
@@ -126,7 +221,7 @@ struct ContentView: View {
                                          leadTargetID: model.leadTargetID)
                     }
                     TargetOverlay(trackedBox: model.trackingBox, selecting: selecting, selectedBox: $selection,
-                                  alert: critical, coasting: model.trackingCoasting)
+                                  alert: model.risk.level == .critical, coasting: model.trackingCoasting)
                 }
             }
             .frame(width: frame.width, height: frame.height)
@@ -145,6 +240,10 @@ struct ContentView: View {
                     .font(.system(size: 22, weight: .semibold))
                 Text(model.demo ? "Practice numbers · no camera" : "Start a trip to see the road and track vehicles.")
                     .font(.system(size: 12)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
+                if !model.demo {
+                    Text("Swipe to Home for trip controls.")
+                        .font(.system(size: 12)).foregroundStyle(BrakeTheme.accent)
+                }
             }
             .padding(.horizontal, 24)
             .offset(y: -24)
@@ -167,19 +266,9 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 brand(size: 25)
                 Spacer(minLength: 0)
-                saveClipButton(compact: false)
-                scopeMenu(size: 34)
-                iconButton("waveform.path.ecg", "Sensor diagnostics", size: 34) { showingDiagnostics = true }
-                iconButton("person.2", "Emergency contacts", size: 34) { showingContacts = true }
-                iconButton("film.stack", "Saved incidents", size: 34) { showingIncidents = true }
-                iconButton("play.rectangle", "Replay a recorded drive", size: 34) { showingReplay = true }
-                iconButton("slider.horizontal.3", "Settings", size: 34) { showingSettings = true }
-                primaryButton(wide: false).padding(.leading, 2)
             }
-            .buttonStyle(.plain)
             if critical || (running && !selecting) {
-                RiskPill(risk: model.risk, critical: critical, searching: searching, paused: model.trackingCoasting,
-                         selectionStatus: model.leadSelectionStatus)
+                riskPill(large: false)
             }
             Spacer(minLength: 0)
             if selecting { calibrationControls.frame(maxWidth: 440) }
@@ -190,33 +279,19 @@ struct ContentView: View {
         .foregroundStyle(.white)
     }
 
-    /// Vertical: brand and settings on top, the larger risk pill under them, readouts and a thumb-reach
-    /// control bar at the bottom.
+    /// Vertical: status and the danger meter above an unobstructed road, readouts below.
     private var portraitHUD: some View {
         VStack(spacing: 14) {
             HStack(spacing: 8) {
                 brand(size: 19)
                 Spacer(minLength: 0)
-                saveClipButton(compact: true)
-                iconButton("slider.horizontal.3", "Settings", size: 34) { showingSettings = true }
             }
-            .buttonStyle(.plain)
             if critical || (running && !selecting) {
-                RiskPill(risk: model.risk, critical: critical, searching: searching, paused: model.trackingCoasting,
-                         selectionStatus: model.leadSelectionStatus, large: true)
+                riskPill(large: true)
             }
             Spacer(minLength: 0)
             if selecting { calibrationControls }
             if running { bottomRow(portrait: true) }
-            HStack(spacing: 10) {
-                scopeMenu(size: 44)
-                iconButton("person.2", "Emergency contacts", size: 44) { showingContacts = true }
-                iconButton("film.stack", "Saved incidents", size: 44) { showingIncidents = true }
-                iconButton("play.rectangle", "Replay a recorded drive", size: 44) { showingReplay = true }
-                iconButton("waveform.path.ecg", "Sensor diagnostics", size: 44) { showingDiagnostics = true }
-            }
-            .buttonStyle(.plain)
-            primaryButton(wide: true).buttonStyle(.plain)
         }
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         .foregroundStyle(.white)
@@ -246,72 +321,6 @@ struct ContentView: View {
         .background(.black.opacity(0.5), in: Capsule())
     }
 
-    /// Icon only in the vertical layout, where the top row is narrow.
-    @ViewBuilder private func saveClipButton(compact: Bool) -> some View {
-        if model.tripActive && !model.demo {
-            Button { model.markIncident() } label: {
-                Group {
-                    if compact {
-                        Image(systemName: "bookmark.fill").font(.system(size: 14, weight: .semibold)).frame(width: 34, height: 34)
-                    } else {
-                        Label("Save clip", systemImage: "bookmark.fill").font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 11).frame(height: 34)
-                    }
-                }
-                .background(.black.opacity(0.5), in: Capsule())
-                .foregroundStyle(BrakeTheme.accent)
-            }
-            .accessibilityLabel("Save clip")
-            .accessibilityHint("Keeps available footage from 15 minutes before and after this moment.")
-        }
-    }
-
-    @ViewBuilder private func scopeMenu(size: CGFloat) -> some View {
-        if (model.cameraReady || model.replaying) && !selecting {
-            Menu {
-                Button("Auto select") { model.clearTarget() }
-                if model.cameraReady && !model.replaying {
-                    Button("Calibrate gap while parked") {
-                        model.clearTarget(); selection = nil; measuredDistance = ""; selecting = true
-                    }
-                }
-                Toggle("Show full camera frame", isOn: $showFullFrame)
-                Toggle("Show all vehicle boxes", isOn: $showDetections)
-                Toggle("Show lane and road overlay", isOn: $showLanes)
-            } label: { hudIcon("scope", size: size) }
-            .accessibilityLabel("Lead vehicle selection")
-        }
-    }
-
-    private func iconButton(_ name: String, _ label: String, size: CGFloat, action: @escaping () -> Void) -> some View {
-        Button(action: action) { hudIcon(name, size: size) }.accessibilityLabel(label)
-    }
-
-    private func hudIcon(_ name: String, size: CGFloat) -> some View {
-        Image(systemName: name).font(.system(size: size > 40 ? 16 : 14, weight: .semibold))
-            .frame(width: size, height: size).background(.black.opacity(0.5), in: Circle())
-    }
-
-    @ViewBuilder private func primaryButton(wide: Bool) -> some View {
-        if model.replaying {
-            Button { model.stopReplay() } label: { primaryLabel("Stop replay", fill: BrakeTheme.warning, text: .black, wide: wide) }
-        } else {
-            Button { if model.tripActive { stopping = true } else { model.startTrip() } } label: {
-                primaryLabel(model.stopping ? "Saving…" : model.tripActive ? "End trip" : "Start trip",
-                             fill: model.tripActive ? BrakeTheme.danger : BrakeTheme.accent,
-                             text: model.tripActive ? .white : BrakeTheme.background, wide: wide)
-            }
-            .disabled(model.demo || model.stopping)
-            .opacity(model.demo || model.stopping ? 0.45 : 1)
-        }
-    }
-
-    private func primaryLabel(_ title: String, fill: Color, text: Color, wide: Bool) -> some View {
-        Text(title).font(.system(size: wide ? 15 : 13, weight: .bold)).foregroundStyle(text).lineLimit(1)
-            .padding(.horizontal, 14).frame(maxWidth: wide ? .infinity : nil).frame(height: wide ? 44 : 34)
-            .background(fill, in: Capsule())
-    }
-
     // MARK: - Readouts
 
     /// Speed bottom-left and the car-ahead numbers bottom-right, so the middle of the road (where the lead car is) stays clear.
@@ -330,9 +339,8 @@ struct ContentView: View {
                 Text(model.speed.map { String(format: "%.0f", $0 * factor) } ?? "--")
                     .font(.system(size: size, weight: .semibold)).monospacedDigit().tracking(-2)
                     .foregroundStyle(model.speed == nil ? BrakeTheme.muted : .white)
-                Button(unit) { useMPH.toggle() }
+                Text(unit)
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
-                    .accessibilityHint("Switches between mph and km/h")
             }
             if model.replaying {
                 Text(model.replaySpeedSource.hasPrefix("ASSUMED") ? "ASSUMED SPEED" : "RECORDED SPEED")

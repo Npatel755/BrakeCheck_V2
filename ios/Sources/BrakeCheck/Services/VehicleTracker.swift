@@ -33,6 +33,8 @@ struct TrackingReading {
     var detectorGeneration = 0
     var isDetectorSettling = false
     var cameraRangeCapture: VehicleRangeCapture? = nil
+    /// Display smoothing never feeds camera range, association or collision math.
+    var displayBox: CGRect? = nil
 }
 /// Keeps Vision state on one serial queue and drops frames if inference is busy.
 final class VehicleTracker {
@@ -131,7 +133,7 @@ final class VehicleTracker {
                 do {
                     self.lowLightDetector = try self.makeDetector(from: self.locateLowLightModel(), name: "night")
                     self.lowLightError = nil
-                    self.report("N12 · standard YOLO11n + traffic-trained night YOLOv8s ready")
+                    self.report("N14 · standard YOLO11n + traffic-trained night YOLOv8s ready")
                 } catch {
                     self.lowLightError = error.localizedDescription
                     self.report("Standard YOLO ready · low-light fallback: \(error.localizedDescription)")
@@ -461,14 +463,14 @@ final class VehicleTracker {
                             self.recoveryCount += 1
                         } catch {
                             // Preserve the successful full-frame result.
-                            self.report("N12 · recovery pass skipped: \(error.localizedDescription)")
+                            self.report("N13 · recovery pass skipped: \(error.localizedDescription)")
                         }
                     }
                 }
                 let finished = ProcessInfo.processInfo.systemUptime
                 if finished - self.lastInferenceReport >= 2, self.detector != nil {
                     self.lastInferenceReport = finished
-                    self.report(String(format: "N12 · %@ avg %.0f ms · frame age %.0f ms · %d vehicles · vehicle ≤%.1f/lane ≤%.1f fps · recovery %d",
+                    self.report(String(format: "N13 · %@ avg %.0f ms · frame age %.0f ms · %d vehicles · vehicle ≤%.1f/lane ≤%.1f fps · recovery %d",
                         self.detectorName,
                         self.vehicleLatency * 1000, (finished - uptime) * 1000, vehicles.count,
                         1 / policy.vehicleInterval, 1 / laneInterval, self.recoveryCount))
@@ -519,7 +521,8 @@ final class VehicleTracker {
                     at: uptime,
                     preferredID: self.targetID, trackedBox: trackedBox,
                     allowNightClassAliases: self.activeProfile == .night)
-                self.onDetections?(self.detectionPresentation.update(classified, at: uptime).map {
+                self.onDetections?(self.detectionPresentation.update(classified, at: uptime,
+                    preferredID: self.targetID, trackedBox: trackedBox).map {
                     VehicleDetection(id: $0.vehicle.trackID ?? UUID(), box: $0.vehicle.box,
                         label: $0.vehicle.label, confidence: $0.vehicle.confidence,
                         viewpoint: $0.vehicle.viewpoint, capturedAt: $0.capturedAt,
@@ -585,7 +588,7 @@ final class VehicleTracker {
             lowLightDetector = nil
             lowLightError = "Low-light inference failed: \(error.localizedDescription)"
             activateDetector(.day, at: time)
-            report("N12 · low-light detector failed · standard fallback active")
+            report("N13 · low-light detector failed · standard fallback active")
             return try recognizedObjects(standard, buffer: buffer)
         }
     }
@@ -796,7 +799,8 @@ final class VehicleTracker {
                 && selection.vehicle.travel?.vetoesLead(at: time) != true,
             detectorGeneration: detectorGeneration,
             isDetectorSettling: time < detectorSettlingUntil,
-            cameraRangeCapture: selection.isFreshDetection ? ranges[selection.id] : nil))
+            cameraRangeCapture: selection.isFreshDetection ? ranges[selection.id] : nil,
+            displayBox: detectionPresentation.box(for: selection.id)))
     }
 
     private func estimatedDistance(for vehicle: LeadVehicle, fov: Double) -> Double? {

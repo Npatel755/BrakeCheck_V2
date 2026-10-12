@@ -183,6 +183,10 @@ public struct LeadSelector {
         let freshRoad = road.flatMap { $0.isUsable(at: time) ? $0 : nil }
         if let freshLane { pathPrior = freshLane }
         if let prior = pathPrior, time - prior.capturedAt > 0.80 { pathPrior = nil }
+        // A lane-model gap must not force an off-axis car on a curve back
+        // onto the fixed mounting guide. A strong recent measured path can
+        // nominate an ID, but only fresh geometry authorizes path metrics.
+        let acquisitionLane = freshLane ?? (requiresRearView && pathPrior.map { $0.confidence >= 0.70 } == true ? pathPrior : nil)
         // Do this before filtering: otherwise a now-front-facing target could
         // survive as a "missing detection" on its auxiliary visual track.
         if var current = track {
@@ -196,18 +200,7 @@ public struct LeadSelector {
             if blockedMatch.vehicle != nil || blockedMatch.ambiguous {
                 track = nil; challenger = nil
             } else if let matched = association(current, expected: expected, candidates: detections).vehicle {
-                if let view = matched.viewpoint, view.isFresh(at: time),
-                   view.side >= 0.70, view.side - view.rear >= 0.30 {
-                    if current.sideCaptures.last.map({ view.capturedAt > $0 }) ?? true {
-                        current.sideCaptures.removeAll { view.capturedAt - $0 > 1.60 }
-                        current.sideCaptures.append(view.capturedAt)
-                    }
-                } else if let view = matched.viewpoint, view.isFresh(at: time), view.side < 0.70 {
-                    current.sideCaptures = []
-                }
-                if current.sideCaptures.count >= 2,
-                   let first = current.sideCaptures.first, let last = current.sideCaptures.last,
-                   last - first >= 0.15 - 1e-6 {
+                if hasRepeatedSideEvidence(matched, for: &current, at: time) {
                     track = nil; challenger = nil
                 } else { track = current }
             }
@@ -217,14 +210,20 @@ public struct LeadSelector {
                 && !directionVeto($0, at: time)
         }
         let retained = visible.filter { vehicle in
-            !requiresRearView || vehicle.viewpoint?.hasConfirmedRearView(at: time) == true
-                || track.map { existing in canRetainRearIdentity(vehicle, for: existing, at: time) } == true
+            hasRearEvidence(vehicle, at: time)
         }
         let acquisition = visible.filter {
-            $0.confidence >= 0.45 && canAcquire($0, lane: freshLane)
-                && !clearlyOutside($0.box, lane: freshLane)
-                && (!requiresRearView || $0.viewpoint?.hasConfirmedRearView(at: time) == true)
+            $0.confidence >= 0.45 && canAcquire($0, lane: acquisitionLane)
+                && !clearlyOutside($0.box, lane: acquisitionLane)
+                && hasRearEvidence($0, at: time)
         }.sorted { priority($0, lane: freshLane, road: freshRoad) > priority($1, lane: freshLane, road: freshRoad) }
+        let bestAcquisition: LeadVehicle? = {
+            guard let best = acquisition.first else { return nil }
+            if acquisition.count > 1,
+               abs(priority(best, lane: freshLane, road: freshRoad) - priority(acquisition[1], lane: freshLane, road: freshRoad)) < 0.055,
+               Self.overlap(best.box, acquisition[1].box) < 0.6 { return nil }
+            return best
+        }()
 
         let hasVisualSupport = track.flatMap { existing in
             trackedBox.map { plausibleTrackedBox($0, previous: existing.vehicle.box) }
@@ -248,10 +247,16 @@ public struct LeadSelector {
                 updateTrack(&current, with: seen, at: time, lane: freshLane, road: freshRoad)
                 if current.outsidePathSince == nil { current.outsidePathSince = time }
                 current.outsidePathObservations += 1
-                challenger = nil
+                if let next = bestAcquisition {
+                    updateChallenger(next, at: time, lane: freshLane, road: freshRoad)
+                } else { challenger = nil }
                 if current.outsidePathObservations >= 3,
                    time - (current.outsidePathSince ?? time) >= 0.30 - 1e-6 {
-                    track = acquisition.first.map { makeTrack($0, at: time) }
+                    if let replacement = challenger, replacement.confirmed {
+                        track = replacement; challenger = nil
+                        return selection(replacement, fresh: true, lane: freshLane, road: freshRoad, at: time)
+                    }
+                    track = challenger; challenger = nil
                     return nil
                 }
                 track = current
@@ -259,7 +264,7 @@ public struct LeadSelector {
                 // a brief lane-boundary grace period to absorb segmentation jitter.
                 return current.confirmed ? selection(current, fresh: false, lane: freshLane, road: freshRoad, at: time) : nil
             }
-            if match.vehicle == nil, let replacement = acquisition.first,
+            if match.vehicle == nil, let replacement = bestAcquisition,
                abs(replacement.box.midX - current.vehicle.box.midX) < 0.025,
                abs(replacement.box.minY - current.vehicle.box.minY) < 0.04 {
                 track = makeTrack(replacement, at: time); challenger = nil
@@ -269,7 +274,7 @@ public struct LeadSelector {
                 let prior = current
                 updateTrack(&current, with: matched, at: time, lane: freshLane, road: freshRoad)
                 current.outsidePathSince = nil; current.outsidePathObservations = 0
-                if let nearer = acquisition.first,
+                if let nearer = bestAcquisition,
                    Self.overlap(nearer.box, matched.box) < 0.35,
                    (nearer.box.minY + 0.045 < matched.box.minY
                     || (requiresRearView && freshLane.map { $0.confidence >= 0.70 } == true
@@ -298,6 +303,16 @@ public struct LeadSelector {
                 return current.confirmed ? selection(current, fresh: !sizeJump || reliableGrowth, lane: freshLane, road: freshRoad, at: time) : nil
             }
 
+            // Confirm a different eligible vehicle while the former lead is
+            // missing. Visual/lane coasting must not reserve the lead slot for
+            // seconds after an independently verified in-lane car appears.
+            if let next = bestAcquisition {
+                updateChallenger(next, at: time, lane: freshLane, road: freshRoad)
+                if let replacement = challenger, replacement.confirmed {
+                    track = replacement; challenger = nil
+                    return selection(replacement, fresh: true, lane: freshLane, road: freshRoad, at: time)
+                }
+            } else { challenger = nil }
             let box = expected
             if current.confirmed, LeadVehicle.validBox(box) {
                 if clearlyOutside(box, lane: freshLane) {
@@ -318,7 +333,6 @@ public struct LeadSelector {
                 }
                 if hasVisualSupport { current.vehicle = visual }
                 track = current
-                challenger = nil
                 return LeadSelection(id: current.id, vehicle: visual, isFreshDetection: false,
                     isPathSupported: pathSupported(visual, lane: freshLane, road: freshRoad, at: time),
                     hasConfirmedRearIdentity: requiresRearView && rearIdentityIsValid(current, at: time),
@@ -326,11 +340,21 @@ public struct LeadSelector {
             }
         }
 
+        // A challenger may already have detector observations from the gap.
+        // Preserve them when the old track expires instead of starting over.
+        if var pending = challenger, let best = bestAcquisition,
+           let matched = association(pending, expected: prediction(pending, at: time), candidates: [best]).vehicle {
+            if hasRepeatedSideEvidence(matched, for: &pending, at: time) {
+                track = nil; challenger = nil; return nil
+            }
+            if pending.lastDetection < time {
+                updateTrack(&pending, with: matched, at: time, lane: freshLane, road: freshRoad)
+            }
+            track = pending; challenger = nil
+            return pending.confirmed ? selection(pending, fresh: true, lane: freshLane, road: freshRoad, at: time) : nil
+        }
         track = nil; challenger = nil
-        guard let best = acquisition.first else { return nil }
-        if acquisition.count > 1,
-           abs(priority(best, lane: freshLane, road: freshRoad) - priority(acquisition[1], lane: freshLane, road: freshRoad)) < 0.055,
-           Self.overlap(best.box, acquisition[1].box) < 0.6 { return nil }
+        guard let best = bestAcquisition else { return nil }
         track = makeTrack(best, at: time)
         return nil
     }
@@ -419,10 +443,18 @@ public struct LeadSelector {
         return time >= pathTime && time - pathTime <= visualRetentionSeconds
     }
     private func canRetainRearIdentity(_ v: LeadVehicle, for t: Track, at time: TimeInterval) -> Bool {
-        guard t.confirmed, let id = v.trackID, id == t.vehicle.trackID,
+        guard let id = v.trackID, id == t.vehicle.trackID,
               rearIdentityIsValid(t, at: time) else { return false }
         let shapeChange = Double((v.box.width / v.box.height) / (t.vehicle.box.width / t.vehicle.box.height))
         return (0.50...2.0).contains(shapeChange)
+    }
+    private func hasRearEvidence(_ vehicle: LeadVehicle, at time: TimeInterval) -> Bool {
+        if !requiresRearView || vehicle.viewpoint?.hasConfirmedRearView(at: time) == true { return true }
+        // Two independent rear captures establish orientation for this ID even
+        // while its detector observations are still confirming acquisition.
+        // New IDs and one-capture vehicles cannot inherit that evidence.
+        return track.map { canRetainRearIdentity(vehicle, for: $0, at: time) } == true
+            || challenger.map { canRetainRearIdentity(vehicle, for: $0, at: time) } == true
     }
     private func directionVeto(_ vehicle: LeadVehicle, at time: TimeInterval) -> Bool {
         guard vehicle.travel?.vetoesLead(at: time) == true else { return false }
@@ -471,8 +503,26 @@ public struct LeadSelector {
                                           lane: LanePath?, road: RoadRegion?) {
         if var pending = challenger,
            let matched = association(pending, expected: prediction(pending, at: time), candidates: [v]).vehicle {
+            if hasRepeatedSideEvidence(matched, for: &pending, at: time) {
+                challenger = nil; return
+            }
             updateTrack(&pending, with: matched, at: time, lane: lane, road: road); challenger = pending
         } else { challenger = makeTrack(v, at: time) }
+    }
+    private func hasRepeatedSideEvidence(_ vehicle: LeadVehicle, for t: inout Track,
+                                         at time: TimeInterval) -> Bool {
+        if let view = vehicle.viewpoint, view.isFresh(at: time),
+           view.side >= 0.70, view.side - view.rear >= 0.30 {
+            if t.sideCaptures.last.map({ view.capturedAt > $0 }) ?? true {
+                t.sideCaptures.removeAll { view.capturedAt - $0 > 1.60 }
+                t.sideCaptures.append(view.capturedAt)
+            }
+        } else if let view = vehicle.viewpoint, view.isFresh(at: time), view.side < 0.70 {
+            t.sideCaptures = []
+        }
+        guard t.sideCaptures.count >= 2,
+              let first = t.sideCaptures.first, let last = t.sideCaptures.last else { return false }
+        return last - first >= 0.15 - 1e-6
     }
     private func prediction(_ t: Track, at time: TimeInterval) -> CGRect {
         let dt = min(0.20, max(0, time - t.lastDetection))

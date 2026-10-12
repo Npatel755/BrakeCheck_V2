@@ -112,22 +112,24 @@ public enum RiskRules {
 }
 
 public struct RiskEstimator {
-    private var distances: [TimedValue] = []
+    private var cameraEstimator = CameraRangeEstimator()
+    private let cameraTargetID = UUID()
     private var leadSpeeds: [TimedValue] = []
     private var lastTime: TimeInterval?
     public init() {}
 
     public mutating func reset() {
-        distances.removeAll()
+        cameraEstimator.reset()
         leadSpeeds.removeAll()
         lastTime = nil
     }
 
     public mutating func update(time: TimeInterval, distance: Double, egoSpeed: Double?,
-                         gpsAge: TimeInterval, confidence: Double) -> RiskSnapshot {
+                         gpsAge: TimeInterval, confidence: Double,
+                         camera: CameraRangeSnapshot? = nil) -> RiskSnapshot {
         guard time.isFinite, distance.isFinite, (1...150).contains(distance),
-              confidence >= 0.65, let egoSpeed, egoSpeed.isFinite,
-              egoSpeed >= 0, gpsAge >= 0, gpsAge <= 2 else {
+              confidence.isFinite, (0.65...1).contains(confidence), let egoSpeed, egoSpeed.isFinite,
+              (0...90).contains(egoSpeed), gpsAge.isFinite, gpsAge >= 0, gpsAge <= 2 else {
             reset()
             return RiskSnapshot(reason: "Waiting for reliable tracking and a fresh GPS speed.")
         }
@@ -136,18 +138,24 @@ public struct RiskEstimator {
                 reset()
                 return RiskSnapshot(reason: "Waiting for ordered camera samples.")
             }
-            if time - lastTime > 0.6 { reset() }
-        }
-        if let previous = distances.last,
-           abs(distance - previous.value) > max(2, previous.value * 0.15) {
-            reset()
-            return RiskSnapshot(reason: "Distance changed abruptly. Check the selected vehicle.")
+            if time - lastTime > 0.6 + 1e-6 { reset() }
         }
         lastTime = time
-        distances.append(TimedValue(time: time, value: distance))
-        distances.removeAll { time - $0.time > 1.5 }
-        guard let rangeRate = DriveMath.slope(distances, minimumSpan: 0.9) else {
+        // The track already accumulated camera motion before lead confirmation.
+        // Reuse that capture's fit rather than starting a second derivative
+        // window after selection. Standalone callers use the same robust fit.
+        let motion = camera ?? cameraEstimator.update(targetID: cameraTargetID, time: time,
+            distance: distance, confidence: confidence, fresh: true)
+        guard let measuredDistance = motion.distance, measuredDistance.isFinite,
+              abs(measuredDistance - distance) <= 0.001 else {
+            return RiskSnapshot(reason: "Distance changed abruptly. Check the selected vehicle.")
+        }
+        guard let rangeRate = motion.rangeRate, rangeRate.isFinite, abs(rangeRate) <= 60 else {
             return RiskSnapshot(distance: distance, reason: "Collecting distance samples…")
+        }
+        if let closing = motion.closingSpeed,
+           !closing.isFinite || abs(closing - max(0, -rangeRate)) > 0.001 {
+            return RiskSnapshot(reason: "Camera motion measurements disagree.")
         }
         let speed = egoSpeed + rangeRate
         guard speed >= -2, speed <= 90, abs(rangeRate) <= 60 else {
@@ -155,8 +163,10 @@ public struct RiskEstimator {
             return RiskSnapshot(reason: "Tracking and GPS disagree. Reselect the target.")
         }
         leadSpeeds.append(TimedValue(time: time, value: max(0, speed)))
-        leadSpeeds.removeAll { time - $0.time > 2 }
-        let acceleration = DriveMath.slope(leadSpeeds, minimumSpan: 1.4)
+        let speedWindow = TemporalSampling.window(times: leadSpeeds.map(\.time),
+            minimumSamples: 5, minimumWindow: 2, maximumWindow: 2.5)
+        leadSpeeds.removeAll { time - $0.time > speedWindow + 1e-6 }
+        let acceleration = DriveMath.slope(leadSpeeds, minimumSpan: 1.4 - 1e-6)
         return RiskRules.evaluate(distance: distance, egoSpeed: egoSpeed,
                                   rangeRate: rangeRate, leadAcceleration: acceleration)
     }

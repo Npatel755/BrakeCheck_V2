@@ -1,4 +1,5 @@
 .build/
+.validation/
 .swiftpm/
 xtool/
 .DS_Store

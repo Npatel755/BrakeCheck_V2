@@ -68,8 +68,11 @@ final class LeadSelectorTests: XCTestCase {
     func testGapExpiresAndNewTrackHasNewIdentity() throws {
         var s = LeadSelector()
         let first = try XCTUnwrap(confirm(&s, [car()]))
-        XCTAssertNil(s.update([], at: 0.9))
-        let second = try XCTUnwrap(confirm(&s, [car()], from: 1.0))
+        let held = try XCTUnwrap(s.update([], at: 0.9))
+        XCTAssertEqual(held.id, first.id)
+        XCTAssertFalse(held.isFreshDetection)
+        XCTAssertNil(s.update([], at: 1.3))
+        let second = try XCTUnwrap(confirm(&s, [car()], from: 1.4))
         XCTAssertNotEqual(first.id, second.id)
     }
     func testVehicleOnCurveOutsideStraightGuideCanAcquire() throws {
@@ -126,10 +129,17 @@ final class LeadSelectorTests: XCTestCase {
         XCTAssertEqual(changed.vehicle.box, near.box)
         XCTAssertTrue(changed.isFreshDetection)
     }
-    func testClearLaneExitDoesNotCoastOldBox() throws {
+    func testClearLaneExitPausesMetricsThenReleasesAfterBoundaryGrace() throws {
         var s = LeadSelector()
-        _ = try XCTUnwrap(confirm(&s, [car(y: 0.52, width: 0.20, height: 0.13)], bend: 0))
-        XCTAssertNil(s.update([car(x: 0.62, y: 0.52, width: 0.20, height: 0.13)], at: 0.4, lane: lane(at: 0.4)))
+        let original = try XCTUnwrap(confirm(&s, [car(y: 0.52, width: 0.20, height: 0.13)], bend: 0))
+        let outside = car(x: 0.62, y: 0.52, width: 0.20, height: 0.13)
+        for time in [0.4, 0.5, 0.6] {
+            let held = try XCTUnwrap(s.update([outside], at: time, lane: lane(at: time)))
+            XCTAssertEqual(held.id, original.id)
+            XCTAssertFalse(held.isFreshDetection)
+            XCTAssertFalse(held.isPathSupported)
+        }
+        XCTAssertNil(s.update([outside], at: 0.7, lane: lane(at: 0.7)))
     }
     func testAmbiguousTwoCarsDoNotShareRangeHistory() throws {
         var s = LeadSelector()

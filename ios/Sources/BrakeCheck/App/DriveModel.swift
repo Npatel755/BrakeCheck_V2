@@ -41,7 +41,7 @@ final class DriveModel: ObservableObject {
 
     private var estimator = LeadRiskContinuity()
     private var cameraRangeEstimator = CameraRangeEstimator()
-    let measurementRevision = "N12"
+    let measurementRevision = "N14"
     private var detectorMeasurementGeneration: Int?
 
     private var speedReading: GPSSpeedSample?
@@ -51,6 +51,7 @@ final class DriveModel: ObservableObject {
 
     private var targetID: UUID?
     private var currentCameraRisk: RiskSnapshot?
+    private var dangerContinuity = LeadDangerContinuity()
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -121,7 +122,10 @@ final class DriveModel: ObservableObject {
 
     @Published var egoAcceleration: Double?
 
-    @Published var risk = RiskSnapshot()
+    @Published var risk = RiskSnapshot() {
+        didSet { refreshDangerMeter(at: ProcessInfo.processInfo.systemUptime) }
+    }
+    @Published private(set) var dangerMeter = DangerMeterSnapshot()
 
     @Published var trackingBox: CGRect?
     @Published var lanePath: LanePath?
@@ -691,7 +695,7 @@ final class DriveModel: ObservableObject {
         gpsEstimateLeadEligible = false
         estimatedLeadSpeed = nil
         currentLeadConfidence = reading.confidence
-        trackingBox = reading.box
+        trackingBox = reading.displayBox ?? reading.box
 
         guard fresh else {
 
@@ -704,7 +708,7 @@ final class DriveModel: ObservableObject {
             collisionBlocker = "Camera delayed"
             leadSelectionStatus = "Lead \(reading.targetID.uuidString.prefix(4)) held · camera delayed"
             trackingCoasting = true
-            frameAlignmentStatus = String(format: "N12 · camera frame age %.0f ms · outside 0–600 ms freshness limit", (now - reading.uptime) * 1000)
+            frameAlignmentStatus = String(format: "\(measurementRevision) · camera frame age %.0f ms · outside 0–600 ms freshness limit", (now - reading.uptime) * 1000)
 
             invalidateRisk("Camera processing is behind. Estimates paused.")
 
@@ -716,7 +720,7 @@ final class DriveModel: ObservableObject {
             || (!reading.isPathSupported && !reading.hasConfirmedRearIdentity)
 
         rangeSource = reading.rangeSource
-        frameAlignmentStatus = String(format: "N12 · camera frame age %.0f ms", (now - reading.uptime) * 1000)
+        frameAlignmentStatus = String(format: "\(measurementRevision) · camera frame age %.0f ms", (now - reading.uptime) * 1000)
         leadTargetID = reading.hasConfirmedRearIdentity ? reading.targetID : nil
         leadRearEvidenceStatus = reading.isRearConfirmationRetained
             ? "Rear confirmation retained on the same vehicle ID · waiting for a fresh rear check"
@@ -841,7 +845,7 @@ final class DriveModel: ObservableObject {
                 // their inputs are available. Approach risk fills a missing
                 // absolute-speed estimate and can raise the TTC indication.
                 let lead = estimator.update(time: reading.uptime, distance: distance,
-                    egoSpeed: egoSpeed, gpsAge: gpsAge, confidence: reading.confidence)
+                    egoSpeed: egoSpeed, gpsAge: gpsAge, confidence: reading.confidence, camera: cameraRange)
                 risk = CollisionApproachRules.combine(lead: lead, approach: approach)
             } else { estimator.reset(); risk = approach }
             speedBlocker = risk.leadSpeed != nil ? "" : !reading.canEstimateLeadSpeed ? "Hazard target"
@@ -865,7 +869,7 @@ final class DriveModel: ObservableObject {
 
                                 gpsAge: gpsAge,
 
-                                confidence: reading.confidence)
+                                confidence: reading.confidence, camera: cameraRange)
 
         let cameraRisk = CollisionApproachRules.forConfirmedLead(lead: RiskSnapshot(), camera: cameraRange,
             confidence: reading.confidence, fresh: reading.isFreshDetection,
@@ -901,6 +905,7 @@ final class DriveModel: ObservableObject {
 
         let now = ProcessInfo.processInfo.systemUptime
         brakeWarningActive = brakeWarningLatch.isActive(at: now)
+        refreshDangerMeter(at: now)
 
         if demo {
 
@@ -1037,6 +1042,9 @@ final class DriveModel: ObservableObject {
     private func invalidateRisk(_ reason: String, preserveSamples: Bool = false) {
 
         estimatedLeadSpeed = nil
+        // GPS headway/braking evidence cannot remain in a presentation hold
+        // after its source expires. A current camera-only score starts fresh.
+        if reason.contains("GPS") { dangerContinuity.reset() }
 
         if reason.contains("GPS"), let cameraRisk = currentCameraRisk,
            (0...0.6).contains(ProcessInfo.processInfo.systemUptime - lastTrackingUptime) {
@@ -1061,6 +1069,16 @@ final class DriveModel: ObservableObject {
 
         if reason.contains("GPS") { speedBlocker = "Needs GPS"; collisionBlocker = "Needs GPS" }
 
+    }
+
+    private func refreshDangerMeter(at now: TimeInterval) {
+        if demo {
+            dangerContinuity.reset()
+            dangerMeter = DangerMeterSnapshot(level: risk.level, score: risk.score)
+            return
+        }
+        dangerMeter = dangerContinuity.update(targetID: targetID,
+            capturedAt: lastTrackingUptime, now: now, risk: risk)
     }
 
     private func updateImpactService() {
