@@ -22,8 +22,6 @@ jobs:
         run: xcodebuild -version && swift --version
 
       - name: Core unit tests (BrakeCheckCore)
-        # Reported but non-blocking until the current failures are known.
-        continue-on-error: true
         run: |
           set -o pipefail
           swift test --package-path Core 2>&1 | tee core.log || {
