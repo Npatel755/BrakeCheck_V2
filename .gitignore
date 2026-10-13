@@ -19,3 +19,5 @@ __pycache__/
 DerivedData/
 *.ipa
 .DS_Store
+# Local snapshot folders made before risky edits (keep them out of the repo)
+*-backup-*/
