@@ -31,6 +31,7 @@ jobs:
           grep -E "Executed [0-9]+ tests" core.log | tail -1 | while IFS= read -r line; do echo "::notice title=Core tests::$line"; done
 
       - name: Compile app for iOS
+        if: always()
         run: |
           set +e
           xcodebuild -scheme BrakeCheck \
@@ -50,6 +51,31 @@ jobs:
             tail -25 build.log | while IFS= read -r line; do echo "::notice title=build.log tail::$line"; done
           fi
           exit $status
+
+      - name: Detector packages are complete
+        # The app compiles without the Core ML weight files but can't load the detectors,
+        # so every file listed in the provenance JSON must be in the repo with the same hash.
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import hashlib, json, pathlib, sys
+          res = pathlib.Path("Sources/BrakeCheck/Resources")
+          pairs = {"DetectorModelData/Day": "RTMDetTiny", "DetectorModelData/Night": "RTMDetSmall"}
+          bad = 0
+          for package, card in pairs.items():
+              prov = json.loads((res / "ModelLicenses" / f"{card}-provenance.json").read_text())
+              for rel, want in prov["files"].items():
+                  f = res / package / rel
+                  if not f.is_file():
+                      print(f"::error title=Missing model file::{package}/{rel} is not in the repo (listed in {card}-provenance.json)")
+                      bad += 1
+                  elif hashlib.sha256(f.read_bytes()).hexdigest() != want:
+                      print(f"::error title=Model hash mismatch::{package}/{rel} doesn't match {card}-provenance.json")
+                      bad += 1
+                  else:
+                      print(f"ok  {package}/{rel}")
+          sys.exit(1 if bad else 0)
+          EOF
 
       - name: Upload logs
         if: always()

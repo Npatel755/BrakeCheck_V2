@@ -1,0 +1,5 @@
+# Core ML packages and model notices are hashed byte for byte (provenance JSON, model cache).
+# Never let Git convert their line endings on Windows checkouts.
+ios/Sources/BrakeCheck/Resources/** -text
+*.mlmodel binary
+*.bin binary
