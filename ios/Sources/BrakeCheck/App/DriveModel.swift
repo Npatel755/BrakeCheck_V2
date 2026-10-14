@@ -48,7 +48,7 @@ final class DriveModel: ObservableObject {
 
     private var estimator = LeadRiskContinuity()
     private var cameraRangeEstimator = CameraRangeEstimator()
-    let measurementRevision = "N33"
+    let measurementRevision = "N40"
     private var detectorMeasurementGeneration: Int?
 
     private var speedReading: GPSSpeedSample?
@@ -59,7 +59,8 @@ final class DriveModel: ObservableObject {
     private var targetID: UUID?
     private var currentCameraRisk: RiskSnapshot?
     private var dangerContinuity = LeadDangerContinuity()
-    private var laneDisplayContinuity = LaneDisplayContinuity()
+    private var laneDisplayContinuity = LaneDisplayContinuity(rejectOutliers: true, smoothingSeconds: 0.4)
+    private var roadDisplayContinuity = RoadDisplayContinuity()
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -89,6 +90,67 @@ final class DriveModel: ObservableObject {
 
     @Published var speed: Double?
     @Published private(set) var gpsSpeedEstimated = false
+    @Published private(set) var stationaryGPSConfirmed = false
+    func hasStationaryGPS(at time: TimeInterval) -> Bool {
+        foreground && tripActive && !demo && !replaying && speedReading?.isFreshStationary(at: time) == true
+    }
+    func hasMeasuredMovement(at time: TimeInterval) -> Bool { speedReading?.isConfidentlyMoving(at: time) == true }
+
+    private var navigationMountCalibration: CameraRouteCalibration {
+        let defaults = UserDefaults.standard
+        return CameraRouteCalibration(heightMeters: defaults.object(forKey: "navigation.mountHeight") as? Double ?? 1.4,
+            horizonOffset: defaults.double(forKey: "navigation.horizonOffset"), yawDegrees: defaults.double(forKey: "navigation.mountYaw"))
+    }
+    private func mountSignature(_ calibration: CameraRouteCalibration) -> String {
+        CameraMountVerification.signature(width: captureGeometry.width, height: captureGeometry.height,
+            fov: captureGeometry.horizontalFieldOfView, orientation: captureGeometry.videoOrientation.rawValue, calibration: calibration)
+    }
+    private var cameraOrientationSignature: String {
+        mountSignature(CameraRouteCalibration(heightMeters: navigationMountCalibration.heightMeters))
+    }
+    var cameraAlignmentVerified: Bool {
+        let signature = mountSignature(navigationMountCalibration)
+        return signature != "unavailable" && UserDefaults.standard.string(forKey: "navigation.verifiedMount") == signature
+    }
+    var cameraMountConfirmed: Bool {
+        let signature = cameraOrientationSignature
+        return signature != "unavailable" && (cameraAlignmentVerified
+            || UserDefaults.standard.string(forKey: "navigation.confirmedMount") == signature)
+    }
+    /// Parked setup saves the mount/height without needing visible lane paint.
+    /// Stable road geometry may finish alignment later, without driver input.
+    func confirmCameraMount(parkedAcknowledged: Bool) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard parkedAcknowledged, foreground, tripActive, !demo, !replaying,
+              cameraReady, !changingCameraGeometry, !hasMeasuredMovement(at: now) else { return false }
+        let calibration = navigationMountCalibration
+        let signature = cameraOrientationSignature
+        guard signature != "unavailable", calibration.heightMeters.isFinite, (0.5...3).contains(calibration.heightMeters) else { return false }
+        UserDefaults.standard.set(signature, forKey: "navigation.confirmedMount")
+        arPresentation.setMountConfirmed(true)
+        return true
+    }
+    private func completeRoadAlignmentForConfirmedMount(at now: TimeInterval) -> Bool {
+        // A saved pose is configuration; avoid rewriting defaults at camera frame cadence.
+        if cameraAlignmentVerified { return true }
+        guard cameraMountConfirmed, foreground, tripActive, !demo, !replaying, cameraReady, !changingCameraGeometry,
+              let record = cameraOrientationLock.record, record.signature == cameraOrientationSignature,
+              let scene = arScene, now >= scene.capturedAt, now - scene.capturedAt <= 0.35,
+              now >= scene.laneObservedAt, now - scene.laneObservedAt <= 0.8,
+              let lane = scene.lane, lane.isUsable(at: now),
+              lane.source != .markings || lane.confidence >= 0.85,
+              let fov = captureGeometry.horizontalFieldOfView,
+              let current = CameraCalibrationGeometry.estimate(lane: lane, fov: fov, aspect: captureGeometry.aspect),
+              CameraOrientationLock.agrees(current, record.estimate) else { return false }
+        let signature = mountSignature(navigationMountCalibration)
+        guard signature != "unavailable" else { return false }
+        let defaults = UserDefaults.standard
+        defaults.set(record.estimate.horizon, forKey: "navigation.verifiedHorizon")
+        defaults.set(record.estimate.yawDegrees, forKey: "navigation.verifiedYawEstimate")
+        defaults.set(signature, forKey: "navigation.verifiedMount")
+        arPresentation.setAlignmentLocked(true)
+        return true
+    }
     @Published private(set) var estimatedLeadSpeed: Double?
 
     @Published var gpsSimulated = false
@@ -138,9 +200,38 @@ final class DriveModel: ObservableObject {
     @Published var trackingBox: CGRect?
     @Published var lanePath: LanePath?
     @Published var roadRegion: RoadRegion?
+    @Published var roadDisplayRegion: RoadRegion?
+    let arPresentation = CameraARPresentation()
+    var arScene: CameraARScene? { arPresentation.scene }
+    var cameraCalibrationEstimate: CameraCalibrationEstimate? { arPresentation.calibrationEstimate }
+    private var arCameraVisible = false
+    private var arCalibrationVisible = false
+    func setARCameraVisible(_ visible: Bool) { arCameraVisible = visible; applyARDemand() }
+    func setARCalibrationVisible(_ visible: Bool) { arCalibrationVisible = visible; applyARDemand() }
+    func requestAutomaticCameraCalibration() {
+        cameraCalibrationAssistant = CameraCalibrationAssistant()
+        cameraOrientationLock.reset(); lastAppliedOrientation = nil
+        UserDefaults.standard.removeObject(forKey: "navigation.orientationRecord")
+        UserDefaults.standard.removeObject(forKey: "navigation.confirmedMount")
+        UserDefaults.standard.set("", forKey: "navigation.verifiedMount")
+        arPresentation.clearCalibration()
+    }
+    private func applyARDemand() {
+        camera.tracker.setARProcessingEnabled(arCameraVisible || arCalibrationVisible)
+        if !arCameraVisible && !arCalibrationVisible { arPresentation.reset() }
+    }
+    private var cameraCalibrationAssistant = CameraCalibrationAssistant()
+    private var calibrationGeometry: CaptureFrameGeometry?
+    private var cameraOrientationLock: CameraOrientationLock = {
+        let data = UserDefaults.standard.data(forKey: "navigation.orientationRecord")
+        let restored = data.flatMap { try? JSONDecoder().decode(CameraOrientationRecord.self, from: $0) }
+        return CameraOrientationLock(restored: restored)
+    }()
+    private var lastAppliedOrientation: CameraOrientationRecord?
     @Published var trackingCoasting = false
 
     @Published var trackingStatus = "Automatic lead candidate selection starts with the camera."
+    @Published private(set) var detectorReady = false
 
     @Published var cameraStatus = "Camera stopped"
 
@@ -333,12 +424,66 @@ final class DriveModel: ObservableObject {
                 if self.lanePath?.capturedAt != path?.capturedAt { self.lanePath = path }
             }
         }
+        camera.tracker.onDetectorReady = { [weak self] ready in
+            DispatchQueue.main.async {
+                guard let self, self.detectorReady != ready else { return }
+                self.detectorReady = ready
+            }
+        }
+        camera.tracker.onARScene = { [weak self] scene in
+            DispatchQueue.main.async {
+                guard let self, self.foreground, self.tripActive, !self.replaying, !self.demo,
+                      self.arCameraVisible || self.arCalibrationVisible,
+                      !self.changingCameraGeometry,
+                      scene.map({ $0.capturedAt >= self.latestGeometryChangeUptime }) ?? true else { return }
+                if self.calibrationGeometry != self.captureGeometry {
+                    self.cameraCalibrationAssistant = CameraCalibrationAssistant()
+                    self.calibrationGeometry = self.captureGeometry
+                }
+                let now = ProcessInfo.processInfo.systemUptime
+                let estimate = scene.flatMap { scene -> CameraCalibrationEstimate? in
+                    guard let lane = scene.lane, lane.source != .markings || lane.confidence >= 0.85,
+                          now >= scene.laneObservedAt, now - scene.laneObservedAt <= 0.8,
+                          let fov = self.captureGeometry.horizontalFieldOfView else { return nil }
+                    return CameraCalibrationGeometry.estimate(lane: lane, fov: fov, aspect: self.captureGeometry.aspect)
+                }
+                let suggestion = self.cameraCalibrationAssistant.update(estimate, observedAt: estimate == nil ? now : (scene?.laneObservedAt ?? now))
+                let defaults = UserDefaults.standard
+                let locked = self.cameraOrientationLock.update(suggestion,
+                    signature: self.cameraOrientationSignature,
+                    observedAt: scene?.laneObservedAt ?? now)
+                let record = self.cameraOrientationLock.record
+                if record != self.lastAppliedOrientation {
+                    if let record, let data = try? JSONEncoder().encode(record) {
+                        defaults.set(data, forKey: "navigation.orientationRecord")
+                    } else { defaults.removeObject(forKey: "navigation.orientationRecord") }
+                    if let locked, defaults.object(forKey: "navigation.automaticCalibration") == nil || defaults.bool(forKey: "navigation.automaticCalibration") {
+                        let verified = self.cameraAlignmentVerified
+                            && abs(locked.horizon - defaults.double(forKey: "navigation.verifiedHorizon")) <= 0.05
+                            && abs(locked.yawDegrees - defaults.double(forKey: "navigation.verifiedYawEstimate")) <= 3
+                        if !verified {
+                            defaults.set(min(30, max(-30, locked.yawDegrees)), forKey: "navigation.mountYaw")
+                            defaults.set(0.0, forKey: "navigation.horizonOffset")
+                            defaults.set("", forKey: "navigation.verifiedMount")
+                        }
+                    }
+                    self.lastAppliedOrientation = record
+                }
+                self.arPresentation.update(scene: scene, estimate: locked,
+                    calibrationProgress: self.cameraCalibrationAssistant.observationCount,
+                    alignmentLocked: self.cameraAlignmentVerified, mountConfirmed: self.cameraMountConfirmed)
+                _ = self.completeRoadAlignmentForConfirmedMount(at: now)
+
+            }
+        }
         camera.tracker.onRoad = { [weak self] road in
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo else { return }
                 guard !self.changingCameraGeometry,
                       road.map({ $0.capturedAt >= self.latestGeometryChangeUptime }) ?? true else { return }
                 if self.roadRegion?.capturedAt != road?.capturedAt { self.roadRegion = road }
+                let displayed = self.roadDisplayContinuity.update(road, at: ProcessInfo.processInfo.systemUptime)
+                if self.roadDisplayRegion?.capturedAt != displayed?.capturedAt { self.roadDisplayRegion = displayed }
             }
         }
 
@@ -359,8 +504,10 @@ final class DriveModel: ObservableObject {
                 self?.leadTargetID = nil
                 self?.leadRearEvidenceStatus = "Lead released · \(reason)"
                 self?.currentCameraRisk = nil
-                self?.speedBlocker = "Needs target"
-                self?.collisionBlocker = "Needs target"
+                let blocker = reason.localizedCaseInsensitiveContains("clipped") ? "Vehicle clipped"
+                    : reason.localizedCaseInsensitiveContains("detection gap") ? "Detection gap" : "Needs target"
+                self?.speedBlocker = blocker
+                self?.collisionBlocker = blocker
 
                 self?.trackingStatus = reason; self?.invalidateRisk(reason)
 
@@ -393,6 +540,9 @@ final class DriveModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self, self.replaying, self.replayGeneration == generation else { return }
                 self.stopReplay(status)
+                if status.hasPrefix("Could not") || status.hasPrefix("No video") || status.hasPrefix("No readable") {
+                    self.message = status
+                }
             }
         }
 
@@ -657,12 +807,16 @@ final class DriveModel: ObservableObject {
         cameraRange = CameraRangeSnapshot(reason: reason)
         collisionHazardID = nil
         currentCameraRisk = nil
-        speedBlocker = "Needs target"
-        collisionBlocker = "Needs target"
+        let blocker = reason.localizedCaseInsensitiveContains("clipped") ? "Vehicle clipped"
+            : reason.localizedCaseInsensitiveContains("detection gap") ? "Detection gap" : "Needs target"
+        speedBlocker = blocker
+        collisionBlocker = blocker
         frameAlignmentStatus = "Waiting for camera and GPS"
         laneDisplayContinuity.reset()
         lanePath = nil
         roadRegion = nil
+        roadDisplayContinuity.reset(); roadDisplayRegion = nil
+        arPresentation.reset(); cameraCalibrationAssistant = CameraCalibrationAssistant()
 
         trackingStatus = reason
 
@@ -1059,6 +1213,8 @@ final class DriveModel: ObservableObject {
         let displayedLane = laneDisplayContinuity.current(at: now)
         if lanePath?.capturedAt != displayedLane?.capturedAt { lanePath = displayedLane }
         if roadRegion?.isUsable(at: now) == false { roadRegion = nil }
+        let displayedRoad = roadDisplayContinuity.current(at: now)
+        if roadDisplayRegion?.capturedAt != displayedRoad?.capturedAt { roadDisplayRegion = displayedRoad }
         guard targetID != nil else { return }
         if !TrackingFreshness.identityIsFresh(capturedAt: lastTrackingUptime, now: now) {
             clearTarget("Vehicle track expired · reacquiring the lead")
@@ -1087,6 +1243,8 @@ final class DriveModel: ObservableObject {
     }
 
     private func refreshGPSDisplay(at now: TimeInterval) {
+        let stationary = hasStationaryGPS(at: now)
+        if stationaryGPSConfirmed != stationary { stationaryGPSConfirmed = stationary }
         guard tripActive, !demo, !replaying else {
             gpsSpeedEstimated = false; estimatedLeadSpeed = nil
             return

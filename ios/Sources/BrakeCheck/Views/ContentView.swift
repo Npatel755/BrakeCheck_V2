@@ -27,6 +27,7 @@ struct ContentView: View {
     @AppStorage("display.accent") private var accentChoice = "blue"
     @AppStorage("display.detectionBoxes") private var showDetections = true
     @AppStorage("display.lanes") private var showLanes = true
+    @AppStorage("navigation.cameraAR") private var cameraAR = true
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
     @State private var selecting = false
     @State private var selection: CGRect?
@@ -34,6 +35,7 @@ struct ContentView: View {
     @State private var stopping = false
     @State private var requestDemo = false
     @State private var showCheckin = false
+    @State private var showCameraSetup = false
     @State private var page: Page = .home
 
     init(model: DriveModel) {
@@ -53,6 +55,7 @@ struct ContentView: View {
         let reason = model.cameraRange.reason.lowercased()
         if reason.contains("gap ·") { return "Detection gap" }
         if reason.contains("delayed") || reason.contains("expired") { return "Camera delayed" }
+        if reason.contains("clipped") { return "Vehicle clipped" }
         if model.trackedDistance == nil { return "Needs target" }
         if reason.contains("confidence") { return "Low confidence" }
         if reason.contains("unsettled") { return "Range unsettled" }
@@ -74,7 +77,8 @@ struct ContentView: View {
     @ViewBuilder private func destinationPage(_ destination: HomeDestination) -> some View {
         switch destination {
         case .settings:
-            SettingsView(model: model, service: safety, settings: safety.settings, requestDemo: $requestDemo)
+            SettingsScreen(model: model, service: safety, settings: safety.settings, requestDemo: $requestDemo,
+                openCameraSetup: { destinationPath = []; page = .camera; showCameraSetup = true }).equatable()
         case .contacts: ContactsView(service: safety)
         case .incidents: IncidentListView(model: model)
         case .tripHistory: TripHistoryView(model: model, useMPH: useMPH)
@@ -136,6 +140,7 @@ struct ContentView: View {
             if requested { destinationPath = [] }
         }
         .onChange(of: destinationPath) { _, destinations in
+            updateARDemand()
             navigation.setPageVisible(destinations.isEmpty && page == .navigation && !selecting)
             if destinations.isEmpty { presentPendingCheckin() }
         }
@@ -154,6 +159,23 @@ struct ContentView: View {
         .onChange(of: model.replaying) { _, active in if active { page = .camera } }
         .onChange(of: model.demo) { _, active in if active { page = .camera } }
         .task { await safety.connectIfPaired() }
+        .onAppear { updateARDemand() }
+        .onChange(of: page) { _, _ in updateARDemand() }
+        .onChange(of: navigation.isNavigating) { _, _ in updateARDemand() }
+        .onChange(of: cameraAR) { _, _ in updateARDemand() }
+        .onChange(of: selecting) { _, _ in updateARDemand() }
+        .onDisappear { model.setARCameraVisible(false) }
+        .overlay {
+            if showCameraSetup {
+                CameraCalibrationOverlay(model: model, presentation: model.arPresentation, cameraAR: $cameraAR,
+                    onClose: { showCameraSetup = false })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: showCameraSetup)
+    }
+    private func updateARDemand() {
+        model.setARCameraVisible(page == .camera && cameraAR && !selecting && destinationPath.isEmpty)
     }
 
     private var homePage: some View {
@@ -234,8 +256,18 @@ struct ContentView: View {
     }
 
     private func riskPill(large: Bool) -> some View {
-        RiskPill(risk: model.risk, critical: critical,
-                 meter: model.dangerMeter, large: large)
+        VStack(spacing: 4) {
+            RiskPill(risk: model.risk, critical: critical,
+                 meter: model.dangerMeter, large: large,
+                 unavailableTitle: !model.demo && !model.replaying && !model.detectorReady
+                    ? (model.detectorStatus.contains("could not load") ? "Detection unavailable" : "Preparing detection") : nil)
+            if !critical && !model.demo && !model.replaying && !model.detectorReady && model.detectorStatus.contains("could not load") {
+                Button("Detection failed · tap for details") { model.message = model.detectorStatus }
+                    .font(.caption).foregroundStyle(BrakeTheme.caution)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(.black.opacity(0.65), in: Capsule())
+            }
+        }
     }
 
     private func presentPendingCheckin() {
@@ -262,9 +294,13 @@ struct ContentView: View {
                     CameraPreview(session: model.camera.session, orientation: model.captureGeometry.videoOrientation)
                 }
                 if (model.cameraReady || model.replaying) && !model.demo && !model.changingCameraGeometry {
+                    if page == .camera && !model.replaying && !selecting && destinationPath.isEmpty {
+                        CameraNavigationOverlay(navigation: navigation, presentation: model.arPresentation, geometry: model.captureGeometry)
+                    }
                     if showLanes && !selecting {
-                        RoadAreaOverlay(road: model.roadRegion)
-                        LeadCorridorOverlay(lane: model.lanePath)
+                        CameraPerceptionOverlay(presentation: model.arPresentation, lane: model.lanePath,
+                            road: model.roadDisplayRegion,
+                            navigationOnCamera: page == .camera && navigation.isNavigating && cameraAR)
                     }
                     if showDetections && !selecting {
                         DetectionOverlay(detections: model.detections, hazardTargetID: model.collisionHazardID,
@@ -313,9 +349,16 @@ struct ContentView: View {
 
     private var landscapeHUD: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 brand(size: 25)
                 Spacer(minLength: 0)
+                if page == .camera && cameraAR && navigation.isNavigating && !selecting {
+                    CameraNavigationStatusView(navigation: navigation, presentation: model.arPresentation,
+                        onSetup: { showCameraSetup = true })
+                        .frame(maxWidth: 280, alignment: .trailing)
+                } else {
+                    cameraSetupShortcut
+                }
             }
             if critical || (running && !selecting) {
                 riskPill(large: false)
@@ -335,9 +378,13 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 brand(size: 19)
                 Spacer(minLength: 0)
+                cameraSetupShortcut
             }
             if critical || (running && !selecting) {
                 riskPill(large: true)
+            }
+            if page == .camera && cameraAR && navigation.isNavigating && !selecting {
+                CameraNavigationStatusView(navigation: navigation, presentation: model.arPresentation, onSetup: { showCameraSetup = true })
             }
             Spacer(minLength: 0)
             if selecting { calibrationControls }
@@ -348,6 +395,12 @@ struct ContentView: View {
     }
 
     // MARK: - Controls
+
+    @ViewBuilder private var cameraSetupShortcut: some View {
+        if page == .camera && running && !model.replaying && !model.demo && !selecting && !navigation.isNavigating {
+            CameraAlignmentShortcut(presentation: model.arPresentation, onOpen: { showCameraSetup = true })
+        }
+    }
 
     private func brand(size: CGFloat) -> some View {
         HStack(spacing: 10) {

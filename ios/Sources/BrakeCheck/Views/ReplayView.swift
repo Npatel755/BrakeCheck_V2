@@ -18,11 +18,12 @@ struct ReplayView: View {
     @State private var error: String?
 
     enum VideoChoice: Equatable { case incident(UUID), file(URL) }
-    enum SpeedChoice: Hashable { case automatic, saved(URL), imported, assumed }
+    enum SpeedChoice: Hashable { case videoOnly, automatic, saved(URL), imported, assumed }
     enum ImportKind { case video, speedLog }
 
     private var replayable: [IncidentManifest] { model.incidents.filter { !$0.segments.isEmpty } }
     private var savedLogs: [URL] { SpeedLogReader.savedLogs() }
+    private var isImportedVideo: Bool { if case .file = video { return true }; return false }
 
     var body: some View {
         Group {
@@ -32,6 +33,12 @@ struct ReplayView: View {
                         Label(model.replayStatus, systemImage: "play.rectangle.fill")
                         Button("Stop replay", role: .destructive) { model.stopReplay() }
                     }
+                } else if model.replayStatus.hasPrefix("Could not") || model.replayStatus.hasPrefix("No video")
+                            || model.replayStatus.hasPrefix("No readable") {
+                    Section {
+                        Label(model.replayStatus, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 Section("1 · Recorded drive") {
@@ -40,7 +47,10 @@ struct ReplayView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     ForEach(replayable) { incident in
-                        Button { video = .incident(incident.id) } label: {
+                        Button {
+                            video = .incident(incident.id)
+                            if speedChoice == .videoOnly { speedChoice = .automatic }
+                        } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(incident.triggerTime.formatted(date: .abbreviated, time: .standard))
@@ -65,11 +75,16 @@ struct ReplayView: View {
                             Label("Import a video from Files…", systemImage: "folder")
                         }
                     }
+                    Text("Save a video to Files on this iPhone before importing it. A video still on your computer will not appear here.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("2 · Speed during that drive") {
                     Picker("Speed source", selection: $speedChoice) {
-                        Text("Match a saved trip log automatically").tag(SpeedChoice.automatic)
+                        Text("Video only · no speed").tag(SpeedChoice.videoOnly)
+                        if !isImportedVideo {
+                            Text("Match a saved trip log automatically").tag(SpeedChoice.automatic)
+                        }
                         ForEach(savedLogs, id: \.self) { url in
                             Text(url.deletingPathExtension().lastPathComponent).tag(SpeedChoice.saved(url))
                         }
@@ -87,7 +102,10 @@ struct ReplayView: View {
                         Label("Import GPX or CSV from a GPS logger app…", systemImage: "square.and.arrow.down")
                     }
 
-                    if speedChoice == .assumed {
+                    if speedChoice == .videoOnly {
+                        Text("Replay shows vehicle, lane, and road detections. Camera route AR needs synchronized GPS and route data and is available during live navigation only.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if speedChoice == .assumed {
                         Stepper(String(format: "%.0f mph", assumedMPH), value: $assumedMPH, in: 5...80, step: 5)
                         Text("Lead-car speed and deceleration will be estimates built on this assumption, and the screen says so.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -133,6 +151,7 @@ struct ReplayView: View {
             switch kind {
             case .video:
                 video = .file(local)
+                if speedChoice == .automatic { speedChoice = .videoOnly }
             case .speedLog:
                 importedTrack = try SpeedLogReader.load(local)
                 speedChoice = .imported
@@ -178,9 +197,11 @@ struct ReplayView: View {
             var track: SpeedTrack?
             var assumed: Double?
             switch speedChoice {
+            case .videoOnly:
+                break
             case .automatic:
                 guard let recordedAt = selected.first?.start else {
-                    error = "An imported video has no BrakeCheck clock time. Pick its speed log or an assumed speed."
+                    error = "This video has no BrakeCheck clock time. Choose Video only, a matching speed log, or assumed speed."
                     return
                 }
                 track = savedLogs.lazy.compactMap { try? SpeedLogReader.load($0) }.first(where: { $0.covers(recordedAt) })

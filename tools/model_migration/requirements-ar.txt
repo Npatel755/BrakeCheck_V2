@@ -1,0 +1,7 @@
+torch==2.7.1
+torchvision==0.22.1
+coremltools==8.3.0
+transformers==4.51.3
+gdown==6.4.2
+pillow
+scipy

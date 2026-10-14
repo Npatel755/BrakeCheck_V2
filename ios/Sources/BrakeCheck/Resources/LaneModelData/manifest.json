@@ -1,0 +1,44 @@
+{
+  "models": [
+    {
+      "name": "UFLDLane",
+      "input": [
+        1,
+        3,
+        288,
+        800
+      ],
+      "output": "lane_logits",
+      "source": "https://github.com/cfzd/Ultra-Fast-Lane-Detection",
+      "checkpoint_url": "https://drive.google.com/uc?id=1zXBRTw50WOzvUp6XKsi8Zrk3MUC3uFuq",
+      "checkpoint_sha256": "7cb18e128fda9f7f6be36a338dd8e7a2a948ce2a03dad878f0e651409b4a5b51",
+      "license": "MIT",
+      "preprocessing": "RGB bytes; ImageNet normalization; stretch full frame",
+      "decoder": "CULane anchors; 200 bins plus no-lane class; [1,201,18,4]"
+    },
+    {
+      "name": "SegFormerRoad",
+      "input": [
+        1,
+        3,
+        384,
+        640
+      ],
+      "output": "road_scores",
+      "source": "https://huggingface.co/nvidia/segformer-b0-finetuned-cityscapes-1024-1024",
+      "revision": "21b3847fae21ddee674abd31129307b6a1235bd9",
+      "license": "NVIDIA Source Code License for SegFormer; non-commercial research/evaluation",
+      "license_url": "https://github.com/NVlabs/SegFormer/blob/master/LICENSE",
+      "preprocessing": "RGB bytes; ImageNet normalization; stretch full frame",
+      "decoder": "[1,2,384,640] softmax probabilities: non-road, road"
+    }
+  ],
+  "files": {
+    "SegFormerRoad.mlpackage/Data/com.apple.CoreML/model.mlmodel": "943e8fbfa71663c8218e69e9580248260c17248a869786bbb75f2c370b83f439",
+    "SegFormerRoad.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "477f10bd51a02cfac0db2a819c454ffb09709e2011e23a00d8ee337e6ce6f0a1",
+    "SegFormerRoad.mlpackage/Manifest.json": "02821e7a6f902a2312469dce6e6c4e859ddc728e9f2af13c832ec5ebf7c40717",
+    "UFLDLane.mlpackage/Data/com.apple.CoreML/model.mlmodel": "9eb4a1fdbe9e74ffa32114193af05ed59b1fd0cc534e3a01a3c35c8d04584694",
+    "UFLDLane.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "b1066e24ffb3bee79244eadf73d2eeec0913b3e1e3b377c14f737f7c2e5480f3",
+    "UFLDLane.mlpackage/Manifest.json": "cf8afdd8ce6f9b08c360dab7ff92ef1958a68008e84dc58147f9570f3c49ce9f"
+  }
+}

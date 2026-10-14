@@ -1,4 +1,5 @@
 import AVFoundation
+import BrakeCheckCore
 import SwiftUI
 import UIKit
 
@@ -43,15 +44,42 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     }
 }
 
+/// Prevent parent dashboard camera updates from rebuilding this destination.
+/// The child still observes its own settings, connection and control state.
+struct SettingsScreen: View, Equatable {
+    let model: DriveModel
+    let service: SafetyService
+    let settings: ConnectionSettings
+    @Binding var requestDemo: Bool
+    var openCameraSetup: (() -> Void)? = nil
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.model === rhs.model && lhs.service === rhs.service && lhs.settings === rhs.settings
+            && lhs.requestDemo == rhs.requestDemo
+    }
+    var body: some View {
+        SettingsView(model: model, arPresentation: model.arPresentation, service: service, settings: settings, requestDemo: $requestDemo, openCameraSetup: openCameraSetup)
+    }
+}
+
 struct SettingsView: View {
-    @ObservedObject var model: DriveModel
+    let model: DriveModel
+    let arPresentation: CameraARPresentation
     @ObservedObject var service: SafetyService
     @ObservedObject var settings: ConnectionSettings
+    @State private var tripActive = false
+    @State private var stopping = false
+    @State private var demoMode = false
+    @State private var impactEnabled = false
+    @State private var storageBytes: Int64?
+    @State private var voiceOptions: [AVSpeechSynthesisVoice] = []
+    @State private var voicePageVisible = false
+    @State private var voiceLanguage: String?
     @State private var busy = false
     @State private var pairing = false
     @State private var showingPairingScanner = false
     @State private var selectedCategory: SettingsCategory = .appearance
     @Binding var requestDemo: Bool
+    var openCameraSetup: (() -> Void)? = nil
     @AppStorage("display.appearance") private var appearance = "dark"
     @AppStorage("display.accent") private var accentChoice = "blue"
     @AppStorage("voice.selectedVoice") private var selectedVoice = ""
@@ -61,6 +89,7 @@ struct SettingsView: View {
     @AppStorage("display.detectionBoxes") private var showDetections = true
     @AppStorage("display.lanes") private var showLanes = true
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
+    @AppStorage("navigation.cameraAR") private var cameraAR = true
     @AppStorage("recording.limitGB") private var recordingLimitGB = 0
     @AppStorage("recording.retentionDays") private var recordingRetentionDays = 0
     @State private var pendingRetentionDays = 0
@@ -143,7 +172,12 @@ struct SettingsView: View {
         .background(BrakeTheme.background)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: settings.language) { _, _ in selectedVoice = "" }
+        .onReceive(model.$tripActive.removeDuplicates()) { tripActive = $0 }
+        .onReceive(model.$stopping.removeDuplicates()) { stopping = $0 }
+        .onReceive(model.$demo.removeDuplicates()) { demoMode = $0 }
+        .onReceive(model.$impactEnabled.removeDuplicates()) { impactEnabled = $0 }
+        .onReceive(model.$recordingStorageBytes.removeDuplicates()) { storageBytes = $0 }
+        .onChange(of: settings.language) { _, _ in selectedVoice = ""; refreshVoiceOptions() }
         .onChange(of: backendAlerts) { _, enabled in
             if enabled { Task { await service.prepareVoice() } }
         }
@@ -210,6 +244,12 @@ struct SettingsView: View {
         .foregroundStyle(BrakeTheme.text)
         .navigationTitle(category.title)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            voicePageVisible = category == .voice
+            if voicePageVisible { voiceLanguage = nil; refreshVoiceOptions() }
+        }
+        .onDisappear { if category == .voice { voicePageVisible = false } }
+        .id(category)
         .fullScreenCover(isPresented: $showingPairingScanner) {
             PairingScannerSheet { beginPairing($0) }
         }
@@ -260,9 +300,11 @@ struct SettingsView: View {
             Toggle("Show vehicle boxes", isOn: $showDetections)
             Toggle("Show lane and road overlay", isOn: $showLanes)
             Toggle("Show full camera frame", isOn: $showFullFrame)
+            Toggle("Directions on the road", isOn: $cameraAR)
+            CameraCalibrationControls(model: model, presentation: arPresentation, cameraAR: $cameraAR, openCameraSetup: openCameraSetup)
             Text("These preferences also apply to replayed drives.").foregroundStyle(BrakeTheme.muted)
         case .recordings:
-            LabeledContent("Video space used", value: model.recordingStorageBytes.map {
+            LabeledContent("Video space used", value: storageBytes.map {
                 ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
             } ?? "Checking…")
             Picker("Recording storage limit", selection: $recordingLimitGB) {
@@ -329,7 +371,7 @@ struct SettingsView: View {
             Toggle("Spoken alerts and crash check-in", isOn: $settings.voiceEnabled)
             Picker("Device voice", selection: $selectedVoice) {
                 Text("Original BrakeCheck voice").tag("")
-                ForEach(SpeechVoicePreferences.availableVoices(language: settings.language), id: \.identifier) { voice in
+                ForEach(voiceOptions, id: \.identifier) { voice in
                     Text(SpeechVoicePreferences.label(voice)).tag(voice.identifier)
                 }
             }
@@ -343,7 +385,7 @@ struct SettingsView: View {
                 SpeechVoicePreferences.restoreOriginalDefaults()
             }
             Button("Preview voice") { service.previewVoice() }
-                .disabled(model.tripActive || service.checkinPresented)
+                .disabled(tripActive || service.checkinPresented)
             Text("Device voices apply to directions and brake alerts. Preview while parked. Brake warnings remain clear and at full volume.")
                 .font(.caption).foregroundStyle(BrakeTheme.muted)
             Toggle("Use ElevenLabs for brake alerts", isOn: $backendAlerts)
@@ -363,9 +405,9 @@ struct SettingsView: View {
             Text("The microphone records a 6-second reply after the check-in prompt ends. Your backend sends that reply to ElevenLabs.")
                 .font(.caption).foregroundStyle(BrakeTheme.muted)
         case .safety:
-            Toggle("Experimental impact detection", isOn: $model.impactEnabled).disabled(model.demo)
+            Toggle("Experimental impact detection", isOn: Binding(get: { impactEnabled }, set: { model.impactEnabled = $0 })).disabled(demoMode)
             Toggle("Start an emergency check-in on impact", isOn: $settings.autoCheckin)
-                .disabled(!model.impactEnabled || settings.client == nil)
+                .disabled(!impactEnabled || settings.client == nil)
             Text("An enabled check-in can message confirmed contacts if you ask for help or do not respond. A phone drop can trigger it. No emergency services are called automatically.")
                 .font(.caption).foregroundStyle(BrakeTheme.muted)
         case .permissions:
@@ -375,8 +417,8 @@ struct SettingsView: View {
             Text("Keep BrakeCheck visible for camera recording. Video pauses when the phone locks or the app goes into the background.")
                 .foregroundStyle(BrakeTheme.muted)
         case .demo:
-            Toggle("Simulated driving metrics", isOn: Binding(get: { model.demo }, set: { model.setDemo($0) }))
-                .disabled(model.tripActive || model.stopping)
+            Toggle("Simulated driving metrics", isOn: Binding(get: { demoMode }, set: { model.setDemo($0) }))
+                .disabled(tripActive || stopping)
             Button("Run crash check-in demo") { requestDemo = true }
                 .disabled(settings.client == nil)
             Text("The check-in demo can use ElevenLabs credits but never sends emergency messages.")
@@ -394,6 +436,11 @@ struct SettingsView: View {
                 await service.connect()
             } catch { service.error = error.localizedDescription }
         }
+    }
+    private func refreshVoiceOptions() {
+        guard voicePageVisible, voiceLanguage != settings.language else { return }
+        voiceLanguage = settings.language
+        voiceOptions = SpeechVoicePreferences.availableVoices(language: settings.language)
     }
 }
 

@@ -62,8 +62,8 @@ Keep using your existing xtool/WSL setup. Open **BrakeCheck/ios**, the folder co
 
 ```bash
 cd /path/to/BrakeCheck/ios
-xtool dev build
-xtool dev
+xtool dev build -c release
+xtool dev run -c release
 ```
 
 To package a release IPA without waiting for a connected iPhone, run this from the same `ios` directory:
@@ -73,7 +73,7 @@ xtool dev build --configuration release --ipa
 ls -lh xtool/BrakeCheck.ipa
 ```
 
-The IPA is written to `ios/xtool/BrakeCheck.ipa`. `xtool dev` remains the connected-device signing and install flow.
+The IPA is written to `ios/xtool/BrakeCheck.ipa`. `xtool dev run -c release` is the connected-device signing and install flow. Use Release for on-device performance testing; the default Debug configuration adds substantial overhead to pixel processing.
 
 The app requires iOS 17+. The bundle ID is `com.brakecheck.prototype`. If your signing setup needs a unique ID, change it in `ios/xtool.yml`. The renamed bundle installs separately from the old RoadWatch app, so old incidents are not migrated automatically; export any clips you need from the old app first.
 

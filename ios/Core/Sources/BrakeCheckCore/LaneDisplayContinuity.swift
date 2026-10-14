@@ -5,8 +5,15 @@ import Foundation
 public struct LaneDisplayContinuity {
     public static let holdSeconds: TimeInterval = 3
     private var displayed: LanePath?
-    public init() {}
-    public mutating func reset() { displayed = nil }
+    private var pending: LanePath?
+    private var pendingCount = 0
+    private let rejectOutliers: Bool
+    private let smoothingSeconds: Double
+    public init(rejectOutliers: Bool = false, smoothingSeconds: Double = 0.25) {
+        self.rejectOutliers = rejectOutliers
+        self.smoothingSeconds = smoothingSeconds.isFinite ? max(0.05, smoothingSeconds) : 0.25
+    }
+    public mutating func reset() { displayed = nil; pending = nil; pendingCount = 0 }
 
     public func current(at now: TimeInterval) -> LanePath? {
         guard let displayed, now.isFinite, now >= displayed.capturedAt,
@@ -19,8 +26,30 @@ public struct LaneDisplayContinuity {
         guard let lane, lane.isUsable(at: now) else { return current(at: now) }
         guard let prior = current(at: now) else { displayed = lane; return lane }
         guard lane.capturedAt > prior.capturedAt else { return prior }
+        if rejectOutliers {
+            if prior.source != .markings, lane.source == .markings, now - prior.capturedAt <= 0.8 { return prior }
+            let shifts = lane.bands.compactMap { band -> Double? in
+                guard let old = prior.bounds(at: band.y) else { return nil }
+                return max(abs(old.left - band.left), abs(old.right - band.right))
+            }
+            if !shifts.isEmpty, shifts.reduce(0, +) / Double(shifts.count) > 0.10 {
+                if let pending, lane.capturedAt <= pending.capturedAt { return prior }
+                let agrees = pending.map { candidate in
+                    let shared = lane.bands.compactMap { band -> Double? in
+                        guard let old = candidate.bounds(at: band.y) else { return nil }
+                        return max(abs(old.left - band.left), abs(old.right - band.right))
+                    }
+                    return lane.capturedAt - candidate.capturedAt <= 0.6 && shared.count >= 3
+                        && shared.reduce(0, +) / Double(shared.count) <= 0.06
+                } ?? false
+                pendingCount = agrees ? pendingCount + 1 : 1
+                pending = lane
+                guard pendingCount >= 3 else { return prior }
+            }
+            pending = nil; pendingCount = 0
+        }
         let elapsed = lane.capturedAt - prior.capturedAt
-        let alpha = 1 - exp(-elapsed / 0.25)
+        let alpha = 1 - exp(-elapsed / smoothingSeconds)
         let bands = lane.bands.map { band -> LaneBand in
             guard let old = prior.bounds(at: band.y),
                   max(abs(old.left - band.left), abs(old.right - band.right)) <= 0.12,

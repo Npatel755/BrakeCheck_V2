@@ -13,10 +13,10 @@ struct RoadAreaOverlay: View {
                 }
                 path.move(to: point(first.left, first.y))
                 for band in bands.dropFirst() { path.addLine(to: point(band.left, band.y)) }
-                for band in bands.reversed() { path.addLine(to: point(band.right, band.y)) }
-                path.closeSubpath()
+                path.move(to: point(first.right, first.y))
+                for band in bands.dropFirst() { path.addLine(to: point(band.right, band.y)) }
             }
-            path.fill(BrakeTheme.accentColor(named: accentChoice).opacity(0.055))
+            // Bounds can bridge foreground holes; diagnostic road spans only draw an outline.
             path.stroke(BrakeTheme.accentColor(named: accentChoice).opacity(0.60), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
         }.allowsHitTesting(false)
     }
@@ -37,13 +37,28 @@ struct LeadCorridorOverlay: View {
                 }
                 path.move(to: point(first.left, first.y))
                 for band in bands.dropFirst() { path.addLine(to: point(band.left, band.y)) }
-                for band in bands.reversed() { path.addLine(to: point(band.right, band.y)) }
-                path.closeSubpath()
+                path.move(to: point(first.right, first.y))
+                for band in bands.dropFirst() { path.addLine(to: point(band.right, band.y)) }
             }
-            path.fill(BrakeTheme.accentColor(named: accentChoice).opacity(0.07))
-            path.stroke(BrakeTheme.accentColor(named: accentChoice).opacity(0.75), lineWidth: 2)
+            // Paint-only fallback is provisional, not verified road alignment.
+            path.stroke(BrakeTheme.accentColor(named: accentChoice).opacity(lane?.source == .markings ? 0.30 : 0.75),
+                style: StrokeStyle(lineWidth: lane?.source == .markings ? 1 : 2, dash: lane?.source == .markings ? [5, 4] : []))
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// AR confidence affects ribbon rendering, not ordinary lane visibility.
+struct CameraPerceptionOverlay: View {
+    @ObservedObject var presentation: CameraARPresentation
+    let lane: LanePath?
+    let road: RoadRegion?
+    let navigationOnCamera: Bool
+    var body: some View {
+        if !navigationOnCamera || presentation.level != .aligned {
+            RoadAreaOverlay(road: road)
+            LeadCorridorOverlay(lane: lane)
+        }
     }
 }
 

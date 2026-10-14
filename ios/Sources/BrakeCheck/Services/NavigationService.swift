@@ -58,6 +58,13 @@ final class NavigationService: NSObject, ObservableObject {
     @Published private(set) var isCalculating = false
     @Published private(set) var destinationTitle: String?
     @Published private(set) var route: MKRoute?
+    private(set) var cameraRouteCoordinates: [NavigationCoordinate] = []
+    @Published private(set) var cameraMapMatchConfidence = 0.0
+    @Published private(set) var cameraMapMatchAmbiguous = true
+    var cameraRouteProgress: Double? {
+        guard let route, route.distance > 0, let remainingDistance else { return nil }
+        return min(1, max(0, 1 - remainingDistance / route.distance))
+    }
     @Published private(set) var isNavigating = false
     @Published private(set) var hasArrived = false
     @Published private(set) var instruction = "Choose a destination"
@@ -513,12 +520,14 @@ final class NavigationService: NSObject, ObservableObject {
     }
 
     private func resetProgress() {
-        guard let route else { routeProgress = nil; return }
+        cameraMapMatchConfidence = 0; cameraMapMatchAmbiguous = true
+        guard let route else { routeProgress = nil; cameraRouteCoordinates = []; return }
         let coordinates = UnsafeBufferPointer(start: route.polyline.points(), count: route.polyline.pointCount)
             .map { point -> NavigationCoordinate in
                 let coordinate = point.coordinate
                 return NavigationCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
             }
+        cameraRouteCoordinates = coordinates
         routeProgress = NavigationProgressTracker(coordinates: coordinates,
             routeDistance: route.distance, stepDistances: steps.map(\.distance))
     }
@@ -561,11 +570,14 @@ final class NavigationService: NSObject, ObservableObject {
                 latitude: fix.coordinate.latitude, longitude: fix.coordinate.longitude),
                 horizontalAccuracy: fix.horizontalAccuracy,
                 timestamp: fix.timestamp.timeIntervalSinceReferenceDate,
-                now: Date().timeIntervalSinceReferenceDate) else {
+                now: Date().timeIntervalSinceReferenceDate, courseDegrees: fix.course,
+                courseAccuracy: fix.courseAccuracy, speed: fix.speed) else {
             pauseMeasurements("GPS paused · waiting for a reliable route position")
             return
         }
         routeProgress = progress
+        cameraMapMatchConfidence = snapshot.mapMatchConfidence
+        cameraMapMatchAmbiguous = snapshot.mapMatchAmbiguous
         isPaused = false
         if !snapshot.offRoute, snapshot.distanceFromRoute > max(35, fix.horizontalAccuracy * 2 + 10) {
             pauseMeasurements("Checking route position · waiting for reliable GPS")
@@ -633,6 +645,7 @@ final class NavigationService: NSObject, ObservableObject {
     }
 
     private func pauseMeasurements(_ reason: String) {
+        cameraMapMatchConfidence = 0; cameraMapMatchAmbiguous = true
         stopSpeaking()
         if isNavigating && !hasArrived {
             isPaused = true

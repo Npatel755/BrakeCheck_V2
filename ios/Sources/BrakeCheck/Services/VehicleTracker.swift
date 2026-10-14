@@ -78,6 +78,8 @@ final class VehicleTracker {
     private var detectionPresentation = VehicleDetectionPresentation()
     private var lastVehicleBoxes: [CGRect] = []
     private var lastVehicleBoxesTime: TimeInterval = -.infinity
+    private var lastObstacleBoxes: [CGRect] = []
+    private var lastObstacleTime: TimeInterval = -.infinity
     private var motionGuard = VehicleMotionGuard()
     private var rangeHistory = VehicleRangeHistory()
     private var egoSamples: [GPSSpeedSample] = []
@@ -85,6 +87,28 @@ final class VehicleTracker {
     private var automaticSequence = VNSequenceRequestHandler()
     var onLane: ((LanePath?) -> Void)?
     var onRoad: ((RoadRegion?) -> Void)?
+    var onARScene: ((CameraARScene?) -> Void)?
+    private var arProcessingEnabled = false
+    private var lastARPublication: TimeInterval = -.infinity
+    func setARProcessingEnabled(_ enabled: Bool) {
+        queue.async {
+            guard self.arProcessingEnabled != enabled else { return }
+            self.arProcessingEnabled = enabled
+            self.laneTracker.setARProcessingEnabled(enabled)
+            self.lastARPublication = -.infinity
+            if !enabled { self.onARScene?(nil) }
+        }
+    }
+    private func publishARScene() {
+        guard arProcessingEnabled else { return }
+        guard let scene = laneTracker.arScene else { onARScene?(nil); return }
+        guard scene.capturedAt - lastARPublication >= 0.19 else { return }
+        lastARPublication = scene.capturedAt
+        let fresh = scene.capturedAt >= lastObstacleTime && scene.capturedAt - lastObstacleTime <= 0.4
+        onARScene?(CameraARScene(lane: scene.lane, road: scene.road, laneObservedAt: scene.laneObservedAt,
+            roadObservedAt: scene.roadObservedAt, capturedAt: scene.capturedAt,
+            obstacles: fresh ? lastObstacleBoxes : [], obstaclesFresh: fresh, isPredicted: scene.isPredicted))
+    }
     private var referenceDistance = 0.0
     private var referenceWidth = 0.0
     private var horizontalFOV: Double?
@@ -93,6 +117,9 @@ final class VehicleTracker {
     var onLost: ((UUID, String) -> Void)?
     var onDetections: (([VehicleDetection], TimeInterval) -> Void)?
     var onStatus: ((String) -> Void)?
+    var onDetectorReady: ((Bool) -> Void)?
+    private let loadingQueue = DispatchQueue(label: "BrakeCheck.detector-loading", qos: .utility)
+    private var lowLightLoading = false
     var onLeadStatus: ((String) -> Void)?
     var onLightingStatus: ((String) -> Void)?
     init() {
@@ -120,29 +147,48 @@ final class VehicleTracker {
     /// Runs model loading off the camera callback thread.
     func prepare() {
         queue.async {
-            self.laneTracker.prepare()
-            self.headingTracker.prepare()
             guard !self.prepared else { return }
             self.prepared = true
+            self.onDetectorReady?(false)
             self.report("Loading RTMDet Core ML model...")
+            self.loadingQueue.async {
             do {
                 let request = try self.makeDetector(from: self.locateModel(), name: "standard")
+                self.queue.async {
                 self.standardDetector = request
                 self.detector = request
-                self.report("RTMDet-tiny ready · loading low-light detector…")
-                do {
-                    self.lowLightDetector = try self.makeDetector(from: self.locateLowLightModel(), name: "night")
-                    self.lowLightError = nil
-                    self.report("N31 · RTMDet-tiny + RTMDet-small ready")
-                } catch {
-                    self.lowLightError = error.localizedDescription
-                    self.report("RTMDet-tiny ready · low-light fallback: \(error.localizedDescription)")
-                }
+                self.onDetectorReady?(true)
+                self.report("RTMDet-tiny ready")
+                self.headingTracker.prepare()
+                self.laneTracker.prepare()
                 self.publishLighting(at: ProcessInfo.processInfo.systemUptime, force: true)
+                }
             } catch {
+                self.queue.async {
                 self.prepared = false // allow a later retry
                 self.detector = nil
+                self.onDetectorReady?(false)
                 self.report("RTMDet model could not load: \(error.localizedDescription)")
+                }
+            }
+            }
+        }
+    }
+    private func prepareLowLightIfNeeded() {
+        guard standardDetector != nil, lowLightDetector == nil, !lowLightLoading, lowLightError == nil else { return }
+        lowLightLoading = true
+        loadingQueue.async {
+            do {
+                let request = try self.makeDetector(from: self.locateLowLightModel(), name: "night")
+                self.queue.async {
+                    self.lowLightDetector = request; self.lowLightLoading = false
+                    self.report("RTMDet low-light detector ready")
+                }
+            } catch {
+                self.queue.async {
+                    self.lowLightLoading = false; self.lowLightError = error.localizedDescription
+                    self.report("Low-light detector unavailable; standard fallback")
+                }
             }
         }
     }
@@ -156,6 +202,12 @@ final class VehicleTracker {
     }
 
     private func makeDetector(from source: URL, name: String) throws -> VNCoreMLRequest {
+        if source.pathExtension.lowercased() != "mlmodelc" {
+            let weights = source.appendingPathComponent("Data/com.apple.CoreML/weights/0-weight.bin")
+            guard let size = try? weights.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 0 else {
+                throw TrackerError.modelWeightsMissing
+            }
+        }
         let options = MLModelConfiguration(); options.computeUnits = .all
         var compiled = try compiledModel(from: source, name: name)
         let model: MLModel
@@ -373,6 +425,7 @@ final class VehicleTracker {
         automaticSequence = VNSequenceRequestHandler()
         onLane?(nil)
         onRoad?(nil)
+        onARScene?(nil); lastObstacleBoxes = []; lastObstacleTime = -.infinity
         targetID = nil
         previousBox = nil
         referenceDistance = 0
@@ -402,7 +455,10 @@ final class VehicleTracker {
                 let captureDetectorGeneration = self.detectorGeneration
                 let policy = self.workPolicy
                 let laneInterval = self.headingTracker.laneInterval(minimum: policy.laneInterval)
-                self.laneTracker.setMinimumInterval(laneInterval)
+                let stationary = self.egoSamples.last(where: { uptime >= $0.measurementUptime && uptime - $0.measurementUptime <= 1 })
+                    .map { $0.metersPerSecond < 0.5 } ?? false
+                self.laneTracker.configureBudget(minimum: laneInterval, heat: self.currentHeat,
+                    vehicleLatency: self.vehicleLatency, stationary: stationary)
                 self.headingTracker.setMinimumInterval(policy.viewpointInterval)
                 if uptime - self.lastVehicleCapture < policy.vehicleInterval - 1e-6 {
                     self.laneTracker.submit(buffer, at: uptime)
@@ -414,6 +470,7 @@ final class VehicleTracker {
                     guard self.isCurrentFrame(submittedGeneration) else { return }
                     self.lastLane = lane
                     self.onLane?(lane); self.onRoad?(self.laneTracker.roadRegion)
+                    self.publishARScene()
                     return
                 }
                 self.lastVehicleCapture = uptime
@@ -424,6 +481,14 @@ final class VehicleTracker {
                 if self.detector != nil {
                     let detectorStarted = ProcessInfo.processInfo.systemUptime
                     let objects = try self.performDetection(buffer, at: uptime)
+                    // Keep pedestrians and cyclists for AR occlusion without
+                    // adding them to the vehicle/range/collision pipeline.
+                    self.lastObstacleBoxes = objects.compactMap { object in
+                        guard let top = object.labels.first, top.confidence >= 0.28,
+                              ["person", "bicycle", "car", "truck", "bus", "motorcycle", "motorbike", "train"].contains(top.identifier.lowercased()) else { return nil }
+                        return VehicleDetectionFilter.normalizedBox(object.boundingBox)
+                    }
+                    self.lastObstacleTime = uptime
                     let detectorSeconds = ProcessInfo.processInfo.systemUptime - detectorStarted
                     self.vehicleLatency = self.vehicleLatency == 0 ? detectorSeconds
                         : 0.80 * self.vehicleLatency + 0.20 * detectorSeconds
@@ -482,6 +547,7 @@ final class VehicleTracker {
                     self.laneTracker.submit(buffer, at: uptime)
                     let lane = self.laneTracker.update(buffer, excluding: vehicles.map { $0.box }, at: uptime)
                     self.lastLane = lane; self.onLane?(lane); self.onRoad?(self.laneTracker.roadRegion)
+                    self.publishARScene()
                     try self.sequence.perform([request], on: buffer, orientation: .up)
                     guard
                         let observation = request.results?.first as? VNDetectedObjectObservation,
@@ -552,6 +618,7 @@ final class VehicleTracker {
                 let lane = self.laneTracker.update(buffer, excluding: vehicles.map { $0.box }, at: uptime)
                 guard self.isCurrentFrame(submittedGeneration) else { return }
                 self.lastLane = lane; self.onLane?(lane); self.onRoad?(self.laneTracker.roadRegion)
+                self.publishARScene()
             } catch {
                 if let id = self.targetID { self.lose(id, "Vision error: \(error.localizedDescription)") }
                 self.report("Vision error: \(error.localizedDescription)")
@@ -608,16 +675,17 @@ final class VehicleTracker {
     private var detectorName: String {
         activeProfile == .night ? "Low-light RTMDet-small" : "Standard RTMDet-tiny"
     }
-    private var workPolicy: VisionWorkPolicy {
-        let heat: VisionHeat
+    private var currentHeat: VisionHeat {
         switch ProcessInfo.processInfo.thermalState {
-        case .nominal: heat = .nominal
-        case .fair: heat = .fair
-        case .serious: heat = .serious
-        case .critical: heat = .critical
-        @unknown default: heat = .serious
+        case .nominal: return .nominal
+        case .fair: return .fair
+        case .serious: return .serious
+        case .critical: return .critical
+        @unknown default: return .serious
         }
-        return VisionWorkPolicy(night: activeProfile == .night, heat: heat, vehicleLatency: vehicleLatency)
+    }
+    private var workPolicy: VisionWorkPolicy {
+        return VisionWorkPolicy(night: activeProfile == .night, heat: currentHeat, vehicleLatency: vehicleLatency)
     }
 
     private func updateDetectorLighting(_ buffer: CVPixelBuffer, at time: TimeInterval,
@@ -626,6 +694,7 @@ final class VehicleTracker {
             lighting.update(sample, at: time)
         }
         let requested = lighting.profile
+        if requested == .night { prepareLowLightIfNeeded() }
         let available = requested == .night && lowLightDetector != nil
             ? DetectorLightingProfile.night : .day
         if available != activeProfile { activateDetector(available, at: time) }
@@ -836,10 +905,11 @@ final class VehicleTracker {
         print("[BrakeCheck YOLO] \(message)")
     }
     enum TrackerError: LocalizedError {
-        case modelMissing, nightModelMissing, modelContract, nightModelContract, detectorOutput
+        case modelMissing, nightModelMissing, modelContract, nightModelContract, detectorOutput, modelWeightsMissing
         var errorDescription: String? {
             switch self {
             case .modelMissing: return "RTMDet day model resource not found in app bundle."
+            case .modelWeightsMissing: return "Vehicle detector weights are missing. Install the complete N35 or newer IPA."
             case .nightModelMissing: return "Night detector resource not found in app bundle."
             case .modelContract: return "Detector must provide a 640-pixel image input and NMS confidence/coordinate outputs."
             case .nightModelContract: return "RTMDet low-light detector contract is invalid."

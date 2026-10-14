@@ -83,6 +83,24 @@ final class WarningContinuityTests: XCTestCase {
         }
         XCTAssertNil(CollisionApproachRules.evaluateCamera(CameraRangeSnapshot(distance: 12), confidence: 0.9).score)
     }
+    func testValidatedClosingCameraApproachWarnsBeforeTargetClipsWithoutGPS() throws {
+        // V20's last fresh estimate was approximately 15 ft / 6 mph = 1.7 s.
+        // A stationary nearby car or missing motion must not trigger this rule.
+        let closing = CameraRangeSnapshot(distance: 4.6, closingSpeed: 2.7, rangeRate: -2.7)
+        let risk = CollisionApproachRules.forConfirmedLead(lead: RiskSnapshot(), camera: closing,
+            confidence: 0.72, fresh: true, pathSupported: false, rearConfirmed: true)
+        XCTAssertEqual(risk.level, .critical)
+        XCTAssertEqual(try XCTUnwrap(risk.timeToCollision), 4.6 / 2.7, accuracy: 0.001)
+        XCTAssertNil(risk.leadSpeed)
+        XCTAssertNil(CollisionApproachRules.forConfirmedLead(lead: RiskSnapshot(), camera: closing,
+            confidence: 0.72, fresh: false, pathSupported: false, rearConfirmed: true).score)
+        XCTAssertNil(CollisionApproachRules.forConfirmedLead(lead: RiskSnapshot(), camera: closing,
+            confidence: 0.72, fresh: true, pathSupported: false, rearConfirmed: false).score)
+        XCTAssertEqual(CollisionApproachRules.evaluateCamera(
+            CameraRangeSnapshot(distance: 1.8, closingSpeed: 0), confidence: 0.9).level, .low)
+        XCTAssertNil(CollisionApproachRules.evaluateCamera(
+            CameraRangeSnapshot(distance: 1.8), confidence: 0.9).score)
+    }
     func testAccelerationProjectionCanWarnBeforeLinearTTC() throws {
         let camera = CameraRangeSnapshot(distance: 5, closingSpeed: 1, rangeRate: -1, closingAcceleration: 6)
         let risk = CollisionApproachRules.forConfirmedLead(lead: RiskSnapshot(), camera: camera,

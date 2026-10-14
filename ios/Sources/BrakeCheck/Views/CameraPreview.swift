@@ -16,8 +16,13 @@ struct CameraPreview: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PreviewSurface, context: Context) {
+        if uiView.previewLayer.session !== session { uiView.previewLayer.session = session }
         uiView.appliedOrientation = orientation
         uiView.applyRotation()
+    }
+    static func dismantleUIView(_ uiView: PreviewSurface, coordinator: ()) {
+        // Release this view's connection, without stopping capture/recording.
+        uiView.previewLayer.session = nil
     }
 }
 

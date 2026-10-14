@@ -22,6 +22,8 @@ public struct NavigationProgressSnapshot: Equatable, Sendable {
     public let distanceToStep: Double
     public let offRoute: Bool
     public let arrived: Bool
+    public let mapMatchConfidence: Double
+    public let mapMatchAmbiguous: Bool
 }
 
 /// Projects fresh GPS fixes onto a route without jumping between crossing
@@ -43,6 +45,7 @@ public struct NavigationProgressTracker {
     private struct Projection {
         let along: Double
         let distance: Double
+        let headingError: Double
     }
     private struct StepEnd {
         let meters: Double
@@ -57,6 +60,7 @@ public struct NavigationProgressTracker {
     private let valid: Bool
     private var lastTimestamp: Double?
     private var lastFix: NavigationCoordinate?
+    private var lastMatchedFix: NavigationCoordinate?
     private var lastAccuracy = 0.0
     private var lastProjectionTime: Double?
     private var initialAlong: Double?
@@ -107,7 +111,8 @@ public struct NavigationProgressTracker {
     }
 
     public mutating func update(coordinate: NavigationCoordinate, horizontalAccuracy: Double,
-                                timestamp: Double, now: Double) -> NavigationProgressSnapshot? {
+                                timestamp: Double, now: Double, courseDegrees: Double? = nil,
+                                courseAccuracy: Double? = nil, speed: Double? = nil) -> NavigationProgressSnapshot? {
         guard valid, coordinate.isValid, horizontalAccuracy.isFinite,
               (0...35).contains(horizontalAccuracy), timestamp.isFinite, now.isFinite,
               timestamp >= 0, timestamp <= now, now - timestamp <= 2.0,
@@ -118,13 +123,24 @@ public struct NavigationProgressTracker {
             let uncertainty = max(25, lastAccuracy + horizontalAccuracy)
             guard Self.distance(lastFix, coordinate) <= 65 * (timestamp - lastTimestamp) + uncertainty else { return nil }
         }
+        let course = courseDegrees.flatMap { value -> Double? in
+            guard value.isFinite, (0..<360).contains(value), let accuracy = courseAccuracy,
+                  accuracy.isFinite, (0...20).contains(accuracy) else { return nil }
+            return value * .pi / 180
+        }
+        // Infer travel direction from the last accepted on-route position;
+        // a noisy or off-route fix must not poison recovery heading.
+        let movement = lastMatchedFix.map { Self.vector(from: $0, to: coordinate, longitudeScale: cos(coordinate.latitude * .pi / 180)) }
+        let observedHeading = course ?? movement.flatMap { $0.length >= max(4, horizontalAccuracy) ? atan2($0.x, $0.y) : nil }
         let projections = segments.map { segment -> Projection in
             let relative = Self.vector(from: segment.start, to: coordinate, longitudeScale: segment.longitudeScale)
             let fraction = min(1, max(0, (relative.x * segment.delta.x + relative.y * segment.delta.y)
                                      / (segment.length * segment.length)))
+            let delta = observedHeading.map { atan2(segment.delta.x, segment.delta.y) - $0 } ?? 0
+            let error = abs(atan2(sin(delta), cos(delta)))
             return Projection(along: segment.offset + fraction * segment.length,
                               distance: hypot(relative.x - fraction * segment.delta.x,
-                                              relative.y - fraction * segment.delta.y))
+                                              relative.y - fraction * segment.delta.y), headingError: error)
         }
         guard let nearest = projections.min(by: { $0.distance < $1.distance }) else { return nil }
         let onThreshold = max(20, min(45, horizontalAccuracy * 1.6))
@@ -132,17 +148,22 @@ public struct NavigationProgressTracker {
         let uncertainty = max(4, horizontalAccuracy * 0.5)
         let reachable: [Projection]
         if let lastProjectionTime {
-            let advance = 65 * (timestamp - lastProjectionTime) + max(20, horizontalAccuracy + lastAccuracy)
+            let speedLimit = speed.flatMap { $0.isFinite && (0...65).contains($0) ? max(8, $0 + 8) : nil } ?? 65
+            let advance = speedLimit * (timestamp - lastProjectionTime) + max(20, horizontalAccuracy + lastAccuracy)
             let reverse = max(15, horizontalAccuracy * 1.5)
-            reachable = projections.filter { $0.along >= along - reverse && $0.along <= along + advance }
-        } else { reachable = projections }
+            reachable = projections.filter { $0.along >= along - reverse && $0.along <= along + advance
+                && (observedHeading == nil || $0.headingError < .pi / 3) }
+        } else { reachable = projections.filter { observedHeading == nil || $0.headingError < .pi / 3 } }
         let closestDistance = reachable.map(\.distance).min() ?? .infinity
         let close = reachable.filter {
             $0.distance <= closestDistance + uncertainty
                 && (closestDistance > onThreshold || $0.distance <= onThreshold)
         }
         let projected = close.min {
-            if lastProjectionTime == nil { return $0.along < $1.along }
+            if lastProjectionTime == nil {
+                if observedHeading != nil { return $0.distance + 8 * $0.headingError < $1.distance + 8 * $1.headingError }
+                return $0.along < $1.along
+            }
             let first = abs($0.along - along), second = abs($1.along - along)
             return abs(first - second) <= 1e-6 ? $0.distance < $1.distance : first < second
         }
@@ -165,6 +186,7 @@ public struct NavigationProgressTracker {
             } else { recoveryCount = 0; recoverySince = nil }
         }
         if isNear, !offRoute, let projected {
+            lastMatchedFix = coordinate
             if initialAlong == nil { initialAlong = projected.along }
             along = min(geometryDistance, max(along, projected.along))
             lastProjectionTime = timestamp
@@ -183,10 +205,19 @@ public struct NavigationProgressTracker {
         var instruction = min(stepCount - 1, (boundary?.index ?? 0) + 1)
         let headingDistance = min(15, (stepEnds.first?.meters ?? routeDistance) * 0.25)
         if progress <= headingDistance { instruction = 0 }
+        let matchedDistance = projected?.distance ?? nearest.distance
+        let ambiguous = projected.map { selected in reachable.contains {
+            abs($0.along - selected.along) > max(25, horizontalAccuracy * 3)
+                && $0.distance <= selected.distance + max(3, horizontalAccuracy * 0.5)
+                && $0.headingError <= selected.headingError + .pi / 12
+        } } ?? true
+        let matchConfidence = isNear && !offRoute && !ambiguous
+            ? max(0, min(1, 1 - matchedDistance / max(20, horizontalAccuracy * 2) - horizontalAccuracy / 100
+                         - (projected?.headingError ?? 0) / .pi * 0.4)) : 0
         return NavigationProgressSnapshot(progressMeters: progress, remainingMeters: max(0, routeDistance - progress),
-            distanceFromRoute: nearest.distance, stepIndex: instruction,
+            distanceFromRoute: matchedDistance, stepIndex: instruction,
             distanceToStep: max(0, (boundary?.meters ?? routeDistance) - progress),
-            offRoute: offRoute, arrived: arrived)
+            offRoute: offRoute, arrived: arrived, mapMatchConfidence: matchConfidence, mapMatchAmbiguous: ambiguous)
     }
 
     private static func vector(from start: NavigationCoordinate, to end: NavigationCoordinate,

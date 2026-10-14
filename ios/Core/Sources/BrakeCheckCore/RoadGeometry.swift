@@ -9,9 +9,11 @@ public struct RoadRegion {
     public let bands: [LaneBand]
     public let confidence: Double
     public let capturedAt: TimeInterval
-    public init(bands: [LaneBand], confidence: Double, capturedAt: TimeInterval) {
+    public let visibility: RoadVisibilityMask?
+    public init(bands: [LaneBand], confidence: Double, capturedAt: TimeInterval, visibility: RoadVisibilityMask? = nil) {
         self.bands = bands.sorted { $0.y < $1.y }
         self.confidence = confidence; self.capturedAt = capturedAt
+        self.visibility = visibility
     }
     public func isUsable(at time: TimeInterval) -> Bool {
         guard time.isFinite, capturedAt.isFinite, confidence.isFinite,

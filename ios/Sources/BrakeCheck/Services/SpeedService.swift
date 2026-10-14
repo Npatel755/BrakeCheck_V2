@@ -304,11 +304,16 @@ final class SpeedService: NSObject, CLLocationManagerDelegate {
             status(filter.status)
 
         } else {
-
-            publishRecentOrUnavailable(
-                at: uptime,
-                reason: "GPS filter: \(filter.status)"
-            )
+            if filter.status == "Low-speed GPS uncertain; waiting for confirmation" {
+                // A valid new fix contradicts the old stop. A dropout bridge
+                // must not put that zero back into display or collision history.
+                speedHistory.reset()
+                lastAcceptedUptime = nil
+                onSpeed?(nil)
+                status(filter.status)
+            } else {
+                publishRecentOrUnavailable(at: uptime, reason: "GPS filter: \(filter.status)")
+            }
         }
 
         // MARK: - Experimental GPS/IMU Fusion

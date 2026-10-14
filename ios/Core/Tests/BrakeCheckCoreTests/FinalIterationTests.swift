@@ -263,13 +263,17 @@ final class FinalIterationTests: XCTestCase {
         XCTAssertTrue(history.update([car(id: id)], at: 1.1, horizontalFOV: .nan, detectorGeneration: 0).isEmpty)
         XCTAssertNil(history.update([car(id: id)], at: 1.2, horizontalFOV: 60, detectorGeneration: 0)[id]?.snapshot.closingSpeed)
     }
-    func testEarlierWarningRequiresConfidentFittedClosingMotion() {
+    func testEarlierWarningRequiresCoherentFittedClosingMotion() {
         for mode in 0...3 {
             let camera = CameraRangeSnapshot(distance: 9, closingSpeed: 5,
                 rangeRate: mode == 1 ? nil : mode == 2 ? -1 : -5)
             let risk = CollisionApproachRules.evaluateCamera(camera, confidence: mode == 0 ? 0.75 : 0.9)
-            if mode == 3 { XCTAssertEqual(risk.level, .critical) } else { XCTAssertEqual(risk.level, .high) }
+            if mode == 0 || mode == 3 { XCTAssertEqual(risk.level, .critical) }
+            else { XCTAssertEqual(risk.level, .high) }
         }
+        let weakFit = CollisionApproachRules.evaluateCamera(
+            CameraRangeSnapshot(distance: 9, closingSpeed: 5, rangeRate: -5), confidence: 0.69)
+        XCTAssertEqual(weakFit.level, .high)
         let boundary = CollisionApproachRules.evaluateCamera(CameraRangeSnapshot(distance: 10, closingSpeed: 5, rangeRate: -5), confidence: 0.9)
         XCTAssertEqual(boundary.level, .high)
     }

@@ -1,0 +1,5 @@
+# Package manifests are hashed model assets; Windows checkout must not change them.
+ios/Sources/BrakeCheck/Resources/DetectorModelData/**/Manifest.json text eol=lf
+ios/Sources/BrakeCheck/Resources/LaneModelData/**/Manifest.json text eol=lf
+*.mlmodel -text
+*.bin -text

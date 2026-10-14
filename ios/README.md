@@ -3,9 +3,13 @@
 The complete setup guide is **[../README.md](../README.md)**. Build from this directory:
 
 ```bash
-xtool dev build
-xtool dev
+xtool dev build -c release --ipa
+xtool dev run -c release
 ```
+
+Use the Release IPA for on-device performance checks. Settings responsiveness
+and camera CPU work depend heavily on Swift optimization. Build 34's fixes and
+validation are recorded in [N34-SETTINGS-PERFORMANCE.md](N34-SETTINGS-PERFORMANCE.md).
 
 - iOS 17+, landscape-right camera pipeline, Swift 6 toolchain with Swift 5 language mode.
 - App product: `BrakeCheck`; math/storage module: `BrakeCheckCore`.

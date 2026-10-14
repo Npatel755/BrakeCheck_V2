@@ -62,9 +62,10 @@ public enum CollisionApproachRules {
         let consistentRate = camera.rangeRate.map {
             $0.isFinite && abs($0) <= 60 && abs(closing - max(0, -$0)) <= 0.001
         } ?? false
-        // Give a confident, fitted closing approach an earlier warning. The
-        // fallback motion estimate and weak observations keep the 1.5 s gate.
-        let criticalSeconds = confidence >= 0.80 && closing >= 1 && consistentRate ? 2.0 : 1.5
+        // Give a coherent camera motion fit enough warning time before the
+        // vehicle reaches the frame edge. Unfitted/weak motion keeps the
+        // stricter gate; the caller still verifies a fresh lead or hazard.
+        let criticalSeconds = confidence >= 0.70 && closing >= 1 && consistentRate ? 2.0 : 1.5
         if let ttc = result.timeToCollision, ttc < criticalSeconds {
             result.level = .critical; result.score = 95
         }

@@ -366,6 +366,14 @@ public enum LaneVisualTracker {
             let variance = patch.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / 49
             guard variance >= 81 else { continue }
             let centered = patch.map { $0 - mean }
+            // Rank all offsets with nine samples, then verify a small set
+            // with the full 7x7 patch. The old exhaustive two-pass 49-pixel
+            // comparison spent over a million pixel operations per frame.
+            let sampleOffsets = [-3, 0, 3]
+            let sparse = sampleOffsets.flatMap { ry in sampleOffsets.map { rx in
+                Double(old.pixels[(py + ry) * old.width + px + rx])
+            } }
+            let sparseMean = sparse.reduce(0, +) / 9
             var costs: [(dx: Int, dy: Int, cost: Double)] = []
             for dy in -6...6 { for dx in -18...18 {
                 let cx = px + dx, cy = py + dy
@@ -374,19 +382,33 @@ public enum LaneVisualTracker {
                 guard !boxes.contains(where: { $0.insetBy(dx: -0.012, dy: -0.012)
                     .contains(CGPoint(x: CGFloat(nx), y: CGFloat(ny))) }) else { continue }
                 var total = 0.0
-                for ry in -3...3 { for rx in -3...3 {
+                for ry in sampleOffsets { for rx in sampleOffsets {
                     total += Double(new.pixels[(cy + ry) * new.width + cx + rx])
                 } }
+                let newMean = total / 9
+                var error = 0.0, offset = 0
+                for ry in sampleOffsets { for rx in sampleOffsets {
+                    error += abs(Double(new.pixels[(cy + ry) * new.width + cx + rx]) - newMean - (sparse[offset] - sparseMean))
+                    offset += 1
+                } }
+                costs.append((dx, dy, error / 9 + 0.04 * Double(abs(dx) + abs(dy))))
+            } }
+            let ranked = costs.sorted { $0.cost < $1.cost }
+            func verified(_ candidate: (dx: Int, dy: Int, cost: Double)) -> (dx: Int, dy: Int, cost: Double) {
+                let cx = px + candidate.dx, cy = py + candidate.dy
+                var total = 0.0
+                for ry in -3...3 { for rx in -3...3 { total += Double(new.pixels[(cy + ry) * new.width + cx + rx]) } }
                 let newMean = total / 49
                 var error = 0.0, offset = 0
                 for ry in -3...3 { for rx in -3...3 {
-                    error += abs(Double(new.pixels[(cy + ry) * new.width + cx + rx]) - newMean - centered[offset])
-                    offset += 1
+                    error += abs(Double(new.pixels[(cy + ry) * new.width + cx + rx]) - newMean - centered[offset]); offset += 1
                 } }
-                costs.append((dx, dy, error / 49 + 0.04 * Double(abs(dx) + abs(dy))))
-            } }
-            guard let best = costs.min(by: { $0.cost < $1.cost }), best.cost < 18,
-                  let alternative = costs.filter({ abs($0.dx - best.dx) >= 4 })
+                return (candidate.dx, candidate.dy, error / 49 + 0.04 * Double(abs(candidate.dx) + abs(candidate.dy)))
+            }
+            let verifiedCandidates = ranked.prefix(12).map(verified)
+            guard let best = verifiedCandidates.min(by: { $0.cost < $1.cost }), best.cost < 18 else { continue }
+            let alternatives = ranked.filter { abs($0.dx - best.dx) >= 4 }.prefix(4).map(verified)
+            guard let alternative = (verifiedCandidates + alternatives).filter({ abs($0.dx - best.dx) >= 4 })
                     .map({ $0.cost }).min(), alternative > best.cost + 3 else { continue }
             let newY = band.y - Double(best.dy) / Double(new.height - 1)
             let newX = x + Double(best.dx) / Double(new.width - 1)

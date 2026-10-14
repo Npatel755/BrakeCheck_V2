@@ -11,6 +11,7 @@ struct RiskPill: View {
     var meter: DangerMeterSnapshot? = nil
     /// Larger base size for the vertical layout.
     var large = false
+    var unavailableTitle: String? = nil
 
     private var meterLevel: RiskLevel { meter?.level ?? risk.level }
     private var meterScore: Double? {
@@ -21,6 +22,7 @@ struct RiskPill: View {
     private var currentCritical: Bool { risk.level == .critical }
     private var title: String {
         if critical { return currentCritical ? "BRAKE NOW" : "BRAKE ALERT" }
+        if meterScore == nil, let unavailableTitle { return unavailableTitle }
         return BrakeTheme.name(for: meterLevel)
     }
 

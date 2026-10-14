@@ -20,5 +20,7 @@ DerivedData/
 *.ipa
 .DS_Store
 weights/
+!ios/Sources/BrakeCheck/Resources/**/weights/
+!ios/Sources/BrakeCheck/Resources/**/weights/**
 yolo11n.pt
 tools/model_migration/artifacts/

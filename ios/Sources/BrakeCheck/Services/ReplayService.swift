@@ -55,7 +55,10 @@ final class ReplayService {
         for clip in clips {
             guard isCurrent(current) else { return }
             let asset = AVURLAsset(url: clip.url)
-            guard let track = asset.tracks(withMediaType: .video).first else { continue }
+            guard let track = asset.tracks(withMediaType: .video).first else {
+                onFinished?("No video track in \(clip.url.lastPathComponent). Choose a video file with readable picture frames.", current)
+                return
+            }
             let reader: AVAssetReader
             do { reader = try AVAssetReader(asset: asset) } catch {
                 onFinished?("Could not open \(clip.url.lastPathComponent): \(error.localizedDescription)", current)
@@ -65,14 +68,22 @@ final class ReplayService {
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
             ])
             output.alwaysCopiesSampleData = false
-            guard reader.canAdd(output) else { continue }
+            guard reader.canAdd(output) else {
+                onFinished?("Could not decode \(clip.url.lastPathComponent). This video format is not supported by the iPhone.", current)
+                return
+            }
             reader.add(output)
-            guard reader.startReading() else { continue }
+            guard reader.startReading() else {
+                let detail = reader.error?.localizedDescription ?? "The file could not be read."
+                onFinished?("Could not open \(clip.url.lastPathComponent): \(detail)", current)
+                return
+            }
             let clipDate = clip.start ?? asset.creationDate?.dateValue
             let clipWallStart = ProcessInfo.processInfo.systemUptime
             var firstPTS: CMTime?
             var clipLength: TimeInterval = 0
             var geometryConfigured = false
+            var decodedFrames = 0
             let displayTransform = track.preferredTransform
             while isCurrent(current), let sample = output.copyNextSampleBuffer() {
                 let pts = CMSampleBufferGetPresentationTimeStamp(sample)
@@ -91,10 +102,11 @@ final class ReplayService {
                 guard isCurrent(current), let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
                 let uptime = ProcessInfo.processInfo.systemUptime
                 onTime?(uptime, clipDate?.addingTimeInterval(offset), elapsedBeforeClip + offset, current)
-                let previewDue = uptime - lastPreview >= 0.066
-                let detectionDue = uptime - lastSubmit >= 0.1
+                let previewDue = decodedFrames == 0 || uptime - lastPreview >= 0.066
+                let detectionDue = decodedFrames == 0 || uptime - lastSubmit >= 0.1
                 guard previewDue || detectionDue,
                       let upright = uprightBuffer(buffer, transform: displayTransform) else { continue }
+                decodedFrames += 1
                 if !geometryConfigured {
                     let width = CVPixelBufferGetWidth(upright), height = CVPixelBufferGetHeight(upright)
                     let fov = CaptureFrameGeometry.horizontalFOV(landscapeDegrees: Self.recordingFieldOfView(),
@@ -113,7 +125,17 @@ final class ReplayService {
                     tracker.submit(upright, uptime: uptime)
                 }
             }
+            guard isCurrent(current) else { reader.cancelReading(); return }
+            let readError = reader.status == .failed ? reader.error?.localizedDescription ?? "The video reader failed." : nil
             reader.cancelReading()
+            if let readError {
+                onFinished?("Could not finish \(clip.url.lastPathComponent): \(readError)", current)
+                return
+            }
+            guard decodedFrames > 0 else {
+                onFinished?("No readable picture frames in \(clip.url.lastPathComponent). Try an H.264 or HEVC video.", current)
+                return
+            }
             elapsedBeforeClip += clipLength
         }
         guard isCurrent(current) else { return }

@@ -23,6 +23,19 @@ public struct GPSSpeedSample {
     public let acceleration: Double?
     public let measurementUptime: TimeInterval
     public let simulated: Bool
+    /// Setup verification uses a causal measured fix, independently of how
+    /// the dashboard labels interpolation/holding between GPS updates.
+    public func isFreshStationary(at time: TimeInterval) -> Bool {
+        [time, measurementUptime, metersPerSecond, accuracy].allSatisfy(\.isFinite)
+            && !simulated && (0...1.5).contains(time - measurementUptime)
+            && (0..<0.5).contains(metersPerSecond) && (0...1.5).contains(accuracy)
+    }
+    public func isConfidentlyMoving(at time: TimeInterval) -> Bool {
+        [time, measurementUptime, metersPerSecond, accuracy].allSatisfy(\.isFinite)
+            && !simulated && (0...1.5).contains(time - measurementUptime)
+            && (0...90).contains(metersPerSecond) && (0...8).contains(accuracy)
+            && metersPerSecond - 2 * accuracy > 0.5
+    }
 }
 
 /// GPS-only filter. Preserves original BrakeCheckCore interface.
@@ -112,6 +125,16 @@ public struct GPSFilter {
 
         if stationaryEvidence >= 3 { confirmedStationary = true }
         if movingEvidence >= 2 { confirmedStationary = false }
+        // A prior stop is not evidence that a new, nonstationary fix is zero.
+        // Withhold ambiguous departure speeds instead of latching zero until
+        // two high-confidence moving fixes happen to arrive.
+        if confirmedStationary && !nearZero {
+            confirmedStationary = false
+            stationaryEvidence = 0
+            filteredSpeed = nil
+            history.removeAll()
+            samples.removeAll()
+        }
 
         // If the reported low speed cannot be distinguished from noise,
         // explicitly withhold it rather than displaying false precision.
