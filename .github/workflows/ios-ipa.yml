@@ -1,0 +1,79 @@
+# Builds an unsigned Release .ipa on a GitHub-hosted Mac, for installing on a phone
+# with Sideloadly (it signs the app with your own Apple ID). Release = the phone-only
+# v1 (see AppScope.swift). Runs only on claude/* branches or manually.
+name: iOS installable build
+
+on:
+  push:
+    branches: ['claude/**']
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate the Xcode app project
+        run: |
+          brew install xcodegen
+          python3 scripts/app_info_plist.py Info.plist AppTarget/Info.plist --release
+          icons=AppTarget/Entry/Assets.xcassets/AppIcon.appiconset
+          mkdir -p "$icons"
+          cp AppIcon.png "$icons/AppIcon.png"
+          echo '{"info":{"author":"xcode","version":1}}' > AppTarget/Entry/Assets.xcassets/Contents.json
+          echo '{"images":[{"filename":"AppIcon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}' > "$icons/Contents.json"
+          cd AppTarget && xcodegen generate
+
+      - name: Build (Release, unsigned)
+        run: |
+          set +e
+          xcodebuild -project AppTarget/BrakeCheckApp.xcodeproj -scheme BrakeCheckApp \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build/dd -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > ipa-build.log 2>&1
+          status=$?
+          grep -E "^/.*: error: " ipa-build.log | sed "s|$GITHUB_WORKSPACE/||" | sort -u | head -50 | while IFS= read -r line; do
+            file=$(echo "$line" | cut -d: -f1); lineno=$(echo "$line" | cut -d: -f2)
+            msg=$(echo "$line" | cut -d: -f4- | sed 's/^ error: //')
+            echo "::error file=$file,line=$lineno::$msg"
+          done
+          grep -E "error:" ipa-build.log | grep -vE "^/.*: error: " | sort -u | head -20 | while IFS= read -r line; do echo "::error title=xcodebuild::$line"; done
+          [ $status -ne 0 ] && tail -30 ipa-build.log | while IFS= read -r line; do echo "::notice title=ipa-build.log tail::$line"; done
+          exit $status
+
+      - name: Package the .ipa
+        run: |
+          app=build/dd/Build/Products/Release-iphoneos/BrakeCheck.app
+          test -d "$app"
+          # The detectors can't load without their weights; say so on the run page.
+          for size in Day Night; do
+            if ! find "$app" -path "*DetectorModelData/$size/*" -name 0-weight.bin | grep -q .; then
+              echo "::warning title=Detector weights missing::$size detector weights aren't in the repo, so this build can't detect vehicles."
+            fi
+          done
+          mkdir -p ipa/Payload
+          cp -R "$app" ipa/Payload/
+          (cd ipa && zip -qry ../BrakeCheck.ipa Payload)
+          version=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$app/Info.plist")
+          build=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$app/Info.plist")
+          echo "::notice title=BrakeCheck.ipa::version $version ($build), $(du -h BrakeCheck.ipa | cut -f1), commit ${GITHUB_SHA::7}"
+
+      - name: Upload the .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrakeCheck-ipa
+          path: ios/BrakeCheck.ipa
+          retention-days: 30
+
+      - name: Upload the build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipa-build-log
+          path: ios/ipa-build.log

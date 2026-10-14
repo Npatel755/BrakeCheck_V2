@@ -29,3 +29,9 @@ DerivedData/
 /tools/model_migration/weights/
 yolo11n.pt
 tools/model_migration/artifacts/
+tools/model_migration/out/
+# Generated on CI by .github/workflows/ios-ipa.yml
+ios/AppTarget/*.xcodeproj/
+ios/AppTarget/Info.plist
+ios/AppTarget/Entry/Assets.xcassets/
+ios/build/
