@@ -6,7 +6,7 @@ struct MeasurementDiagnosticsView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 Section("Vehicle measurements · \(model.measurementRevision)") {
                     Text(model.leadSelectionStatus)
@@ -65,9 +65,6 @@ struct MeasurementDiagnosticsView: View {
             .font(.subheadline)
             .navigationTitle("Diagnostics · \(model.measurementRevision)")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
         }
         .tint(BrakeTheme.accent)
     }

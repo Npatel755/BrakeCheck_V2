@@ -1,0 +1,11 @@
+# N27 — Map interaction, recent destinations, voices and personal accents
+
+Navigation is rendered outside the swipe pager so map drags cannot change tabs. Home/Camera still swipe; the bottom three tab buttons switch all pages. Native map panning is enabled. Panning suspends following and pending route-overview fitting until Recenter, a new route or a guidance-mode transition. GPS freshness changes do not cancel manual browsing. Pinch remains supported. Camera tracking remains active through tab changes.
+
+Search enables native keyboard autocorrection. A Search/Recents segmented control offers the latest 20 distinct selected destinations, saved locally with coordinates and labels. Tapping one starts route planning directly, and selection updates its recency. Individual entries can be removed; clearing the list asks for confirmation. Invalid stored places are discarded. Spoken-direction mute now persists.
+
+Settings → Appearance offers Blue, Teal, Violet, Rose and Amber palettes with light/dark contrast variants. The choice updates panels, logo, page controls, camera overlays and map route/marker colors. Warning meanings retain their dedicated colors.
+
+Settings → Voice lists available device voices by language and quality, offers Gentle/Balanced/Clear delivery, and provides a parked voice preview. Automatic selection prefers the highest quality available on the phone. Navigation defaults to slower, quieter gentle delivery; urgent brake alerts stay clear and full volume. Device voices are now the default brake-alert engine. ElevenLabs alerts are optional, and remote crash check-in audio retains its server-configured voice and existing playback-before-recording flow.
+
+Includes N26's dedicated Home destination pages and grouped phone/sidebar settings hub. Validation: all 354 Core tests passed, including bounded/deduplicated recent-history persistence tests, native release compilation and IPA integrity/metadata/executable/model-resource checks. Physical checks remain: map pan/pinch/recenter during guidance, tab buttons, Search/Recents and relaunch, accent changes throughout the UI, installed voice selection/preview, voice fallback, safety interruption, and settings-page Back navigation.

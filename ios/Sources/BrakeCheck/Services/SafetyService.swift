@@ -66,14 +66,21 @@ final class SafetyService: ObservableObject {
     }
 
     func prepareVoice() async {
-        guard settings.voiceEnabled, let client = settings.client, !preparing else { return }
+        guard settings.voiceEnabled, !preparing else { return }
+        guard SpeechVoicePreferences.usesBackendAlerts else {
+            brakeAudio = nil; voiceStatus = "Device voice ready"; return
+        }
+        guard let client = settings.client else {
+            voiceStatus = "Device voice fallback · backend unavailable"; return
+        }
         let signature = settings.address + settings.language + settings.credentialForSignature
         let language = settings.language
         preparing = true
         defer { preparing = false }
         do {
             let data = try await client.data("voice/alert", method: "POST", json: ["kind": "brake", "lang": language], timeout: 40)
-            guard signature == settings.address + settings.language + settings.credentialForSignature else { return }
+            guard SpeechVoicePreferences.usesBackendAlerts,
+                  signature == settings.address + settings.language + settings.credentialForSignature else { return }
             brakeAudio = data
             preparedSignature = signature
             voiceStatus = "ElevenLabs voice ready"
@@ -97,11 +104,18 @@ final class SafetyService: ObservableObject {
         // vibrate on every camera frame or add a second warning timer.
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         guard settings.voiceEnabled else { return }
-        if let data = brakeAudio, preparedSignature == settings.address + settings.language + settings.credentialForSignature {
+        if SpeechVoicePreferences.usesBackendAlerts, let data = brakeAudio,
+           preparedSignature == settings.address + settings.language + settings.credentialForSignature {
             Task { try? await audio.play(data) }
         } else {
             audio.speakBrake(language: settings.language)
         }
+    }
+
+    func previewVoice() {
+        guard !checkinPresented, !audio.isBusy else { return }
+        beforePriorityAudio?()
+        audio.speakPreview(language: settings.language)
     }
 
     func refreshContacts() async {
@@ -340,7 +354,12 @@ final class SafetyService: ObservableObject {
 
     func pauseAudio() {
         // The backend owns the timeout even if iOS suspends the app.
-        flow?.cancel(); audio.stop()
+        flow?.cancel(); polling?.cancel(); polling = nil; audio.stop()
+    }
+
+    func resumeForegroundPolling() {
+        guard checkinPresented, !resolved, let client = activeClient, let id = crashID else { return }
+        startPolling(client: client, id: id, generation: sessionGeneration)
     }
 
     func sendTrip(minutes: Double, hardBrakes: Int, closeCalls: Int, maxSpeedMPH: Double) {

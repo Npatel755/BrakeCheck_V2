@@ -27,11 +27,13 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         let result = SegmentRecorder(queue: queue)
         result.onStatus = { [weak self] message in self?.onRecorderStatus?(message) }
         result.onIncidents = { [weak self] events in self?.onIncidents?(events) }
+        result.onStorage = { [weak self] bytes in self?.onRecordingStorage?(bytes) }
         return result
     }()
     var onCameraStatus: ((String, Bool) -> Void)?
     var onRecorderStatus: ((String) -> Void)?
     var onIncidents: (([IncidentManifest]) -> Void)?
+    var onRecordingStorage: ((Int64?) -> Void)?
     var onTrackingReset: ((String) -> Void)?
     var onGeometry: ((CaptureFrameGeometry) -> Void)?
 
@@ -127,6 +129,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     func refreshIncidents() { queue.async { self.recorder.refresh() } }
+    func applyRecordingPreferences() { queue.async { self.recorder.applyStoragePreferences() } }
 
     func start() {
         queue.async {

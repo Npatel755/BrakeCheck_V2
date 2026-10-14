@@ -1,0 +1,7 @@
+torch==2.7.0
+torchvision==0.22.0
+coremltools==9.0
+libreyolo==1.6.0
+# Screening only; neither library nor its reference weights ships in the app.
+ultralytics==8.4.175
+rfdetr==1.11.2

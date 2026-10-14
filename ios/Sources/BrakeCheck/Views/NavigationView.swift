@@ -1,4 +1,5 @@
 import CoreLocation
+import BrakeCheckCore
 import MapKit
 import SwiftUI
 import UIKit
@@ -12,6 +13,12 @@ struct NavigationView: View {
     var openCamera: () -> Void
     @FocusState private var searchFocused: Bool
     @State private var recenterTrigger = 0
+    @State private var panelExpanded = false
+    private enum SearchSection: String { case search = "Search", recents = "Recents" }
+    @State private var searchSection: SearchSection = .search
+    @State private var confirmingClearRecents = false
+    @AppStorage("display.appearance") private var appearance = "dark"
+    @AppStorage("display.accent") private var accentChoice = "blue"
 
     private var canStart: Bool {
         navigation.route != nil && !navigation.isCalculating && navigation.hasFreshLocation
@@ -24,28 +31,137 @@ struct NavigationView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let landscape = geometry.size.width > geometry.size.height
-            VStack(spacing: landscape ? 8 : 12) {
-                header
-                if displaysRisk {
-                    RiskPill(risk: model.risk, critical: model.brakeWarningActive,
-                             searching: (model.cameraReady || model.replaying) && !model.demo && model.risk.distance == nil,
-                             paused: model.trackingCoasting, selectionStatus: model.leadSelectionStatus,
-                             meter: model.dangerMeter, large: false)
-                        .padding(.vertical, model.brakeWarningActive ? 6 : 0)
-                        .padding(.horizontal, 16)
+            // A portrait keyboard reduces height; it must not switch us to the landscape layout.
+            let landscape = geometry.size.width > 550 && geometry.size.width > geometry.size.height
+            let panelHeight = min(geometry.size.height * 0.65,
+                navigation.isNavigating ? (panelExpanded ? 310.0 : 164.0)
+                    : panelExpanded || searchFocused ? 450.0 : navigation.route != nil ? 310.0 : 230.0)
+            let sideWidth = min(340.0, geometry.size.width * 0.46)
+            ZStack(alignment: .topLeading) {
+                NavigationMapView(route: navigation.route, location: navigation.mapLocation,
+                    locationIsCurrent: navigation.hasFreshLocation,
+                    followsLocation: navigation.isNavigating && navigation.mapLocation != nil,
+                    recenterTrigger: recenterTrigger,
+                    topInset: navigation.isNavigating ? (displaysRisk ? 230 : 160) : (displaysRisk ? 150 : 90),
+                    isVisible: navigation.pageVisible && navigation.foreground)
+                    .overlay(alignment: .bottomTrailing) {
+                        Button { recenterTrigger += 1 } label: {
+                            Image(systemName: "location.north.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .frame(width: 48, height: 48)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Recenter map")
+                        .padding(.trailing, 16).padding(.bottom, 42)
+                    }
+                    .padding(.bottom, landscape ? 0 : panelHeight + 12)
+                    .padding(.trailing, landscape ? sideWidth + 12 : 0)
+
+                VStack(spacing: 8) {
+                    header.padding(.vertical, 12)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+                    if displaysRisk {
+                        RiskPill(risk: model.risk, critical: model.brakeWarningActive,
+                                 meter: model.dangerMeter, large: false)
+                            .padding(8)
+                            .background(BrakeTheme.background.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
+                    }
+                    if navigation.isNavigating { maneuverCard }
                 }
-                if navigation.isNavigating {
-                    guidanceLayout(landscape: landscape)
-                } else {
-                    planningLayout(landscape: landscape)
+                .frame(width: landscape ? geometry.size.width - sideWidth - 36 : geometry.size.width - 24)
+                .padding(12)
+
+                VStack {
+                    if !landscape { Spacer(minLength: 0) }
+                    destinationPanel
+                        .frame(width: landscape ? sideWidth : nil,
+                               height: landscape ? max(100, geometry.size.height - 24) : panelHeight)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: landscape ? .trailing : .bottom)
+                .padding(landscape ? 12 : 8)
             }
-            .padding(.top, landscape ? 8 : 16)
+            .animation(.easeInOut(duration: 0.22), value: panelExpanded)
+        }
+        .onChange(of: searchFocused) { _, focused in if focused { panelExpanded = true } }
+        .onChange(of: navigation.pageVisible) { _, visible in
+            if !visible { searchFocused = false }
+        }
+        .onChange(of: navigation.query) { _, _ in searchSection = .search }
+        .onChange(of: searchSection) { _, section in
+            if section == .recents { searchFocused = false; panelExpanded = true }
+        }
+        .confirmationDialog("Clear recent destinations?", isPresented: $confirmingClearRecents, titleVisibility: .visible) {
+            Button("Clear recents", role: .destructive) { navigation.clearRecents() }
+        }
+        .onChange(of: navigation.isNavigating) { _, _ in
+            searchFocused = false
+            panelExpanded = false
+            recenterTrigger += 1
         }
         .background(BrakeTheme.background)
-        .foregroundStyle(.white)
-        .tint(BrakeTheme.accent)
+        .foregroundStyle(BrakeTheme.text)
+        .tint(BrakeTheme.accentColor(named: accentChoice))
+    }
+
+    private var destinationPanel: some View {
+        VStack(spacing: 0) {
+            Button {
+                searchFocused = false
+                panelExpanded.toggle()
+            } label: {
+                VStack(spacing: 5) {
+                    Capsule().fill(BrakeTheme.muted.opacity(0.5)).frame(width: 36, height: 4)
+                    HStack {
+                        Text(navigation.isNavigating ? "YOUR DRIVE" : "WHERE TO?")
+                            .font(.system(size: 10, weight: .bold)).tracking(2)
+                        Spacer()
+                        Image(systemName: panelExpanded ? "chevron.down" : "chevron.up")
+                    }
+                    .foregroundStyle(BrakeTheme.muted)
+                }
+                .padding(.horizontal, 18).frame(height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(panelExpanded ? "Collapse navigation panel" : "Expand navigation panel")
+            ScrollView {
+                VStack(spacing: 12) {
+                    if navigation.isNavigating {
+                        activeJourneyCard
+                        if panelExpanded {
+                            activeControls
+                            if let error = navigation.errorMessage { activeErrorCard(error) }
+                            Text(cameraTrackingText).font(.caption).foregroundStyle(BrakeTheme.muted)
+                        }
+                    } else {
+                        if navigation.route == nil { searchCard }
+                        if let error = navigation.errorMessage { errorCard(error) }
+                        if let title = navigation.resolvingDestination {
+                            HStack { ProgressView(); Text("Finding \(title)…").font(.subheadline) }
+                                .frame(maxWidth: .infinity, alignment: .leading).brakePanel()
+                        } else if navigation.isCalculating {
+                            HStack { ProgressView(); Text("Finding your route…").font(.subheadline) }
+                                .frame(maxWidth: .infinity, alignment: .leading).brakePanel()
+                        } else if navigation.destinationTitle != nil && navigation.route == nil {
+                            Text(navigation.status).font(.caption).foregroundStyle(BrakeTheme.muted)
+                        }
+                        if navigation.route != nil { routePreview; startControls }
+                        if navigation.query.isEmpty && navigation.route == nil {
+                            Text("A clear route. A calmer drive.")
+                                .font(.headline).foregroundStyle(BrakeTheme.accent)
+                            Text("Search for a destination while parked. Suggestions appear as you type.")
+                                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12).padding(.bottom, 14)
+            }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .background(BrakeTheme.background.opacity(0.97), in: RoundedRectangle(cornerRadius: 26))
+        .overlay(RoundedRectangle(cornerRadius: 26).stroke(BrakeTheme.accent.opacity(0.15), lineWidth: 1))
+        .shadow(color: .black.opacity(0.35), radius: 18, y: -4)
     }
 
     private var header: some View {
@@ -53,13 +169,20 @@ struct NavigationView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Label("Navigation", systemImage: "location.north.line.fill")
                     .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(BrakeTheme.text)
                 HStack(spacing: 5) {
                     Circle().fill(cameraTrackingColor).frame(width: 5, height: 5)
                     Text(cameraTrackingText).font(.caption).foregroundStyle(BrakeTheme.muted)
                 }
             }
             Spacer(minLength: 0)
+            Button { appearance = appearance == "dark" ? "light" : "dark" } label: {
+                Image(systemName: appearance == "dark" ? "sun.max" : "moon")
+                    .frame(width: 44, height: 44)
+                    .background(BrakeTheme.panel, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(appearance == "dark" ? "Use light mode" : "Use dark mode")
             Button(action: openCamera) {
                 Label("Camera", systemImage: "video")
                     .font(.subheadline.weight(.semibold))
@@ -139,18 +262,17 @@ struct NavigationView: View {
 
     private var searchCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Where to?").font(.system(size: 18, weight: .semibold))
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(BrakeTheme.muted)
                 TextField("Address, place, or city", text: $navigation.query)
                     .font(.subheadline)
                     .textInputAutocapitalization(.words)
-                    .autocorrectionDisabled()
+                    .autocorrectionDisabled(false)
                     .submitLabel(.search)
                     .focused($searchFocused)
                     .onSubmit { submitSearch() }
                     .accessibilityLabel("Destination search")
-                if navigation.isSearching {
+                if navigation.isSearching || navigation.suggestionsLoading {
                     ProgressView().tint(BrakeTheme.accent)
                 } else if !navigation.query.isEmpty {
                     Button { navigation.query = "" } label: {
@@ -162,6 +284,43 @@ struct NavigationView: View {
             }
             .padding(13)
             .background(BrakeTheme.background, in: RoundedRectangle(cornerRadius: 12))
+            Picker("Destination options", selection: $searchSection) {
+                Text("Search").tag(SearchSection.search)
+                Text("Recents").tag(SearchSection.recents)
+            }.pickerStyle(.segmented)
+            if searchSection == .recents {
+                recentDestinationsCard
+            } else {
+            if let error = navigation.suggestionError {
+                Text(error).font(.caption).foregroundStyle(BrakeTheme.muted)
+            }
+            ForEach(navigation.suggestions) { suggestion in
+                Button {
+                    searchFocused = false
+                    panelExpanded = true
+                    navigation.chooseSuggestion(suggestion)
+                    UISelectionFeedbackGenerator().selectionChanged()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .foregroundStyle(BrakeTheme.accent)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(suggestion.title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
+                            if !suggestion.subtitle.isEmpty {
+                                Text(suggestion.subtitle).font(.caption).foregroundStyle(BrakeTheme.muted).lineLimit(2)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.left").font(.caption).foregroundStyle(BrakeTheme.muted)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                Divider().overlay(BrakeTheme.muted.opacity(0.15))
+            }
             Button(action: submitSearch) {
                 Text(navigation.isSearching ? "Searching…" : "Search destinations")
                     .font(.subheadline.weight(.semibold))
@@ -176,11 +335,12 @@ struct NavigationView: View {
                 Button {
                     searchFocused = false
                     navigation.chooseDestination(result)
+                    UISelectionFeedbackGenerator().selectionChanged()
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "mappin.circle.fill").foregroundStyle(BrakeTheme.amber)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(result.title).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                            Text(result.title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
                             if !result.subtitle.isEmpty {
                                 Text(result.subtitle).font(.caption).foregroundStyle(BrakeTheme.muted)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -196,8 +356,45 @@ struct NavigationView: View {
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .combine)
             }
+            }
         }
         .brakePanel()
+    }
+
+    private var recentDestinationsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if navigation.recentDestinations.isEmpty {
+                Label("No recent destinations", systemImage: "clock")
+                    .foregroundStyle(BrakeTheme.muted).padding(.vertical, 12)
+            } else {
+                ForEach(navigation.recentDestinations) { recent in
+                    HStack(spacing: 8) {
+                        Button {
+                            searchFocused = false; panelExpanded = true
+                            navigation.chooseRecent(recent)
+                            UISelectionFeedbackGenerator().selectionChanged()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "clock.arrow.circlepath").foregroundStyle(BrakeTheme.accent)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(recent.title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
+                                    if !recent.subtitle.isEmpty {
+                                        Text(recent.subtitle).font(.caption).foregroundStyle(BrakeTheme.muted).lineLimit(2)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }.frame(minHeight: 48).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                        Button { navigation.removeRecent(recent.id) } label: {
+                            Image(systemName: "xmark").font(.caption).frame(width: 44, height: 44)
+                        }.buttonStyle(.plain).foregroundStyle(BrakeTheme.muted)
+                            .accessibilityLabel("Remove \(recent.title) from recents")
+                    }
+                }
+                Button("Clear recents") { confirmingClearRecents = true }
+                    .font(.caption).frame(minHeight: 44)
+            }
+        }
     }
 
     private func submitSearch() {
@@ -222,6 +419,10 @@ struct NavigationView: View {
                 .accessibilityLabel("Clear planned destination")
             }
             journeyMetrics(time: navigation.route?.expectedTravelTime, distance: navigation.route?.distance)
+            if navigation.routeUsesLastKnownLocation {
+                Label("Route starts at your last known GPS location", systemImage: "location.circle")
+                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+            }
         }
         .brakePanel()
     }
@@ -258,9 +459,9 @@ struct NavigationView: View {
     @ViewBuilder private func guidanceLayout(landscape: Bool) -> some View {
         if landscape {
             HStack(alignment: .top, spacing: 12) {
-                routeMap(follow: !navigation.isPaused && navigation.hasFreshLocation)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                routeMap(follow: navigation.mapLocation != nil)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
                 ScrollView {
                     VStack(spacing: 12) {
                         maneuverCard
@@ -278,8 +479,8 @@ struct NavigationView: View {
         } else {
             VStack(spacing: 10) {
                 maneuverCard.padding(.horizontal, 16)
-                routeMap(follow: !navigation.isPaused && navigation.hasFreshLocation)
-                    .frame(minHeight: 140, maxHeight: .infinity)
+                routeMap(follow: navigation.mapLocation != nil)
+                .frame(minHeight: 140, maxHeight: .infinity)
                 VStack(spacing: 10) {
                     if let error = navigation.errorMessage { activeErrorCard(error) }
                     activeJourneyCard
@@ -293,9 +494,10 @@ struct NavigationView: View {
 
     private var maneuverCard: some View {
         HStack(alignment: .center, spacing: 14) {
-            Image(systemName: navigation.hasArrived ? "checkmark.circle.fill" : navigation.isPaused ? "location.slash" : "location.north.fill")
+            Image(systemName: navigation.hasArrived ? "checkmark.circle.fill" : navigation.isRejoiningRoute
+                  ? "arrow.triangle.turn.up.right.diamond" : NavigationManeuver.symbol(for: navigation.instruction))
                 .font(.system(size: 25, weight: .semibold))
-                .foregroundStyle(navigation.isPaused ? BrakeTheme.warning : BrakeTheme.accent)
+                .foregroundStyle(BrakeTheme.accent)
                 .frame(width: 32)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
@@ -304,18 +506,27 @@ struct NavigationView: View {
                     Text(navigation.destinationTitle ?? "Destination reached.")
                         .font(.subheadline).foregroundStyle(BrakeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if navigation.isPaused || !navigation.hasFreshLocation {
-                    Text("Navigation paused").font(.headline).foregroundStyle(BrakeTheme.warning)
-                    Text(navigation.status.isEmpty ? "Waiting for a fresh GPS location." : navigation.status)
-                        .font(.caption).foregroundStyle(BrakeTheme.muted)
+                } else if navigation.isRejoiningRoute {
+                    HStack {
+                        if navigation.isCalculating { ProgressView().tint(BrakeTheme.accent) }
+                        Text(navigation.isCalculating ? "Finding a new route…" : "Rejoining your route")
+                            .font(.headline)
+                    }
+                    Text(navigation.destinationTitle ?? "Your destination stays selected.")
+                        .font(.subheadline).foregroundStyle(BrakeTheme.muted)
                 } else {
                     if let distance = navigation.maneuverDistance, distance.isFinite {
                         Text(distance < 20 ? "Now" : "In \(distanceText(distance))")
                             .font(.system(size: 22, weight: .semibold)).monospacedDigit()
                     }
                     Text(navigation.instruction.isEmpty ? "Follow the route" : navigation.instruction)
-                        .font(.subheadline.weight(.medium))
+                        .font(.headline)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let next = navigation.upcomingInstruction {
+                        Label("Then \(next)", systemImage: NavigationManeuver.symbol(for: next))
+                            .font(.caption).foregroundStyle(BrakeTheme.muted)
+                            .lineLimit(2)
+                    }
                     if let notice = navigation.routeNotice, !notice.isEmpty {
                         Text(notice).font(.caption).foregroundStyle(BrakeTheme.warning)
                             .fixedSize(horizontal: false, vertical: true)
@@ -332,8 +543,8 @@ struct NavigationView: View {
             if let destination = navigation.destinationTitle {
                 Text(destination).font(.caption.weight(.semibold)).foregroundStyle(BrakeTheme.muted).lineLimit(1)
             }
-            journeyMetrics(time: navigation.hasArrived ? 0 : navigation.isPaused || !navigation.hasFreshLocation ? nil : navigation.remainingTime,
-                           distance: navigation.hasArrived ? 0 : navigation.isPaused || !navigation.hasFreshLocation ? nil : navigation.remainingDistance)
+            journeyMetrics(time: navigation.hasArrived ? 0 : navigation.remainingTime,
+                           distance: navigation.hasArrived ? 0 : navigation.remainingDistance)
         }
         .brakePanel()
     }
@@ -448,36 +659,64 @@ struct NavigationView: View {
 /// Map panning is disabled so a horizontal drag can always change pages.
 /// Pinch zoom remains available; attribution stays in the unobstructed map footer.
 private struct NavigationMapView: UIViewRepresentable {
+    @Environment(\.colorScheme) private var colorScheme
     var route: MKRoute?
     var location: CLLocation?
+    var locationIsCurrent = true
     var followsLocation: Bool
     var recenterTrigger: Int
+    var topInset: CGFloat = 40
+    var isVisible = true
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> MKMapView {
-        let map = MKMapView()
+        let map = NavigationMapSurface()
         map.delegate = context.coordinator
-        map.overrideUserInterfaceStyle = .dark
         map.mapType = .standard
         map.pointOfInterestFilter = .excludingAll
-        map.isScrollEnabled = false
+        map.isScrollEnabled = true
         map.isZoomEnabled = true
         map.isRotateEnabled = false
         map.isPitchEnabled = false
         map.showsCompass = false
         map.showsScale = true
         map.showsUserLocation = false
+        context.coordinator.attach(map)
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.observePinch(_:)))
+        pinch.cancelsTouchesInView = false
+        pinch.delegate = context.coordinator
+        map.addGestureRecognizer(pinch)
+        map.mapInteractionPinch = pinch
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.observePan(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.cancelsTouchesInView = false
+        pan.delegate = context.coordinator
+        map.addGestureRecognizer(pan)
+        map.mapInteractionPan = pan
         return map
     }
 
+    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) {
+        coordinator.displayLink?.invalidate()
+        map.delegate = nil
+    }
+
     func updateUIView(_ map: MKMapView, context: Context) {
+        let style: UIUserInterfaceStyle = colorScheme == .dark ? .dark : .light
+        let styleChanged = map.overrideUserInterfaceStyle != style
+        map.overrideUserInterfaceStyle = style
         let coordinator = context.coordinator
+        coordinator.displayLink?.isPaused = !isVisible
+        coordinator.locationIsCurrent = locationIsCurrent
+        let insetChanged = coordinator.topInset != topInset
+        coordinator.topInset = topInset
         let routeChanged = coordinator.route !== route
         let recenter = coordinator.recenterTrigger != recenterTrigger
         let followChanged = coordinator.wasFollowing != followsLocation
+        if routeChanged || recenter { coordinator.userPanned = false }
         if routeChanged {
-            map.removeOverlays(map.overlays)
+            if let previous = coordinator.route { map.removeOverlay(previous.polyline) }
             if let destination = coordinator.destination { map.removeAnnotation(destination) }
             coordinator.destination = nil
             coordinator.route = route
@@ -492,6 +731,17 @@ private struct NavigationMapView: UIViewRepresentable {
                 }
             }
         }
+        if styleChanged || coordinator.accentName != BrakeTheme.accentName {
+            coordinator.accentName = BrakeTheme.accentName
+            if let route, let renderer = map.renderer(for: route.polyline) as? MKPolylineRenderer {
+                renderer.strokeColor = BrakeTheme.accentUIColor(for: style)
+                renderer.setNeedsDisplay()
+            }
+            if let destination = coordinator.destination,
+               let marker = map.view(for: destination) as? MKMarkerAnnotationView {
+                marker.markerTintColor = BrakeTheme.accentUIColor(for: style)
+            }
+        }
         let validLocation = location.flatMap { CLLocationCoordinate2DIsValid($0.coordinate) ? $0 : nil }
         if let location = validLocation {
             if coordinator.userPosition == nil {
@@ -500,25 +750,49 @@ private struct NavigationMapView: UIViewRepresentable {
                 coordinator.userPosition = annotation
                 map.addAnnotation(annotation)
             }
-            coordinator.userPosition?.coordinate = location.coordinate
+            if coordinator.lastLocationTimestamp != location.timestamp {
+                let accepted = coordinator.smoother.ingest(NavigationCoordinate(latitude: location.coordinate.latitude,
+                    longitude: location.coordinate.longitude), accuracy: location.horizontalAccuracy,
+                    speed: location.speed, timestamp: location.timestamp.timeIntervalSince1970,
+                    now: Date().timeIntervalSince1970, isCurrent: locationIsCurrent)
+                if accepted, locationIsCurrent, location.speed >= 2, location.course >= 0,
+                   location.course.isFinite, location.courseAccuracy >= 0, location.courseAccuracy <= 35 {
+                    coordinator.targetHeading = location.course
+                }
+                if let point = coordinator.smoother.coordinate {
+                    coordinator.userPosition?.coordinate = CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+                    coordinator.updateAccuracyCircle(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
+                }
+            }
+            coordinator.userPosition?.title = locationIsCurrent ? "Your location" : "Last known GPS location"
+            if let annotation = coordinator.userPosition, let view = map.view(for: annotation) {
+                let icon = coordinator.positionImage()
+                if view.image !== icon { view.image = icon }
+            }
         } else if let annotation = coordinator.userPosition {
             map.removeAnnotation(annotation)
             coordinator.userPosition = nil
+            coordinator.smoother = NavigationMapSmoother()
+            if let circle = coordinator.accuracyCircle { map.removeOverlay(circle) }
+            coordinator.accuracyCircle = nil
         }
-        let locationChanged = coordinator.lastLocationTimestamp != validLocation?.timestamp
-        if followsLocation, let location = validLocation,
-           locationChanged || routeChanged || followChanged || recenter {
-            let distance = recenter || followChanged || !coordinator.hasCentered ? 700 : max(180, min(5000, map.camera.altitude))
-            let heading = location.course.isFinite && location.course >= 0 ? location.course : 0
-            map.setCamera(MKMapCamera(lookingAtCenter: location.coordinate, fromDistance: distance, pitch: 0, heading: heading), animated: coordinator.hasCentered && !routeChanged)
+        coordinator.following = followsLocation && validLocation != nil
+        if coordinator.following {
+            coordinator.needsOverviewFit = false
+            if followChanged || recenter || !coordinator.hasCentered {
+                coordinator.followDistance = 700
+                coordinator.followHeading = map.camera.heading
+            }
+            if !coordinator.hasCentered, let location = validLocation {
+                map.setCamera(MKMapCamera(lookingAtCenter: location.coordinate, fromDistance: 700,
+                    pitch: 45, heading: coordinator.targetHeading), animated: false)
+            }
             coordinator.hasCentered = true
-        } else if !followsLocation && (routeChanged || recenter || !coordinator.hasCentered) {
-            if let route {
-                map.setVisibleMapRect(route.polyline.boundingMapRect,
-                                      edgePadding: UIEdgeInsets(top: 40, left: 30, bottom: 44, right: 30), animated: false)
-                coordinator.hasCentered = true
+        } else if !followsLocation && !coordinator.userPanned && (routeChanged || recenter || insetChanged || !coordinator.hasCentered) {
+            if route != nil {
+                coordinator.needsOverviewFit = true
             } else if let location = validLocation {
-                map.setRegion(MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 1800, longitudinalMeters: 1800), animated: false)
+                map.setRegion(MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 1800, longitudinalMeters: 1800), animated: coordinator.hasCentered)
                 coordinator.hasCentered = true
             }
         }
@@ -527,7 +801,12 @@ private struct NavigationMapView: UIViewRepresentable {
         coordinator.recenterTrigger = recenterTrigger
     }
 
-    final class Coordinator: NSObject, MKMapViewDelegate {
+    @MainActor final class Coordinator: NSObject, @preconcurrency MKMapViewDelegate, UIGestureRecognizerDelegate {
+        var userPanned = false
+        var accentName = ""
+        private var circleBudget = MapOverlayCoalescer()
+        private var circleWasCurrent: Bool?
+        private var positionImages: [Bool: UIImage] = [:]
         var route: MKRoute?
         var destination: MKPointAnnotation?
         var userPosition: MKPointAnnotation?
@@ -535,26 +814,207 @@ private struct NavigationMapView: UIViewRepresentable {
         var recenterTrigger = 0
         var wasFollowing = false
         var hasCentered = false
+        var locationIsCurrent = true
+        var topInset: CGFloat = 40
+        var smoother = NavigationMapSmoother()
+        weak var map: MKMapView?
+        var displayLink: CADisplayLink?
+        var accuracyCircle: MKCircle?
+        var following = false
+        var needsOverviewFit = false
+        var followDistance = 700.0
+        var followHeading = 0.0
+        var targetHeading = 0.0
+        private var lastRender = 0.0
+        private var lastCircleUpdate = 0.0
+        private var applyingCamera = false
+        private var userZooming = false
+        private var lastBounds = CGSize.zero
+        private var boundsChangedAt = 0.0
+
+        @MainActor final class LinkTarget: NSObject {
+            weak var owner: Coordinator?
+            init(_ owner: Coordinator) { self.owner = owner }
+            @objc func step(_ link: CADisplayLink) { owner?.render(at: link.timestamp) }
+        }
+        func attach(_ map: MKMapView) {
+            self.map = map
+            let link = CADisplayLink(target: LinkTarget(self), selector: #selector(LinkTarget.step(_:)))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        }
+        private func render(at time: Double) {
+            guard let map, map.window != nil else { lastRender = 0; return }
+            let dt = lastRender == 0 ? 1 / 30.0 : min(0.1, time - lastRender)
+            lastRender = time
+            if map.bounds.size != lastBounds {
+                lastBounds = map.bounds.size
+                boundsChangedAt = time
+                if !following, !userPanned, route != nil { needsOverviewFit = true }
+            }
+            if needsOverviewFit, !following, !userPanned, time - boundsChangedAt > 0.25,
+               map.bounds.height > 20, map.bounds.width > 20, let route {
+                needsOverviewFit = false
+                map.setVisibleMapRect(route.polyline.boundingMapRect,
+                    edgePadding: UIEdgeInsets(top: min(topInset, map.bounds.height * 0.4), left: 30, bottom: 44, right: 30),
+                    animated: hasCentered)
+                hasCentered = true
+            }
+            guard let point = smoother.advance(seconds: dt) else { return }
+            let coordinate = CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+            if let current = userPosition?.coordinate,
+               abs(current.latitude - coordinate.latitude) + abs(current.longitude - coordinate.longitude) > 0.0000005 {
+                userPosition?.coordinate = coordinate
+            }
+            if time - lastCircleUpdate > 0.25 {
+                updateAccuracyCircle(coordinate)
+                lastCircleUpdate = time
+            }
+            guard following, !userZooming, !userPanned else { return }
+            let factor = 1 - exp(-dt / 0.65)
+            let current = map.camera
+            let longitudeDelta = (coordinate.longitude - current.centerCoordinate.longitude + 540).truncatingRemainder(dividingBy: 360) - 180
+            let center = CLLocationCoordinate2D(latitude: current.centerCoordinate.latitude + (coordinate.latitude - current.centerCoordinate.latitude) * factor,
+                longitude: (current.centerCoordinate.longitude + longitudeDelta * factor + 540).truncatingRemainder(dividingBy: 360) - 180)
+            let turn = (targetHeading - followHeading + 540).truncatingRemainder(dividingBy: 360) - 180
+            followHeading = (followHeading + turn * factor + 360).truncatingRemainder(dividingBy: 360)
+            let distance = current.centerCoordinateDistance + (followDistance - current.centerCoordinateDistance) * factor
+            let displacement = MapOverlayCoalescer.distance(
+                NavigationCoordinate(latitude: current.centerCoordinate.latitude, longitude: current.centerCoordinate.longitude),
+                NavigationCoordinate(latitude: center.latitude, longitude: center.longitude))
+            let headingChange = abs((followHeading - current.heading + 540).truncatingRemainder(dividingBy: 360) - 180)
+            guard displacement > 0.1 || abs(distance - current.centerCoordinateDistance) > 0.3
+                || headingChange > 0.08 || abs(current.pitch - 45) > 0.03 else { return }
+            applyingCamera = true
+            map.setCamera(MKMapCamera(lookingAtCenter: center, fromDistance: max(180, distance),
+                pitch: current.pitch + (45 - current.pitch) * factor, heading: followHeading), animated: false)
+            applyingCamera = false
+        }
+
+        func updateAccuracyCircle(_ center: CLLocationCoordinate2D) {
+            guard let map else { return }
+            if accuracyCircle == nil { circleBudget.reset() }
+            let replace = circleBudget.accept(center: NavigationCoordinate(latitude: center.latitude, longitude: center.longitude),
+                                               radius: max(5, smoother.uncertaintyRadius))
+            if !replace {
+                if circleWasCurrent != locationIsCurrent, let circle = accuracyCircle,
+                   let renderer = map.renderer(for: circle) as? MKCircleRenderer {
+                    let color: UIColor = locationIsCurrent ? .systemBlue : .systemGray
+                    renderer.fillColor = color.withAlphaComponent(0.12)
+                    renderer.strokeColor = color.withAlphaComponent(0.35)
+                    renderer.setNeedsDisplay()
+                }
+                circleWasCurrent = locationIsCurrent
+                return
+            }
+            if let circle = accuracyCircle { map.removeOverlay(circle) }
+            let circle = MKCircle(center: center, radius: max(5, smoother.uncertaintyRadius) + 5)
+            accuracyCircle = circle
+            circleWasCurrent = locationIsCurrent
+            map.addOverlay(circle, level: .aboveRoads)
+        }
+        @objc func observePan(_ gesture: UIPanGestureRecognizer) {
+            if gesture.state == .began || gesture.state == .changed {
+                userPanned = true
+                needsOverviewFit = false
+            }
+        }
+        @objc func observePinch(_ gesture: UIPinchGestureRecognizer) {
+            if gesture.state == .began || gesture.state == .changed { userZooming = true }
+            else {
+                if let map { followDistance = max(180, min(5000, map.camera.centerCoordinateDistance)) }
+                userZooming = false
+            }
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            if let scroll = otherGestureRecognizer.view as? UIScrollView, scroll.isPagingEnabled { return false }
+            return true
+        }
+        func positionImage() -> UIImage {
+            if let cached = positionImages[locationIsCurrent] { return cached }
+            let icon = UIGraphicsImageRenderer(size: CGSize(width: 26, height: 26)).image { context in
+                let color: UIColor = locationIsCurrent ? .systemBlue : .systemGray
+                color.setFill()
+                context.cgContext.fillEllipse(in: CGRect(x: 3, y: 3, width: 20, height: 20))
+                UIColor.white.setStroke()
+                context.cgContext.setLineWidth(3)
+                context.cgContext.strokeEllipse(in: CGRect(x: 3, y: 3, width: 20, height: 20))
+            }
+            positionImages[locationIsCurrent] = icon
+            return icon
+        }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let circle = overlay as? MKCircle {
+                let renderer = MKCircleRenderer(circle: circle)
+                let color: UIColor = locationIsCurrent ? .systemBlue : .systemGray
+                renderer.fillColor = color.withAlphaComponent(0.12)
+                renderer.strokeColor = color.withAlphaComponent(0.35)
+                renderer.lineWidth = 1
+                return renderer
+            }
             guard let line = overlay as? MKPolyline else { return MKOverlayRenderer(overlay: overlay) }
             let renderer = MKPolylineRenderer(polyline: line)
-            renderer.strokeColor = UIColor(red: 0.63, green: 0.98, blue: 0.78, alpha: 1)
+            renderer.strokeColor = BrakeTheme.accentUIColor(for: mapView.traitCollection.userInterfaceStyle)
             renderer.lineWidth = 6
             return renderer
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             let isUser = (annotation as AnyObject) === userPosition
+            if isUser {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "NavigationDot")
+                    ?? MKAnnotationView(annotation: annotation, reuseIdentifier: "NavigationDot")
+                view.annotation = annotation
+                view.image = positionImage()
+                view.displayPriority = .required
+                view.collisionMode = .circle
+                view.accessibilityLabel = locationIsCurrent ? "Approximate GPS location" : "Last known GPS location"
+                return view
+            }
             let identifier = isUser ? "NavigationPosition" : "NavigationDestination"
             let view = (mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView)
                 ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
             view.annotation = annotation
-            view.markerTintColor = isUser ? .systemBlue : UIColor(red: 1, green: 0.69, blue: 0.125, alpha: 1)
+            view.markerTintColor = isUser ? (locationIsCurrent ? .systemBlue : .systemGray)
+                : BrakeTheme.accentUIColor(for: mapView.traitCollection.userInterfaceStyle)
             view.glyphImage = UIImage(systemName: isUser ? "location.fill" : "flag.fill")
             view.displayPriority = .required
             view.canShowCallout = false
             return view
+        }
+    }
+}
+
+/// Map touches win over the ancestor page scroll view. Touches outside this
+/// map (including the destination panel) remain available to the page pager.
+private final class NavigationMapSurface: MKMapView {
+    var mapInteractionPan: UIPanGestureRecognizer?
+    var mapInteractionPinch: UIPinchGestureRecognizer?
+    private weak var protectedPager: UIScrollView?
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        protectMapGestures()
+    }
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        protectMapGestures()
+    }
+    private func protectMapGestures() {
+        guard let pan = mapInteractionPan else { return }
+        var ancestor = superview
+        while let view = ancestor {
+            if let pager = view as? UIScrollView, pager.isPagingEnabled {
+                if protectedPager !== pager {
+                    pager.panGestureRecognizer.require(toFail: pan)
+                    if let pinch = mapInteractionPinch { pager.panGestureRecognizer.require(toFail: pinch) }
+                    protectedPager = pager
+                }
+                return
+            }
+            ancestor = view.superview
         }
     }
 }

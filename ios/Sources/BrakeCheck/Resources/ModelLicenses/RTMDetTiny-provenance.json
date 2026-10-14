@@ -1,0 +1,14 @@
+{
+  "source": "https://huggingface.co/LibreYOLO/LibreRTMDett",
+  "license": "Apache-2.0",
+  "source_weights_sha256": "79b8a0b1e22b100e36a5591b24a1a97eae2fc3f29ad73cb4809d8c9c6cd19a52",
+  "input": "RGB 640x640, upstream BGR normalization",
+  "torch": "2.7.0+cpu",
+  "coremltools": "9.0",
+  "files": {
+    "Manifest.json": "f4000df5847270984cdb58b54ef10b137c65c734b57542189b146dde3ff2799f",
+    "Data/com.apple.CoreML/model.mlmodel": "6387ec9175e84df227e96e9e5dcd01dcb8ef1b26a6cc79bf9617f6ae54e07e3e",
+    "Data/com.apple.CoreML/weights/0-weight.bin": "3700d26ce27b855b12715ae7e77810d84a146415838fa21147fa6809ae17700b"
+  },
+  "validation": "PyTorch/traced parity; Apple runtime parity and phone latency pending"
+}

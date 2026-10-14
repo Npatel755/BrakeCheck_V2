@@ -1,19 +1,20 @@
 import SwiftUI
 
-/// The BrakeCheck logo: the amber brake warning lamp from a car's instrument cluster, then the name
-/// with "Brake" in white and "Check" in grey. The app icon (AppIcon.png, set in xtool.yml) is the same lamp.
+/// Brake lamp and wordmark in the shared blue, with text that follows appearance.
 struct BrakeLogo: View {
+    @AppStorage("display.accent") private var accentChoice = "blue"
     var size: CGFloat = 25
 
     var body: some View {
         HStack(spacing: size * 0.3) {
             BrakeLamp().frame(width: size * 1.2, height: size * 1.2)
-            (Text("Brake").foregroundColor(.white) + Text("Check").foregroundColor(.white.opacity(0.6)))
+            (Text("Brake").foregroundColor(BrakeTheme.text) + Text("Check").foregroundColor(BrakeTheme.accent))
                 .font(.system(size: size, weight: .bold)).tracking(-size * 0.025)
                 .lineLimit(1).fixedSize()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("BrakeCheck")
+        .tint(BrakeTheme.accentColor(named: accentChoice))
     }
 }
 

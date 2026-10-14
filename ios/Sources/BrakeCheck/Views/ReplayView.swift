@@ -25,7 +25,7 @@ struct ReplayView: View {
     private var savedLogs: [URL] { SpeedLogReader.savedLogs() }
 
     var body: some View {
-        NavigationStack {
+        Group {
             Form {
                 if model.replaying {
                     Section {
@@ -112,7 +112,6 @@ struct ReplayView: View {
             }
             .navigationTitle("Replay a drive")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: allowedTypes) { result in
             handleImport(result, kind: importKind)

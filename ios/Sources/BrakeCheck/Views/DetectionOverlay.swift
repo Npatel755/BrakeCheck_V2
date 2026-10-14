@@ -2,6 +2,7 @@ import SwiftUI
 import BrakeCheckCore
 
 struct RoadAreaOverlay: View {
+    @AppStorage("display.accent") private var accentChoice = "blue"
     var road: RoadRegion?
     var body: some View {
         GeometryReader { geometry in
@@ -15,13 +16,14 @@ struct RoadAreaOverlay: View {
                 for band in bands.reversed() { path.addLine(to: point(band.right, band.y)) }
                 path.closeSubpath()
             }
-            path.fill(Color.orange.opacity(0.055))
-            path.stroke(Color.orange.opacity(0.60), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+            path.fill(BrakeTheme.accentColor(named: accentChoice).opacity(0.055))
+            path.stroke(BrakeTheme.accentColor(named: accentChoice).opacity(0.60), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
         }.allowsHitTesting(false)
     }
 }
 
 struct LeadCorridorOverlay: View {
+    @AppStorage("display.accent") private var accentChoice = "blue"
     var lane: LanePath?
     var body: some View {
         GeometryReader { geometry in
@@ -38,51 +40,36 @@ struct LeadCorridorOverlay: View {
                 for band in bands.reversed() { path.addLine(to: point(band.right, band.y)) }
                 path.closeSubpath()
             }
-            path.fill(BrakeTheme.accent.opacity(0.07))
-            path.stroke(BrakeTheme.accent.opacity(0.75), lineWidth: 2)
+            path.fill(BrakeTheme.accentColor(named: accentChoice).opacity(0.07))
+            path.stroke(BrakeTheme.accentColor(named: accentChoice).opacity(0.75), lineWidth: 2)
         }
         .allowsHitTesting(false)
     }
 }
 
 struct DetectionOverlay: View {
+    @AppStorage("display.accent") private var accentChoice = "blue"
     let detections: [VehicleDetection]
     var hazardTargetID: UUID? = nil
     var leadTargetID: UUID? = nil
-    private func direction(_ item: VehicleDetection) -> (caption: String, color: Color) {
-        if !item.isFreshDetection {
-            return (item.id == leadTargetID ? "LEAD · REACQUIRING" : "TRACK HELD · REACQUIRING", .yellow)
-        }
-        if item.id == hazardTargetID { return ("CLOSING HAZARD", .orange) }
-        if item.id == leadTargetID {
-            return ("LEAD \(item.id.uuidString.prefix(4)) · TRACKED", BrakeTheme.accent)
-        }
-        guard ["car", "truck"].contains(item.label) else { return ("VIEW UNSUPPORTED", .white) }
-        guard let view = item.viewpoint, view.isFresh(at: item.capturedAt) else {
-            return ("CHECKING VIEW", .yellow)
-        }
-        if view.isFrontFacing(at: item.capturedAt) { return ("FRONT VIEW · NOT A LEAD", .orange) }
-        if view.hasConfirmedRearView(at: item.capturedAt) { return ("REAR · CONFIRMED", BrakeTheme.accent) }
-        if view.isRearFacing(at: item.capturedAt) { return ("REAR · CHECKING AGAIN", .yellow) }
-        return (String(format: "UNCERTAIN · F %.0f%% R %.0f%%", view.front * 100, view.rear * 100), .yellow)
+    private func boxColor(_ item: VehicleDetection) -> Color {
+        if !item.isFreshDetection { return BrakeTheme.caution }
+        if item.id == hazardTargetID { return BrakeTheme.warning }
+        if item.id == leadTargetID { return BrakeTheme.accent }
+        return BrakeTheme.accent.opacity(0.65)
     }
     var body: some View {
         GeometryReader { geometry in
             ForEach(detections) { item in
-                let view = direction(item)
-                ZStack(alignment: .topLeading) {
-                    Rectangle().stroke(view.color.opacity(item.isFreshDetection ? 0.7 : 0.4),
+                // Keep the road clear: boxes show detection state without
+                // confidence scores, track IDs or viewpoint diagnostics.
+                Rectangle().stroke(boxColor(item).opacity(item.isFreshDetection ? 0.7 : 0.4),
                         style: StrokeStyle(lineWidth: 1, dash: item.isFreshDetection ? [] : [4, 3]))
-                    Text("\(item.label) \(item.confidence, specifier: "%.2f")\n\(view.caption)")
-                        .font(.system(size: 10, weight: .bold)).foregroundStyle(view.color)
-                        .lineLimit(2).minimumScaleFactor(0.6)
-                        .padding(3).background(.black.opacity(0.6))
-                        .opacity(item.isFreshDetection ? 1 : 0.6)
-                }
                 .frame(width: item.box.width * geometry.size.width, height: item.box.height * geometry.size.height)
                 .position(x: item.box.midX * geometry.size.width, y: (1 - item.box.midY) * geometry.size.height)
             }
         }
         .allowsHitTesting(false)
+        .tint(BrakeTheme.accentColor(named: accentChoice))
     }
 }
