@@ -128,7 +128,7 @@ struct ContentView: View {
         .onChange(of: useMPH) { _, miles in navigation.useMPH = miles }
         .onChange(of: model.replaying) { _, active in if active { page = .camera } }
         .onChange(of: model.demo) { _, active in if active { page = .camera } }
-        .task { await safety.connectIfPaired() }
+        .task { if AppScope.connectedServices { await safety.connectIfPaired() } }
     }
 
     private var drivingLayout: some View {
@@ -387,7 +387,8 @@ struct ContentView: View {
             : ("STANDBY", BrakeTheme.muted)
         return HStack(spacing: 5) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text("\(text) · \(model.measurementRevision)").font(.system(size: 10, weight: .bold)).tracking(1)
+            Text(AppScope.developerTools ? "\(text) · \(model.measurementRevision)" : text)
+                .font(.system(size: 10, weight: .bold)).tracking(1)
         }
         .padding(.horizontal, 10).frame(height: 26)
         .background(BrakeTheme.cameraSurface, in: Capsule())

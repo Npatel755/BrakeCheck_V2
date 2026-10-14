@@ -49,6 +49,10 @@ final class LaneTracker {
     private(set) var roadRegion: RoadRegion?
 
     func prepare() {
+        guard AppScope.neuralLanes else {
+            onStatus?("Lane paint scanner (YOLOP off in this build)")
+            return
+        }
         stateLock.lock()
         guard !loadingStarted else { stateLock.unlock(); return }
         loadingStarted = true

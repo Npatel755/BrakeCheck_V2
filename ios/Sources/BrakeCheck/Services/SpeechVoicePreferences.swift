@@ -4,7 +4,7 @@ import Foundation
 
 @MainActor enum SpeechVoicePreferences {
     static var usesBackendAlerts: Bool {
-        UserDefaults.standard.object(forKey: "voice.backendAlerts") as? Bool ?? true
+        AppScope.connectedServices && (UserDefaults.standard.object(forKey: "voice.backendAlerts") as? Bool ?? true)
     }
     static func restoreOriginalDefaultsIfNeeded() {
         let defaults = UserDefaults.standard

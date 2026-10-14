@@ -231,16 +231,20 @@ struct HomeView: View {
             rowDivider
             navigationRow("Navigation", detail: "Directions with camera tracking still active", icon: "location.north.line", action: openNavigation)
             rowDivider
-            navigationRow("Settings", detail: "Connection, voice, safety, and permissions", icon: "slider.horizontal.3", action: openSettings)
+            navigationRow("Settings", detail: AppScope.connectedServices ? "Connection, voice, safety, and permissions" : "Voice, recordings, safety, and permissions", icon: "slider.horizontal.3", action: openSettings)
             rowDivider
-            navigationRow("Emergency contacts", detail: service.contacts.isEmpty ? "Choose who can receive a check-in" : "\(service.contacts.count) saved contact\(service.contacts.count == 1 ? "" : "s")", icon: "person.2", action: openContacts)
-            rowDivider
+            if AppScope.connectedServices {
+                navigationRow("Emergency contacts", detail: service.contacts.isEmpty ? "Choose who can receive a check-in" : "\(service.contacts.count) saved contact\(service.contacts.count == 1 ? "" : "s")", icon: "person.2", action: openContacts)
+                rowDivider
+            }
             navigationRow("Saved incidents", detail: model.incidents.isEmpty ? "Your saved clips and event details" : "\(model.incidents.count) saved incident\(model.incidents.count == 1 ? "" : "s")", icon: "film.stack", action: openIncidents)
             rowDivider
             navigationRow("Replay a drive", detail: "Review a recorded journey", icon: "play.rectangle", action: openReplay)
             rowDivider
-            navigationRow("Diagnostics", detail: "Camera, GPS, and measurement details", icon: "waveform.path.ecg", action: openDiagnostics)
-            rowDivider
+            if AppScope.developerTools {
+                navigationRow("Diagnostics", detail: "Camera, GPS, and measurement details", icon: "waveform.path.ecg", action: openDiagnostics)
+                rowDivider
+            }
             navigationRow("Calibrate camera", detail: "While parked, enter a measured vehicle gap", icon: "ruler", action: beginCalibration)
                 .disabled(!calibrationAvailable).opacity(calibrationAvailable ? 1 : 0.4)
         }

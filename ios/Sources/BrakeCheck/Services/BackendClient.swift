@@ -78,6 +78,8 @@ final class ConnectionSettings: ObservableObject {
     }
 
     var client: BackendClient? {
+        // Release builds never talk to a backend, even with a saved address.
+        guard AppScope.connectedServices else { return nil }
         let credential = credentialForSignature
         guard let url = Self.validatedURL(address), credential.count >= 24 else { return nil }
         return BackendClient(

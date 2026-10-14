@@ -226,7 +226,7 @@ final class DriveModel: ObservableObject {
 
             self.camera.markIncident(reason: String(format: "Experimental impact candidate, %.1f g", g))
 
-            if self.safety.settings.autoCheckin {
+            if AppScope.connectedServices && self.safety.settings.autoCheckin {
                 self.safety.beginCheckin(location: self.speedService.latestLocation,
                     speedMPH: self.speed.map { $0 * 2.2369362921 }, dryRun: false)
             } else {
@@ -686,6 +686,14 @@ final class DriveModel: ObservableObject {
 
     func deleteIncident(_ id: UUID) { camera.deleteIncident(id) }
     func applyRecordingPreferences() { camera.applyRecordingPreferences() }
+
+    /// Deletes the saved GPS speed logs, except the one an active trip is writing.
+    func deleteSpeedLogs() {
+        let active = speedLog.url?.lastPathComponent
+        for url in SpeedLogReader.savedLogs() where url.lastPathComponent != active {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
 
     func setDemo(_ enabled: Bool) {
 

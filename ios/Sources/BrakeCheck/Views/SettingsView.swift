@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
-    case appearance, camera, recordings, connection, voice, safety, permissions, demo
+    case appearance, camera, recordings, connection, voice, safety, permissions, demo, about
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -15,6 +15,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .safety: return "Safety"
         case .permissions: return "Permissions"
         case .demo: return "Try BrakeCheck"
+        case .about: return "About & licences"
         }
     }
     var icon: String {
@@ -27,18 +28,20 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .safety: return "shield"
         case .permissions: return "lock.shield"
         case .demo: return "play.rectangle"
+        case .about: return "info.circle"
         }
     }
     var detail: String {
         switch self {
         case .appearance: return "Choose the look that feels right."
         case .camera: return "Units and overlays for your road view."
-        case .recordings: return "Manage video space and optional automatic cleanup."
+        case .recordings: return "Manage video space, speed logs, and optional automatic cleanup."
         case .connection: return "Connect your private BrakeCheck service."
-        case .voice: return "Spoken alerts, language, and check-in replies."
-        case .safety: return "Impact detection and emergency check-ins."
+        case .voice: return AppScope.connectedServices ? "Spoken alerts, language, and check-in replies." : "Spoken alerts and language."
+        case .safety: return AppScope.connectedServices ? "Impact detection and emergency check-ins." : "Impact detection and saved footage."
         case .permissions: return "Manage access to your iPhone's sensors."
-        case .demo: return "Explore sample driving and check-in features."
+        case .demo: return AppScope.connectedServices ? "Explore sample driving and check-in features." : "Explore a simulated drive."
+        case .about: return "How BrakeCheck works, its limits, and open-source licences."
         }
     }
 }
@@ -65,10 +68,14 @@ struct SettingsView: View {
     @AppStorage("recording.retentionDays") private var recordingRetentionDays = 0
     @State private var pendingRetentionDays = 0
     @State private var confirmRecordingCleanup = false
+    @State private var confirmSpeedLogDelete = false
+    @State private var speedLogCount = SpeedLogReader.savedLogs().count
 
     private var groups: [(String, [SettingsCategory])] {
-        [("Your app", [.appearance, .camera, .recordings]), ("Connected services", [.connection, .voice]),
-         ("Safety", [.safety, .permissions]), ("Explore", [.demo])]
+        let services: (String, [SettingsCategory]) = AppScope.connectedServices
+            ? ("Connected services", [.connection, .voice]) : ("Sound", [.voice])
+        return [("Your app", [.appearance, .camera, .recordings]), services,
+                ("Safety", [.safety, .permissions]), ("Explore", [.demo, .about])]
     }
 
     var body: some View {
@@ -291,6 +298,21 @@ struct SettingsView: View {
             Text("Cleanup runs between trips. Active incident footage is protected. Exported copies and trip metrics are not deleted.")
                 .font(.caption).foregroundStyle(BrakeTheme.muted)
             Button("Refresh storage usage") { model.camera.refreshIncidents() }
+            Divider()
+            LabeledContent("Saved speed logs", value: "\(speedLogCount)")
+            Text("Each trip saves a small log of your GPS speed (no location) so the drive can be replayed with its video.")
+                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            Button("Delete speed logs", role: .destructive) { confirmSpeedLogDelete = true }
+                .disabled(speedLogCount == 0)
+                .alert("Delete all saved speed logs?", isPresented: $confirmSpeedLogDelete) {
+                    Button("Delete", role: .destructive) {
+                        model.deleteSpeedLogs()
+                        speedLogCount = SpeedLogReader.savedLogs().count
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("Replays of past drives will use an assumed speed instead. The log for a trip in progress is kept.")
+                }
         case .connection:
             Button(pairing ? "Pairing…" : "Scan pairing QR") { showingPairingScanner = true }
                 .disabled(pairing || busy)
@@ -346,28 +368,37 @@ struct SettingsView: View {
                 .disabled(model.tripActive || service.checkinPresented)
             Text("Device voices apply to directions and brake alerts. Preview while parked. Brake warnings remain clear and at full volume.")
                 .font(.caption).foregroundStyle(BrakeTheme.muted)
-            Toggle("Use ElevenLabs for brake alerts", isOn: $backendAlerts)
-            Text("ElevenLabs check-in audio uses the voice configured on your connected service.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            if AppScope.connectedServices {
+                Toggle("Use ElevenLabs for brake alerts", isOn: $backendAlerts)
+                Text("ElevenLabs check-in audio uses the voice configured on your connected service.")
+                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+            }
             Picker("Language", selection: $settings.language) {
                 Text("English").tag("en")
                 Text("Español").tag("es")
             }
-            Button(service.preparing ? "Preparing…" : "Prepare voice for this trip") {
-                Task { await service.prepareVoice() }
-            }.disabled(service.preparing || settings.client == nil || !backendAlerts)
-            Button("Allow microphone for spoken replies") {
-                Task { await service.requestMicrophone() }
+            if AppScope.connectedServices {
+                Button(service.preparing ? "Preparing…" : "Prepare voice for this trip") {
+                    Task { await service.prepareVoice() }
+                }.disabled(service.preparing || settings.client == nil || !backendAlerts)
+                Button("Allow microphone for spoken replies") {
+                    Task { await service.requestMicrophone() }
+                }
+                Text(service.voiceStatus).foregroundStyle(BrakeTheme.muted)
+                Text("The microphone records a 6-second reply after the check-in prompt ends. Your backend sends that reply to ElevenLabs.")
+                    .font(.caption).foregroundStyle(BrakeTheme.muted)
             }
-            Text(service.voiceStatus).foregroundStyle(BrakeTheme.muted)
-            Text("The microphone records a 6-second reply after the check-in prompt ends. Your backend sends that reply to ElevenLabs.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
         case .safety:
             Toggle("Experimental impact detection", isOn: $model.impactEnabled).disabled(model.demo)
-            Toggle("Start an emergency check-in on impact", isOn: $settings.autoCheckin)
-                .disabled(!model.impactEnabled || settings.client == nil)
-            Text("An enabled check-in can message confirmed contacts if you ask for help or do not respond. A phone drop can trigger it. No emergency services are called automatically.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            if AppScope.connectedServices {
+                Toggle("Start an emergency check-in on impact", isOn: $settings.autoCheckin)
+                    .disabled(!model.impactEnabled || settings.client == nil)
+                Text("An enabled check-in can message confirmed contacts if you ask for help or do not respond. A phone drop can trigger it. No emergency services are called automatically.")
+                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+            } else {
+                Text("A possible impact saves the available video around it to Incidents. A phone drop can trigger it. BrakeCheck doesn't contact anyone or call emergency services.")
+                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+            }
         case .permissions:
             Button("Open iPhone settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
@@ -377,11 +408,64 @@ struct SettingsView: View {
         case .demo:
             Toggle("Simulated driving metrics", isOn: Binding(get: { model.demo }, set: { model.setDemo($0) }))
                 .disabled(model.tripActive || model.stopping)
-            Button("Run crash check-in demo") { requestDemo = true }
-                .disabled(settings.client == nil)
-            Text("The check-in demo can use ElevenLabs credits but never sends emergency messages.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            if AppScope.connectedServices {
+                Button("Run crash check-in demo") { requestDemo = true }
+                    .disabled(settings.client == nil)
+                Text("The check-in demo can use ElevenLabs credits but never sends emergency messages.")
+                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+            }
+        case .about:
+            Text("A driver aid, not a safety system").font(.headline)
+            Text("BrakeCheck estimates the gap and closing speed to the car ahead from the camera and GPS. Its warnings can be late, missed, or wrong, especially at night, in rain, or with a loose mount. Keep your eyes on the road, and set up the phone before you drive.")
+                .foregroundStyle(BrakeTheme.muted)
+            Text("Open-source models").font(.headline)
+            Text("Vehicle detection: RTMDet-tiny and RTMDet-small, © OpenMMLab, repackaged by LibreYOLO. Apache License 2.0.")
+            Text("Vehicle direction: Car orientation model, fort-cyber/Car-orientation-image. Apache License 2.0.")
+            if AppScope.neuralLanes {
+                Text("Lane detection: YOLOP, hustvl. MIT License.")
+            }
+            ForEach(Self.licenceFiles, id: \.title) { file in
+                if let text = Self.bundledText(folder: file.folder, name: file.name) {
+                    DisclosureGroup(file.title) {
+                        Text(text).font(.caption.monospaced()).foregroundStyle(BrakeTheme.muted)
+                            .textSelection(.enabled).padding(.top, 8)
+                    }
+                }
+            }
+            Text(Self.versionText).font(.caption).foregroundStyle(BrakeTheme.muted)
         }
+    }
+
+    private struct LicenceFile {
+        let title: String
+        let folder: String
+        let name: String
+    }
+
+    private static var licenceFiles: [LicenceFile] {
+        var files = [LicenceFile(title: "Detector notice", folder: "ModelLicenses", name: "NOTICE.md"),
+                     LicenceFile(title: "Apache License 2.0", folder: "ModelLicenses", name: "Apache-2.0.txt"),
+                     LicenceFile(title: "LibreYOLO (MIT)", folder: "ModelLicenses", name: "LibreYOLO-MIT.txt"),
+                     LicenceFile(title: "Car orientation model (Apache-2.0)", folder: "ViewpointModelData", name: "CFV-LICENSE.txt")]
+        if AppScope.neuralLanes {
+            files.append(LicenceFile(title: "YOLOP (MIT)", folder: "ModelLicenses", name: "YOLOP-MIT.txt"))
+        }
+        return files
+    }
+
+    private static func bundledText(folder: String, name: String) -> String? {
+        for bundle in [Bundle.module, Bundle.main] {
+            guard let directory = bundle.url(forResource: folder, withExtension: nil) else { continue }
+            if let text = try? String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8) { return text }
+        }
+        return nil
+    }
+
+    private static var versionText: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "BrakeCheck \(version) (\(build))"
     }
 
     private func beginPairing(_ qrText: String) {
