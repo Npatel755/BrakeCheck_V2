@@ -33,6 +33,13 @@ let package = Package(
 
             path: "Sources/BrakeCheck",
 
+            // The old Ultralytics (AGPL) detectors stay on disk for comparison only.
+            // Without this, Xcode's SwiftPM treats their .mlmodel files as resources
+            // (duplicate 'model.mlmodel' error, and AGPL weights in the app).
+            exclude: [
+                "Resources/YOLOModelData"
+            ],
+
             resources: [
                 // Copy permissive RTMDet packages as ordinary resource data.
                 // Avoid triggering Apple's coremlc during
