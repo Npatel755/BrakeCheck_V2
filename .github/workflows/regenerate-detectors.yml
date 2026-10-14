@@ -1,0 +1,67 @@
+# Rebuilds the RTMDet Core ML packages from the public Apache-2.0 checkpoints with
+# tools/model_migration/export_rtmdet.py, then checks every output file against the
+# hashes in ModelLicenses/*-provenance.json. A match means the files are byte-identical
+# to the ones the app was validated with, so the weights can be committed from here.
+name: Regenerate detector weights
+
+on:
+  push:
+    branches: ['claude/**']
+    paths:
+      - '.github/workflows/regenerate-detectors.yml'
+      - 'tools/model_migration/export_rtmdet.py'
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: tools/model_migration
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install the pinned export toolchain
+        # Same versions as the provenance files (torch 2.7.0+cpu, coremltools 9.0).
+        # ultralytics and rfdetr from requirements.txt are screening-only, so they're skipped.
+        run: |
+          pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install coremltools==9.0 libreyolo==1.6.0 pyyaml
+
+      - name: Download the checkpoints
+        run: |
+          mkdir -p weights
+          for size in t s; do
+            curl -fsSL -o "weights/LibreRTMDet$size.pt" "https://huggingface.co/LibreYOLO/LibreRTMDet$size/resolve/main/LibreRTMDet$size.pt"
+          done
+          sha256sum weights/*.pt
+
+      - name: Export
+        run: |
+          python export_rtmdet.py --size t --output out/RTMDetTiny.mlpackage
+          python export_rtmdet.py --size s --output out/RTMDetSmall.mlpackage
+
+      - name: Compare with the committed provenance
+        run: |
+          python - <<'EOF'
+          import hashlib, json, pathlib
+          res = pathlib.Path("../../ios/Sources/BrakeCheck/Resources/ModelLicenses")
+          for card in ("RTMDetTiny", "RTMDetSmall"):
+              want = json.loads((res / f"{card}-provenance.json").read_text())["files"]
+              for rel, digest in want.items():
+                  f = pathlib.Path("out") / f"{card}.mlpackage" / rel
+                  got = hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else "missing"
+                  level = "notice" if got == digest else "warning"
+                  print(f"::{level} title={card}::{rel} {'matches' if got == digest else 'differs (' + got[:12] + ')'}")
+          EOF
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtmdet-packages
+          path: tools/model_migration/out/
