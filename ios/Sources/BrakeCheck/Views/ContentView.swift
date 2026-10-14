@@ -83,7 +83,43 @@ struct ContentView: View {
         }
     }
 
+    private var messagePresented: Binding<Bool> {
+        Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })
+    }
+
+    // Split in two so Xcode 26 can type-check the long modifier chain
+    // (one combined chain timed out at the .alert binding).
     private var drivingPages: some View {
+        drivingLayout
+        .onChange(of: safety.checkinPresented) { _, presented in
+            if !presented { showCheckin = false }
+            else { destinationPath = []; showCheckin = true }
+        }
+        .onChange(of: requestDemo) { _, requested in
+            if requested { destinationPath = [] }
+        }
+        .onChange(of: destinationPath) { _, destinations in
+            navigation.setPageVisible(destinations.isEmpty && page == .navigation && !selecting)
+            if destinations.isEmpty { presentPendingCheckin() }
+        }
+        .onChange(of: model.cameraReady) { _, ready in if !ready { selecting = false; selection = nil } }
+        .onChange(of: model.captureGeometry) { _, _ in selecting = false; selection = nil }
+        .onChange(of: model.changingCameraGeometry) { _, changing in
+            if changing { selecting = false; selection = nil }
+        }
+        .onChange(of: model.tripActive) { _, active in
+            if active { page = navigation.isNavigating ? .navigation : .camera }
+        }
+        .onChange(of: navigation.isNavigating) { _, active in if active { page = .navigation } }
+        .onChange(of: page) { _, destination in navigation.setPageVisible(destinationPath.isEmpty && destination == .navigation && !selecting) }
+        .onChange(of: selecting) { _, active in navigation.setPageVisible(destinationPath.isEmpty && page == .navigation && !active) }
+        .onChange(of: useMPH) { _, miles in navigation.useMPH = miles }
+        .onChange(of: model.replaying) { _, active in if active { page = .camera } }
+        .onChange(of: model.demo) { _, active in if active { page = .camera } }
+        .task { await safety.connectIfPaired() }
+    }
+
+    private var drivingLayout: some View {
         GeometryReader { geometry in
             let portrait = geometry.size.height > geometry.size.width
             ZStack {
@@ -122,38 +158,12 @@ struct ContentView: View {
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .fullScreenCover(isPresented: $showCheckin) { CrashCheckinView(service: safety) }
-        .alert("BrakeCheck", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+        .alert("BrakeCheck", isPresented: messagePresented) {
             Button("OK", role: .cancel) { model.message = nil }
         } message: { Text(model.message ?? "") }
         .confirmationDialog("End this trip? Remaining post-event recording will stop.", isPresented: $stopping, titleVisibility: .visible) {
             Button("End trip", role: .destructive) { selecting = false; model.endTrip(); page = .home }
         }
-        .onChange(of: safety.checkinPresented) { _, presented in
-            if !presented { showCheckin = false }
-            else { destinationPath = []; showCheckin = true }
-        }
-        .onChange(of: requestDemo) { _, requested in
-            if requested { destinationPath = [] }
-        }
-        .onChange(of: destinationPath) { _, destinations in
-            navigation.setPageVisible(destinations.isEmpty && page == .navigation && !selecting)
-            if destinations.isEmpty { presentPendingCheckin() }
-        }
-        .onChange(of: model.cameraReady) { _, ready in if !ready { selecting = false; selection = nil } }
-        .onChange(of: model.captureGeometry) { _, _ in selecting = false; selection = nil }
-        .onChange(of: model.changingCameraGeometry) { _, changing in
-            if changing { selecting = false; selection = nil }
-        }
-        .onChange(of: model.tripActive) { _, active in
-            if active { page = navigation.isNavigating ? .navigation : .camera }
-        }
-        .onChange(of: navigation.isNavigating) { _, active in if active { page = .navigation } }
-        .onChange(of: page) { _, destination in navigation.setPageVisible(destinationPath.isEmpty && destination == .navigation && !selecting) }
-        .onChange(of: selecting) { _, active in navigation.setPageVisible(destinationPath.isEmpty && page == .navigation && !active) }
-        .onChange(of: useMPH) { _, miles in navigation.useMPH = miles }
-        .onChange(of: model.replaying) { _, active in if active { page = .camera } }
-        .onChange(of: model.demo) { _, active in if active { page = .camera } }
-        .task { await safety.connectIfPaired() }
     }
 
     private var homePage: some View {
