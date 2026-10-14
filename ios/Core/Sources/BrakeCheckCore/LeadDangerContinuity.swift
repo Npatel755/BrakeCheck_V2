@@ -1,7 +1,7 @@
 import Foundation
 
 /// Display state only. It carries no distance, speed, TTC or warning authority.
-public struct DangerMeterSnapshot {
+public struct DangerMeterSnapshot: Equatable {
     public var level: RiskLevel
     public var score: Double?
     public var isHeld: Bool
@@ -13,10 +13,10 @@ public struct DangerMeterSnapshot {
 
 /// Keep the danger steps legible across brief misses of the same lead. Rising
 /// risk is immediate; a lower band needs 350 ms of new, lower observations.
-/// An absent estimate never renews the hold, which expires 600 ms after the
+/// An absent estimate never renews the hold, which expires three seconds after the
 /// last measurement. Actual numeric readouts keep their own strict validity.
 public struct LeadDangerContinuity {
-    public static let holdSeconds: TimeInterval = 0.6
+    public static let holdSeconds: TimeInterval = 3.0
     public static let declineConfirmationSeconds: TimeInterval = 0.35
     private var targetID: UUID?
     private var displayed = DangerMeterSnapshot()
@@ -31,17 +31,19 @@ public struct LeadDangerContinuity {
     }
 
     public mutating func update(targetID id: UUID?, capturedAt: TimeInterval,
-                                now: TimeInterval, risk: RiskSnapshot) -> DangerMeterSnapshot {
-        guard let id, capturedAt.isFinite, now.isFinite,
+                                now: TimeInterval, risk: RiskSnapshot,
+                                hasVehicle: Bool? = nil) -> DangerMeterSnapshot {
+        guard hasVehicle ?? (id != nil), capturedAt.isFinite, now.isFinite,
               capturedAt <= now, now - capturedAt <= Self.holdSeconds + 1e-6 else {
             reset(); return displayed
         }
-        if id != targetID { reset(); targetID = id }
+        if let id, id != targetID { reset(); targetID = id }
         if let lastMeasurement, capturedAt < lastMeasurement {
             reset(); targetID = id
             return displayed
         }
-        if let score = risk.score, score.isFinite, (0...100).contains(score), risk.level != .unknown {
+        if id != nil, TrackingFreshness.measurementIsFresh(capturedAt: capturedAt, now: now),
+           let score = risk.score, score.isFinite, (0...100).contains(score), risk.level != .unknown {
             let newCapture = lastMeasurement.map { capturedAt > $0 } ?? true
             if let lastMeasurement, capturedAt - lastMeasurement > Self.holdSeconds + 1e-6 {
                 displayed = DangerMeterSnapshot(); lowerSince = nil

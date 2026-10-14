@@ -1,0 +1,9 @@
+# N19 — Map-first navigation and destination autocomplete
+
+Navigation now uses the map as the primary view, with floating direction and live risk cards and an expandable bottom destination/trip panel. Landscape moves the panel beside the map. The map has an unobstructed native footer for Apple attribution, a recenter button, the mint route line and an angled camera during active guidance. Search keyboard presentation does not trigger the landscape layout on portrait phones. Home and Camera stay separate pages; PiP remains removed.
+
+Destination autocomplete uses MKLocalSearchCompleter for addresses and places after two characters and a 250 ms debounce. Each query owns a fresh completer. Editing, clearing, leaving the page, or backgrounding cancels suggestions; callbacks verify the completer identity and current query. Suggestions use recent foreground GPS as a regional hint. Selecting one resolves its MKLocalSearchCompletion with MKLocalSearch.Request(completion:), fills the search bar and plans a single resolved destination; ambiguous responses remain selectable. Manual Search/Return remains available for full queries and suggestion failures.
+
+Validation: native release compilation; IPA CRC and build/revision metadata; packaged executable identity; all eleven model-resource files; expected new UI text; absence of PiP background modes and feature text. No lead-selection, tracking, risk-estimation or route-progress algorithms changed.
+
+Device checks still required: type a partial place/address, edit rapidly, clear, select a suggestion, confirm destination/route, test offline suggestions and manual Search, expand/collapse the panel, rotate portrait/landscape, open/dismiss the keyboard, start guidance, return to Camera, and check MapKit attribution. Search and route provider responses cannot be exercised in the Windows/WSL build environment.

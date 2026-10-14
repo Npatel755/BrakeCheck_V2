@@ -2,28 +2,36 @@ import BrakeCheckCore
 import SwiftUI
 import UIKit
 
-/// Home holds controls; Camera keeps the driving readouts over the road.
+/// Home holds controls; Camera and Navigation share the live driving pipeline.
 /// Both pages share one model, so swiping never restarts the trip or tracker.
 struct ContentView: View {
+    @Environment(\.colorScheme) private var colorScheme
     private enum Page: Int, CaseIterable {
-        case home, camera
-        var title: String { self == .home ? "Home" : "Camera" }
+        case home, camera, navigation
+        var title: String {
+            switch self {
+            case .home: return "Home"
+            case .camera: return "Camera"
+            case .navigation: return "Navigate"
+            }
+        }
     }
+    private enum HomeDestination: Hashable {
+        case settings, contacts, incidents, tripHistory, diagnostics, replay
+    }
+    @State private var destinationPath: [HomeDestination] = []
     @ObservedObject var model: DriveModel
     @ObservedObject private var safety: SafetyService
+    @ObservedObject private var navigation: NavigationService
     @AppStorage("display.mph") private var useMPH = true
+    @AppStorage("display.accent") private var accentChoice = "blue"
     @AppStorage("display.detectionBoxes") private var showDetections = true
     @AppStorage("display.lanes") private var showLanes = true
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
     @State private var selecting = false
     @State private var selection: CGRect?
     @State private var measuredDistance = ""
-    @State private var showingIncidents = false
-    @State private var showingSettings = false
-    @State private var showingContacts = false
     @State private var stopping = false
-    @State private var showingDiagnostics = false
-    @State private var showingReplay = false
     @State private var requestDemo = false
     @State private var showCheckin = false
     @State private var page: Page = .home
@@ -31,6 +39,7 @@ struct ContentView: View {
     init(model: DriveModel) {
         self.model = model
         _safety = ObservedObject(wrappedValue: model.safety)
+        _navigation = ObservedObject(wrappedValue: model.navigation)
     }
     private var factor: Double { useMPH ? 2.2369362921 : 3.6 }
     private var unit: String { useMPH ? "mph" : "km/h" }
@@ -40,7 +49,6 @@ struct ContentView: View {
     private var critical: Bool { model.brakeWarningActive }
     private var running: Bool { model.tripActive || model.replaying || model.demo }
     private var showsPlaceholder: Bool { (!model.cameraReady && !model.replaying) || model.demo }
-    private var searching: Bool { (model.cameraReady || model.replaying) && !model.demo && model.risk.distance == nil }
     private var gapMotionBlocker: String {
         let reason = model.cameraRange.reason.lowercased()
         if reason.contains("gap ·") { return "Detection gap" }
@@ -52,6 +60,30 @@ struct ContentView: View {
     }
 
     var body: some View {
+        NavigationStack(path: $destinationPath) {
+            drivingPages
+                .navigationTitle("Home")
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: HomeDestination.self) { destination in
+                    destinationPage(destination)
+                        .modifier(DedicatedPageStyle())
+                }
+        }
+    }
+
+    @ViewBuilder private func destinationPage(_ destination: HomeDestination) -> some View {
+        switch destination {
+        case .settings:
+            SettingsView(model: model, service: safety, settings: safety.settings, requestDemo: $requestDemo)
+        case .contacts: ContactsView(service: safety)
+        case .incidents: IncidentListView(model: model)
+        case .tripHistory: TripHistoryView(model: model, useMPH: useMPH)
+        case .diagnostics: MeasurementDiagnosticsView(model: model)
+        case .replay: ReplayView(model: model)
+        }
+    }
+
+    private var drivingPages: some View {
         GeometryReader { geometry in
             let portrait = geometry.size.height > geometry.size.width
             ZStack {
@@ -69,6 +101,9 @@ struct ContentView: View {
                         TabView(selection: $page) {
                             homePage.tag(Page.home)
                             cameraPage(portrait: portrait).tag(Page.camera)
+                            NavigationView(navigation: navigation, model: model, useMPH: useMPH,
+                                startDrive: model.startNavigationDrive, openCamera: { page = .camera })
+                                .tag(Page.navigation)
                         }
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         pageNavigation
@@ -83,14 +118,9 @@ struct ContentView: View {
         }
         .background(BrakeTheme.background.ignoresSafeArea())
         .animation(.easeOut(duration: 0.15), value: critical)
-        .tint(BrakeTheme.accent)
+        .tint(BrakeTheme.accentColor(named: accentChoice))
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
-        .sheet(isPresented: $showingIncidents, onDismiss: presentPendingCheckin) { IncidentListView(model: model) }
-        .sheet(isPresented: $showingSettings, onDismiss: presentPendingCheckin) { SettingsView(model: model, service: safety, settings: safety.settings, requestDemo: $requestDemo) }
-        .sheet(isPresented: $showingContacts, onDismiss: presentPendingCheckin) { ContactsView(service: safety) }
-        .sheet(isPresented: $showingDiagnostics, onDismiss: presentPendingCheckin) { MeasurementDiagnosticsView(model: model) }
-        .sheet(isPresented: $showingReplay, onDismiss: presentPendingCheckin) { ReplayView(model: model) }
         .fullScreenCover(isPresented: $showCheckin) { CrashCheckinView(service: safety) }
         .alert("BrakeCheck", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("OK", role: .cancel) { model.message = nil }
@@ -100,17 +130,27 @@ struct ContentView: View {
         }
         .onChange(of: safety.checkinPresented) { _, presented in
             if !presented { showCheckin = false }
-            else if showingSettings || showingContacts || showingIncidents || showingDiagnostics || showingReplay {
-                showingSettings = false; showingContacts = false; showingIncidents = false; showingDiagnostics = false
-                showingReplay = false
-            } else { showCheckin = true }
+            else { destinationPath = []; showCheckin = true }
+        }
+        .onChange(of: requestDemo) { _, requested in
+            if requested { destinationPath = [] }
+        }
+        .onChange(of: destinationPath) { _, destinations in
+            navigation.setPageVisible(destinations.isEmpty && page == .navigation && !selecting)
+            if destinations.isEmpty { presentPendingCheckin() }
         }
         .onChange(of: model.cameraReady) { _, ready in if !ready { selecting = false; selection = nil } }
         .onChange(of: model.captureGeometry) { _, _ in selecting = false; selection = nil }
         .onChange(of: model.changingCameraGeometry) { _, changing in
             if changing { selecting = false; selection = nil }
         }
-        .onChange(of: model.tripActive) { _, active in if active { page = .camera } }
+        .onChange(of: model.tripActive) { _, active in
+            if active { page = navigation.isNavigating ? .navigation : .camera }
+        }
+        .onChange(of: navigation.isNavigating) { _, active in if active { page = .navigation } }
+        .onChange(of: page) { _, destination in navigation.setPageVisible(destinationPath.isEmpty && destination == .navigation && !selecting) }
+        .onChange(of: selecting) { _, active in navigation.setPageVisible(destinationPath.isEmpty && page == .navigation && !active) }
+        .onChange(of: useMPH) { _, miles in navigation.useMPH = miles }
         .onChange(of: model.replaying) { _, active in if active { page = .camera } }
         .onChange(of: model.demo) { _, active in if active { page = .camera } }
         .task { await safety.connectIfPaired() }
@@ -120,12 +160,13 @@ struct ContentView: View {
         HomeView(model: model, service: safety,
                  useMPH: $useMPH, showDetections: $showDetections,
                  showLanes: $showLanes, showFullFrame: $showFullFrame,
-                 openCamera: { page = .camera }, tripAction: performTripAction,
-                 openSettings: { showingSettings = true },
-                 openContacts: { showingContacts = true },
-                 openIncidents: { showingIncidents = true },
-                 openDiagnostics: { showingDiagnostics = true },
-                 openReplay: { showingReplay = true }, beginCalibration: beginCalibration)
+                 openCamera: { page = .camera }, openNavigation: { page = .navigation }, tripAction: performTripAction,
+                 openSettings: { destinationPath.append(.settings) },
+                 openContacts: { destinationPath.append(.contacts) },
+                 openIncidents: { destinationPath.append(.incidents) },
+                 openTripHistory: { destinationPath.append(.tripHistory) },
+                 openDiagnostics: { destinationPath.append(.diagnostics) },
+                 openReplay: { destinationPath.append(.replay) }, beginCalibration: beginCalibration)
     }
 
     private func cameraPage(portrait: Bool) -> some View {
@@ -150,19 +191,29 @@ struct ContentView: View {
                         Text(destination.title).font(.system(size: 13, weight: .semibold))
                     }
                     .foregroundStyle(page == destination ? BrakeTheme.accent : BrakeTheme.muted)
-                    .frame(width: 106, height: 44)
-                    .background(page == destination ? Color.white.opacity(0.05) : .clear, in: Capsule())
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(page == destination ? BrakeTheme.accent.opacity(0.12) : .clear, in: Capsule())
                 }
                 .accessibilityValue(page == destination ? "Selected" : "")
-                .accessibilityHint("Swipe left or right to change pages.")
+                .accessibilityHint("Tap a tab or swipe along this bottom bar.")
             }
         }
         .buttonStyle(.plain)
         .padding(4)
-        .background(.black.opacity(0.25), in: Capsule())
+        .frame(maxWidth: 360)
+        .background(BrakeTheme.panel, in: Capsule())
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .background(BrakeTheme.background)
+        .contentShape(Rectangle())
+        .highPriorityGesture(DragGesture(minimumDistance: 24).onEnded { drag in
+            let horizontal = drag.translation.width
+            guard abs(horizontal) > 45, abs(horizontal) > abs(drag.translation.height) * 1.5 else { return }
+            let next = min(Page.allCases.count - 1, max(0, page.rawValue + (horizontal < 0 ? 1 : -1)))
+            if let destination = Page(rawValue: next) {
+                withAnimation(.easeInOut(duration: 0.2)) { page = destination }
+            }
+        })
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pages")
     }
@@ -183,8 +234,7 @@ struct ContentView: View {
     }
 
     private func riskPill(large: Bool) -> some View {
-        RiskPill(risk: model.risk, critical: critical, searching: searching,
-                 paused: model.trackingCoasting, selectionStatus: model.leadSelectionStatus,
+        RiskPill(risk: model.risk, critical: critical,
                  meter: model.dangerMeter, large: large)
     }
 
@@ -205,7 +255,7 @@ struct ContentView: View {
                 ? CameraGeometry.aspectFitRect(in: geometry.size, imageAspect: aspect)
                 : CameraGeometry.aspectFillRect(in: geometry.size, imageAspect: aspect)
             ZStack {
-                Color.black
+                BrakeTheme.background
                 if model.replaying {
                     if let frame = model.replayFrame { Image(uiImage: frame).resizable().scaledToFit() }
                 } else {
@@ -250,12 +300,12 @@ struct ContentView: View {
         }
     }
 
-    /// Dark gradients behind the top and bottom bars so white text reads over a bright sky or road.
+    /// Theme-matched gradients keep readouts legible over the live road.
     private func scrims(portrait: Bool) -> some View {
         VStack(spacing: 0) {
-            LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom).frame(height: portrait ? 190 : 130)
+            LinearGradient(colors: [BrakeTheme.cameraScrim.opacity(colorScheme == .light ? 0.94 : 0.6), .clear], startPoint: .top, endPoint: .bottom).frame(height: portrait ? 190 : 130)
             Spacer(minLength: 0)
-            LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom).frame(height: portrait ? 260 : 150)
+            LinearGradient(colors: [.clear, BrakeTheme.cameraScrim.opacity(colorScheme == .light ? 0.96 : 0.7)], startPoint: .top, endPoint: .bottom).frame(height: portrait ? 260 : 150)
         }
     }
 
@@ -276,7 +326,7 @@ struct ContentView: View {
             if running { bottomRow(portrait: false) }
         }
         .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 6)
-        .foregroundStyle(.white)
+        .foregroundStyle(BrakeTheme.text)
     }
 
     /// Vertical: status and the danger meter above an unobstructed road, readouts below.
@@ -294,7 +344,7 @@ struct ContentView: View {
             if running { bottomRow(portrait: true) }
         }
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
-        .foregroundStyle(.white)
+        .foregroundStyle(BrakeTheme.text)
     }
 
     // MARK: - Controls
@@ -318,7 +368,7 @@ struct ContentView: View {
             Text("\(text) · \(model.measurementRevision)").font(.system(size: 10, weight: .bold)).tracking(1)
         }
         .padding(.horizontal, 10).frame(height: 26)
-        .background(.black.opacity(0.5), in: Capsule())
+        .background(BrakeTheme.cameraSurface, in: Capsule())
     }
 
     // MARK: - Readouts
@@ -334,13 +384,13 @@ struct ContentView: View {
 
     private func speedReadout(size: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(model.gpsSpeedEstimated ? "EST. SPEED" : "SPEED").font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(BrakeTheme.muted)
+            Text(model.gpsSpeedEstimated ? "EST. SPEED" : "SPEED")
+                .font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(BrakeTheme.muted)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(model.speed.map { String(format: "%.0f", $0 * factor) } ?? "--")
                     .font(.system(size: size, weight: .semibold)).monospacedDigit().tracking(-2)
-                    .foregroundStyle(model.speed == nil ? BrakeTheme.muted : .white)
-                Text(unit)
-                    .font(.system(size: 15, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
+                    .foregroundStyle(model.speed == nil ? BrakeTheme.muted : BrakeTheme.text)
+                Text(unit).font(.system(size: 15, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
             }
             if model.replaying {
                 Text(model.replaySpeedSource.hasPrefix("ASSUMED") ? "ASSUMED SPEED" : "RECORDED SPEED")
@@ -351,7 +401,7 @@ struct ContentView: View {
                 Text("Waiting for GPS").font(.system(size: 11)).foregroundStyle(BrakeTheme.muted)
             }
         }
-        .shadow(color: .black.opacity(0.5), radius: 6)
+        .shadow(color: colorScheme == .dark ? .black.opacity(0.5) : .clear, radius: 6)
     }
 
     /// Numbers float on the video like a head-up display; the bottom scrim and a shadow keep them readable.
@@ -383,7 +433,7 @@ struct ContentView: View {
                             ? "Not closing" : model.collisionBlocker)
             }
         }
-        .shadow(color: .black.opacity(0.9), radius: 8, y: 1)
+        .shadow(color: colorScheme == .dark ? .black.opacity(0.9) : .clear, radius: 8, y: 1)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Car ahead, estimated")
     }
@@ -391,12 +441,12 @@ struct ContentView: View {
     private func hudNumber(_ label: String, _ value: String?, _ unit: String, size: CGFloat,
                            alert: Bool = false, unavailable: String? = nil) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.75))
+            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
             Text(value ?? "--").font(.system(size: size, weight: .semibold)).monospacedDigit()
-                .foregroundColor(alert ? BrakeTheme.danger : .white)
-            + Text(" \(unit)").font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.75))
+                .foregroundColor(alert ? BrakeTheme.danger : BrakeTheme.text)
+            + Text(" \(unit)").font(.system(size: 12, weight: .semibold)).foregroundColor(BrakeTheme.muted)
             if value == nil, let unavailable, !unavailable.isEmpty {
-                Text(unavailable).font(.system(size: 10)).foregroundStyle(.white.opacity(0.7))
+                Text(unavailable).font(.system(size: 10)).foregroundStyle(BrakeTheme.muted)
             }
         }
     }
@@ -413,6 +463,6 @@ struct ContentView: View {
             }
         }
         .padding(12)
-        .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
+        .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 10))
     }
 }

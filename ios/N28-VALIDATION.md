@@ -1,0 +1,13 @@
+# N28 — Background power, UI work and a better voice default
+
+Backgrounding now stops the trip speed/GPS service and its motion fusion, clears live speed, invalidates the display timer, pauses camera recording/inference and impact sensing, and pauses navigation GPS and animation. Foreground return starts fresh GPS sampling before resuming the camera. Check-in polling pauses and resumes against the same backend-owned event/deadline; video finalization retains its short existing background task. No background camera exemption is introduced.
+
+The experimental GPS-only fusion mode no longer activates a 20 Hz motion sensor or publishes 20 redundant diagnostic updates per second. Display housekeeping runs at 5 Hz only while a foreground trip, replay, demo or triggered warning needs it. Repeated equal danger/speed/acceleration values, empty detections, absent estimated lead speed and unchanged lane/road captures no longer publish. Trip duration publishes once per second; maximum speed is already updated on accepted GPS callbacks.
+
+Map position icons are cached. Tiny position/camera changes do not send repeated MapKit updates. Accuracy-circle replacement is coalesced for three meters of center motion and two meters of radius change, with five extra meters rendered to conservatively cover that lag. Stationary synthetic jitter results in one replacement over 1800 updates. The map display link also pauses when the scene is inactive/backgrounded.
+
+Horizontal swipes on the bottom tab bar switch adjacent pages, including Navigation. The gesture is confined to the bar; map panning remains separate. Tab taps and Home/Camera paging remain available.
+
+Automatic voice selection now prefers female voices, highest quality within that group, and Ava/Samantha/Zoe for quality ties, rather than alphabetically selecting Alex. Speaking pace is closer to normal and slightly brighter, with full-volume urgent alerts. Explicit user-selected voices remain selectable. Voice quality depends on voices available on the device; previews remain available while parked.
+
+Validation: all 362 Core tests passed, with allocation/conservative-circle/dateline checks and automatic voice-ranking regression tests; native release compilation; IPA integrity, metadata, executable and model-resource checks. Actual CPU, energy, frame pacing, audio quality and background/foreground hardware behavior require an iPhone comparison. Check bottom-bar swipes/taps versus map drags, GPS restart/freshness, recording finalization, trip summary maximum speed, warning expiry, and an active check-in across background/return.

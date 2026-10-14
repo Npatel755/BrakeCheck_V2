@@ -27,11 +27,13 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         let result = SegmentRecorder(queue: queue)
         result.onStatus = { [weak self] message in self?.onRecorderStatus?(message) }
         result.onIncidents = { [weak self] events in self?.onIncidents?(events) }
+        result.onStorage = { [weak self] bytes in self?.onRecordingStorage?(bytes) }
         return result
     }()
     var onCameraStatus: ((String, Bool) -> Void)?
     var onRecorderStatus: ((String) -> Void)?
     var onIncidents: (([IncidentManifest]) -> Void)?
+    var onRecordingStorage: ((Int64?) -> Void)?
     var onTrackingReset: ((String) -> Void)?
     var onGeometry: ((CaptureFrameGeometry) -> Void)?
 
@@ -127,6 +129,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     func refreshIncidents() { queue.async { self.recorder.refresh() } }
+    func applyRecordingPreferences() { queue.async { self.recorder.applyStoragePreferences() } }
 
     func start() {
         queue.async {
@@ -148,7 +151,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             self.wantsRunning = false
             self.tracker.clear()
             if self.session.isRunning { self.session.stopRunning() }
-            self.recorder.pause(reason: "Background: GPS continues; camera and recording are paused.", completion: completion)
+            self.recorder.pause(reason: "Background: camera tracking and recording are paused. Return to BrakeCheck to resume.", completion: completion)
             self.onCameraStatus?("Camera paused in background", false)
         }
     }

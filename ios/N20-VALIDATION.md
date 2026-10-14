@@ -1,0 +1,9 @@
+# N20 — Cached route origin, immediate selection feedback and appearance
+
+Route planning can use the last known GPS position while a new fix is pending. A validated coordinate, accuracy and timestamp are saved locally and restored on launch. Valid cached Core Location fixes may seed route planning; cached positions are restricted to nonfuture timestamps and accuracy within 100 m. Denied/restricted location permission clears the saved fix. Cached positions never enter the live route-progress tracker or collision-speed estimator. Starting guidance and rerouting still require fresh GPS. Cached route origins are labeled and stale map positions use a gray marker titled Last known GPS location.
+
+Selecting a suggestion immediately publishes the selected destination and presents a resolving progress row. Route calculation displays its own progress; waiting for the first-ever GPS fix displays status instead of a blank transition. Editing/clearing/search cancellation removes pending resolution feedback. Existing completer and search generation checks remain intact.
+
+Appearance is saved using display.appearance. Light and Dark are selectable in Settings and via the sun/moon button on Navigate. Adaptive background, panels, text, secondary text and green accent apply to Home and Navigation; the map follows the selected appearance. The road-camera HUD retains a dark environment for contrast over live footage.
+
+Verification: release iOS compilation and IPA integrity/revision/executable/model-resource checks. No Core tracking/risk/progress algorithms changed. Physical phone checks remain required for location caching across restart, actual provider latency, appearance contrast, rotation and keyboard layout. Check cold launch without a prior fix separately from launch with a saved location; the former still needs an initial GPS fix.

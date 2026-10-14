@@ -34,10 +34,11 @@ let package = Package(
             path: "Sources/BrakeCheck",
 
             resources: [
-                // Copy YOLO as ordinary resource data.
+                // Copy permissive RTMDet packages as ordinary resource data.
                 // Avoid triggering Apple's coremlc during
                 // the Linux/xtool build.
-                .copy("Resources/YOLOModelData"),
+                .copy("Resources/DetectorModelData"),
+                .copy("Resources/ModelLicenses"),
                 // The trained lane model is also ordinary data on Linux.
                 // Core ML compiles it on the iPhone and caches the result.
                 .copy("Resources/LaneModelData"),

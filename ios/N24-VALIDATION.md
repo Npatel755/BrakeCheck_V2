@@ -1,0 +1,7 @@
+# N24 — Speedometer and saved trip history
+
+The Camera page now uses a compact 270-degree speedometer dial with ticks, an accent arc, outer needle indicator and a prominent digital speed. Both mph and km/h are supported. The dial clamps at its maximum while the numeric reading remains uncapped; missing speed shows dashes, and estimated/assumed replay speeds stay labeled.
+
+Removed the Car ahead Home panel. Parked calibration remains a single essentials row. Home now opens Trip history with completed trips listed newest first and a JSON export action. End trip saves start/end times, duration, maximum measured GPS speed (unavailable when no measurements were received), estimated lead hard brakes and estimated sub-two-second closing events to Documents/TripMetrics/trip-history.json. History is restored on launch, including the most recent Home summary. Demo and replay do not save trips. In-progress trips are not saved as completed trips. Existing recording and connected safety behavior remain unchanged.
+
+Storage creates its directory and writes atomically. Invalid or unreadable history reports an error and is not overwritten. Core tests cover disk reload, ordering, missing speed, idempotent saving, invalid values and preservation of corrupt history. Validation: all 350 Core tests passed, native release compilation and IPA integrity/metadata/executable/model-resource checks. Device checks remain: dial layout in portrait/landscape, mph/km/h switching, End trip then relaunch, history export and a trip with no GPS speed.

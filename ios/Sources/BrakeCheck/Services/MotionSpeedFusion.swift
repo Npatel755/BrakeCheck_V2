@@ -52,7 +52,7 @@ final class MotionSpeedFusion {
     func configureForwardAxis(_ newAxis: ForwardAxis?) {
         dispatchPrecondition(condition: .onQueue(.main))
         axis = newAxis
-        reset()
+        if running { start() } else { reset() }
         onStatus?(newAxis == nil ? "GPS-only Kalman mode" : "Experimental motion fusion enabled; verify mount orientation")
     }
 
@@ -61,6 +61,10 @@ final class MotionSpeedFusion {
         stop()
         reset()
         running = true
+        guard axis != nil else {
+            onStatus?("GPS-only Kalman mode · motion sensor off")
+            return
+        }
         guard motion.isDeviceMotionAvailable else {
             onStatus?("Device motion unavailable; GPS-only mode")
             return

@@ -5,13 +5,9 @@ import SwiftUI
 /// at critical, where it turns red at the same moment as the "Brake" voice and haptic.
 /// A recent alert remains visible without describing a recovered target as critical.
 struct RiskPill: View {
+    @AppStorage("display.accent") private var accentChoice = "blue"
     let risk: RiskSnapshot
     let critical: Bool
-    /// True while the camera runs but no lead vehicle is being tracked.
-    let searching: Bool
-    /// The box is visible, but fresh detection or direction evidence is missing.
-    var paused = false
-    var selectionStatus = "Looking for a car ahead"
     var meter: DangerMeterSnapshot? = nil
     /// Larger base size for the vertical layout.
     var large = false
@@ -25,13 +21,6 @@ struct RiskPill: View {
     private var currentCritical: Bool { risk.level == .critical }
     private var title: String {
         if critical { return currentCritical ? "BRAKE NOW" : "BRAKE ALERT" }
-        if meter?.isHeld == true { return "\(BrakeTheme.name(for: meterLevel)) · checking" }
-        if paused || searching { return selectionStatus }
-        if risk.level == .unknown, risk.distance != nil { return selectionStatus }
-        if let ttc = risk.timeToCollision,
-           selectionStatus.hasPrefix("Possible obstacle") || selectionStatus.hasPrefix("Possible collision") {
-            return String(format: "Possible collision · %.1f s", ttc)
-        }
         return BrakeTheme.name(for: meterLevel)
     }
 
@@ -54,11 +43,12 @@ struct RiskPill: View {
         .foregroundStyle(.white)
         .padding(.horizontal, large ? 18 : 14)
         .frame(height: large ? 44 : 34)
-        .background(critical ? BrakeTheme.danger : Color.black.opacity(0.5), in: Capsule())
+        .background(critical ? BrakeTheme.danger : BrakeTheme.cameraSurface, in: Capsule())
         .shadow(color: critical ? BrakeTheme.danger.opacity(0.7) : .clear, radius: 16)
         .scaleEffect(scale)
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: scale)
         .allowsHitTesting(false)
+        .tint(BrakeTheme.accentColor(named: accentChoice))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(critical
             ? currentCritical ? "Brake warning. Brake now."
@@ -67,8 +57,9 @@ struct RiskPill: View {
     }
 }
 
-/// Four small steps that light up in order, green to red. Step edges match the score cut-offs in RiskRules.evaluate.
+/// Four small steps that light up in order, blue to red. Step edges match the score cut-offs in RiskRules.evaluate.
 struct DangerSteps: View {
+    @AppStorage("display.accent") private var accentChoice = "blue"
     let score: Double?
     /// On the red BRAKE background the steps are drawn in white.
     var onAlert = false
@@ -88,6 +79,7 @@ struct DangerSteps: View {
             }
         }
         .accessibilityHidden(true)
+        .tint(BrakeTheme.accentColor(named: accentChoice))
     }
 }
 

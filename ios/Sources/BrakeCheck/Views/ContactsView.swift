@@ -19,7 +19,7 @@ struct ContactsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        Group {
             Form {
                 Section {
                     Label("Your people, one check-in away.", systemImage: "person.2.fill").font(.headline)
@@ -89,7 +89,6 @@ struct ContactsView: View {
                 }
             }
             .navigationTitle("Emergency contacts").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task { await service.refreshContacts() }
             .task(id: pendingContactIDs) {
                 guard !pendingContactIDs.isEmpty, service.settings.client != nil else { return }

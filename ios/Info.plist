@@ -7,7 +7,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>0.4.0</string>
 	<key>CFBundleVersion</key>
-	<string>14</string>
+	<string>33</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -24,7 +24,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>BrakeCheck discovers and connects to your paired computer on your local network for voice alerts and emergency contact check-ins.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>BrakeCheck uses your iPhone's location speed to show your current speed and estimate the lead vehicle's speed. During an active trip, location updates may continue in the background until you end the trip.</string>
+	<string>BrakeCheck uses your location to plan driving routes and show turn guidance. During a trip it also uses location speed to show your speed and estimate the lead vehicle's speed while the app is on screen.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>BrakeCheck records a short spoken reply after a possible impact, then sends it to your backend and ElevenLabs for transcription.</string>
 	<key>NSMotionUsageDescription</key>
@@ -34,10 +34,6 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchScreen</key>
@@ -58,8 +54,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
 	<key>BrakeCheckMeasurementRevision</key>
-	<string>N12</string>
-	<key>BrakeCheckMeasurementFingerprint</key>
-	<string>519f6c005820889a84e70a533c8603bc6a0619facb57e4d4958f2a291f4ca23e</string>
+	<string>N33</string>
 </dict>
 </plist>

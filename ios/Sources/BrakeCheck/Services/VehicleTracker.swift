@@ -124,25 +124,25 @@ final class VehicleTracker {
             self.headingTracker.prepare()
             guard !self.prepared else { return }
             self.prepared = true
-            self.report("Loading YOLO Core ML model...")
+            self.report("Loading RTMDet Core ML model...")
             do {
                 let request = try self.makeDetector(from: self.locateModel(), name: "standard")
                 self.standardDetector = request
                 self.detector = request
-                self.report("Standard YOLO ready · loading low-light detector…")
+                self.report("RTMDet-tiny ready · loading low-light detector…")
                 do {
                     self.lowLightDetector = try self.makeDetector(from: self.locateLowLightModel(), name: "night")
                     self.lowLightError = nil
-                    self.report("N14 · standard YOLO11n + traffic-trained night YOLOv8s ready")
+                    self.report("N31 · RTMDet-tiny + RTMDet-small ready")
                 } catch {
                     self.lowLightError = error.localizedDescription
-                    self.report("Standard YOLO ready · low-light fallback: \(error.localizedDescription)")
+                    self.report("RTMDet-tiny ready · low-light fallback: \(error.localizedDescription)")
                 }
                 self.publishLighting(at: ProcessInfo.processInfo.systemUptime, force: true)
             } catch {
                 self.prepared = false // allow a later retry
                 self.detector = nil
-                self.report("YOLO model could not load: \(error.localizedDescription)")
+                self.report("RTMDet model could not load: \(error.localizedDescription)")
             }
         }
     }
@@ -172,16 +172,13 @@ final class VehicleTracker {
               model.modelDescription.outputDescriptionsByName["coordinates"] != nil else {
             throw TrackerError.modelContract
         }
-        if name == "night" {
-            // MLProgram/NMS class counts must be padded to a multiple of 80.
-            // Require the exact new three-class traffic model, not an older graph.
-            let metadata = model.modelDescription.metadata[.creatorDefinedKey] as? [String: String]
-            guard metadata?["brakecheck_nms_channels"] == "80",
-                  metadata?["brakecheck_export_version"] == "N8",
-                  metadata?["source_class_count"] == "3",
-                  metadata?["source_sha256"] == "3e7d5cfa87d3d7a6ad8da8319bf36070d661e3643e927f7a32476471a8d82b48" else {
-                throw TrackerError.nightModelContract
-            }
+        let metadata = model.modelDescription.metadata[.creatorDefinedKey] as? [String: String]
+        guard metadata?["brakecheck_detector_family"] == "rtmdet",
+              metadata?["brakecheck_export_version"] == "N31",
+              metadata?["source_license"] == "Apache-2.0",
+              metadata?["source_class_count"] == "80",
+              metadata?["source_model"] == (name == "night" ? "LibreRTMDets" : "LibreRTMDett") else {
+            throw TrackerError.modelContract
         }
         let request = VNCoreMLRequest(model: try VNCoreMLModel(for: model))
         request.imageCropAndScaleOption = .scaleFit
@@ -209,9 +206,17 @@ final class VehicleTracker {
     private func compiledModel(from source: URL, name: String) throws -> URL {
         if source.pathExtension.lowercased() == "mlmodelc" { return source }
         let isPackage = FileManager.default.fileExists(atPath: source.appendingPathComponent("Manifest.json").path)
-        let parts = isPackage ? [source.appendingPathComponent("Manifest.json"),
-            source.appendingPathComponent("Data/com.apple.CoreML/model.mlmodel"),
-            source.appendingPathComponent("Data/com.apple.CoreML/weights/weight.bin")] : [source]
+        // Pipelines can have multiple independently named weight files.
+        // Hash every package file so any model change invalidates the cache.
+        let parts: [URL]
+        if isPackage {
+            let enumerator = FileManager.default.enumerator(at: source,
+                includingPropertiesForKeys: [.isRegularFileKey])
+            parts = (enumerator?.allObjects as? [URL] ?? []).filter {
+                (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            }.sorted { $0.path < $1.path }
+            guard !parts.isEmpty else { throw TrackerError.modelMissing }
+        } else { parts = [source] }
         var digest = SHA256()
         for part in parts {
             let handle = try FileHandle(forReadingFrom: part)
@@ -236,25 +241,18 @@ final class VehicleTracker {
         return destination
     }
     /// Locates the SwiftPM copied model. The Linux build stores the package
-    /// under YOLOModelData to prevent SwiftPM from invoking Apple's coremlc.
+    /// under DetectorModelData to prevent SwiftPM from invoking Apple's coremlc.
     /// Core ML needs an .mlpackage suffix at runtime, so copy the directory.
     private func locateModel() throws -> URL {
         let bundles = [Bundle.module, Bundle.main]
             + Bundle.allBundles + Bundle.allFrameworks
         for bundle in bundles {
-            for name in ["yolo11n", "yolov11n"] {
-                for ext in ["mlmodelc", "mlpackage", "mlmodel"] {
-                    if let url = bundle.url(forResource: name, withExtension: ext) {
-                        return url
-                    }
-                }
-            }
-            if let source = bundle.url(forResource: "YOLOModelData", withExtension: nil),
+            if let source = bundle.url(forResource: "DetectorModelData", withExtension: nil)?.appendingPathComponent("Day"),
                FileManager.default.fileExists(atPath: source.appendingPathComponent("Manifest.json").path) {
                 return source
             }
             // Some SwiftPM/xTool bundles expose copied resources via resourceURL.
-            if let source = bundle.resourceURL?.appendingPathComponent("YOLOModelData"),
+            if let source = bundle.resourceURL?.appendingPathComponent("DetectorModelData/Day"),
                FileManager.default.fileExists(atPath: source.appendingPathComponent("Manifest.json").path) {
                 return source
             }
@@ -263,8 +261,8 @@ final class VehicleTracker {
     }
     private func locateLowLightModel() throws -> URL {
         for bundle in [Bundle.module, Bundle.main] + Bundle.allBundles + Bundle.allFrameworks {
-            let roots = [bundle.url(forResource: "YOLOModelData", withExtension: nil),
-                         bundle.resourceURL?.appendingPathComponent("YOLOModelData")]
+            let roots = [bundle.url(forResource: "DetectorModelData", withExtension: nil),
+                         bundle.resourceURL?.appendingPathComponent("DetectorModelData")]
             for root in roots.compactMap({ $0 }) {
                 let source = root.appendingPathComponent("Night", isDirectory: true)
                 if FileManager.default.fileExists(atPath: source.appendingPathComponent("Manifest.json").path) { return source }
@@ -274,7 +272,7 @@ final class VehicleTracker {
     }
     private func copyPackageForRuntime(from source: URL) throws -> URL {
         let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent("BrakeCheckYOLO-\(UUID().uuidString).mlpackage", isDirectory: true)
+            .appendingPathComponent("BrakeCheckDetector-\(UUID().uuidString).mlpackage", isDirectory: true)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         do {
             // The day resource also contains the Night package. Copy only the
@@ -520,7 +518,7 @@ final class VehicleTracker {
                 let classified = self.headingTracker.update(vehicles, buffer: buffer, lane: guidance,
                     at: uptime,
                     preferredID: self.targetID, trackedBox: trackedBox,
-                    allowNightClassAliases: self.activeProfile == .night)
+                    allowNightClassAliases: false)
                 self.onDetections?(self.detectionPresentation.update(classified, at: uptime,
                     preferredID: self.targetID, trackedBox: trackedBox).map {
                     VehicleDetection(id: $0.vehicle.trackID ?? UUID(), box: $0.vehicle.box,
@@ -608,7 +606,7 @@ final class VehicleTracker {
     }
 
     private var detectorName: String {
-        activeProfile == .night ? "Night traffic YOLOv8s" : "Standard YOLO11n"
+        activeProfile == .night ? "Low-light RTMDet-small" : "Standard RTMDet-tiny"
     }
     private var workPolicy: VisionWorkPolicy {
         let heat: VisionHeat
@@ -841,10 +839,10 @@ final class VehicleTracker {
         case modelMissing, nightModelMissing, modelContract, nightModelContract, detectorOutput
         var errorDescription: String? {
             switch self {
-            case .modelMissing: return "YOLOModelData resource not found in app bundle."
+            case .modelMissing: return "RTMDet day model resource not found in app bundle."
             case .nightModelMissing: return "Night detector resource not found in app bundle."
             case .modelContract: return "Detector must provide a 640-pixel image input and NMS confidence/coordinate outputs."
-            case .nightModelContract: return "Night detector update is incomplete; rebuild with the complete N12 update."
+            case .nightModelContract: return "RTMDet low-light detector contract is invalid."
             case .detectorOutput: return "Vehicle detector returned invalid detection outputs."
             }
         }

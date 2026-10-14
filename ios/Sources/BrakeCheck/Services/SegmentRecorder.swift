@@ -35,8 +35,15 @@ final class SegmentRecorder {
     private var finishGroup = DispatchGroup()
     private var lastPublish = Date.distantPast
     private var lastStorageCheck = Date.distantPast
+    private var pendingFinalizations = 0
+    private var storageScanRunning = false
+    private var storageBytes: Int64?
+    private var storageGeneration = 0
+    private var lastStorageScan = Date.distantPast
+    private let storageQueue = DispatchQueue(label: "BrakeCheck.videoStorage", qos: .utility)
     var onStatus: ((String) -> Void)?
     var onIncidents: (([IncidentManifest]) -> Void)?
+    var onStorage: ((Int64?) -> Void)?
 
     init(queue: DispatchQueue) {
         self.queue = queue
@@ -93,17 +100,69 @@ final class SegmentRecorder {
     }
 
     func refresh() {
-        do { try prepareIfNeeded(); publishIncidents() }
+        do { try prepareIfNeeded(); applyStoragePreferences(); publishIncidents(); refreshStorageUsage() }
         catch { onStatus?("Storage unavailable: \(error.localizedDescription)") }
+    }
+
+    func applyStoragePreferences() {
+        // Cleanup is opt-in and waits until capture and all writers are idle.
+        guard prepared else { refresh(); return }
+        if !enabled, writer == nil, pendingFinalizations == 0, pendingEvents.isEmpty {
+            let days = UserDefaults.standard.integer(forKey: "recording.retentionDays")
+            let expired = incidents.values.filter {
+                RecordingStoragePolicy.shouldDelete($0, now: Date(), retentionDays: days, protectedIDs: pendingEvents)
+            }.map(\.id)
+            for id in expired { deleteIncident(id) }
+        }
+        refreshStorageUsage(force: true)
+    }
+
+    private func refreshStorageUsage(force: Bool = false) {
+        guard !storageScanRunning,
+              force || Date().timeIntervalSince(lastStorageScan) >= 30 else { return }
+        storageScanRunning = true
+        lastStorageScan = Date()
+        let roots = [ringURL, incidentsURL]
+        let generation = storageGeneration
+        storageQueue.async {
+            var bytes: Int64 = 0
+            var seen = Set<String>()
+            for root in roots {
+                guard let entries = FileManager.default.enumerator(at: root,
+                    includingPropertiesForKeys: [.isRegularFileKey]) else { continue }
+                for case let file as URL in entries where file.pathExtension == "mp4" {
+                    guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+                          let size = attributes[.size] as? NSNumber else { continue }
+                    // Hard-linked ring/incident clips occupy disk space once.
+                    let key = (attributes[.systemFileNumber] as? NSNumber)?.stringValue ?? file.path
+                    if seen.insert(key).inserted { bytes += size.int64Value }
+                }
+            }
+            let measuredBytes = bytes
+            self.queue.async {
+                self.storageScanRunning = false
+                guard self.storageGeneration == generation else {
+                    self.refreshStorageUsage(force: true)
+                    return
+                }
+                self.storageBytes = measuredBytes
+                self.onStorage?(measuredBytes)
+                if self.enabled, let limit = RecordingStoragePolicy.limitBytes(
+                    gigabytes: UserDefaults.standard.integer(forKey: "recording.limitGB")), measuredBytes >= limit {
+                    self.pause(reason: "Recording limit reached. Saved incident videos are preserved.")
+                }
+            }
+        }
     }
 
     func start() {
         do {
             try prepareIfNeeded()
+            applyStoragePreferences()
             for segment in ring { try copyToMatchingEvents(segment) }
             prune(now: Date())
             guard storageAvailable() else {
-                onStatus?("Recording stopped: keep at least 500 MB free.")
+                onStatus?(storageStopReason)
                 return
             }
             enabled = true
@@ -123,9 +182,9 @@ final class SegmentRecorder {
         let now = Date()
         if now.timeIntervalSince(lastStorageCheck) > 5 {
             lastStorageCheck = now
+            refreshStorageUsage()
             guard storageAvailable() else {
-                pause(reason: "Low storage stopped recording; existing incident videos were preserved.")
-                onStatus?("Recording stopped: less than 500 MB free.")
+                pause(reason: storageStopReason)
                 return
             }
         }
@@ -216,10 +275,15 @@ final class SegmentRecorder {
             return
         }
         currentInput.markAsFinished()
+        pendingFinalizations += 1
         finishGroup.enter()
         currentWriter.finishWriting {
             self.queue.async {
-                defer { self.finishGroup.leave() }
+                defer {
+                    self.pendingFinalizations -= 1
+                    self.finishGroup.leave()
+                    self.refreshStorageUsage()
+                }
                 guard currentWriter.status == .completed else {
                     try? self.files.removeItem(at: url)
                     self.onStatus?("A video segment could not be saved.")
@@ -292,6 +356,7 @@ final class SegmentRecorder {
             }
             self.publishIncidents()
             if self.ring.isEmpty { self.onStatus?("Recorder stopped") }
+            self.applyStoragePreferences()
             completion?()
         }
     }
@@ -303,8 +368,11 @@ final class SegmentRecorder {
         }
         do {
             try files.removeItem(at: incidentsURL.appendingPathComponent(id.uuidString))
+            storageGeneration += 1
+            storageBytes = nil
             incidents.removeValue(forKey: id)
             publishIncidents()
+            refreshStorageUsage(force: true)
         } catch { onStatus?("Delete failed: \(error.localizedDescription)") }
     }
 
@@ -373,15 +441,27 @@ final class SegmentRecorder {
     }
 
     private func removeFromRing(_ segment: VideoSegment) {
+        storageGeneration += 1
+        storageBytes = nil
         let url = ringURL.appendingPathComponent(segment.filename)
         try? files.removeItem(at: url)
         try? files.removeItem(at: url.appendingPathExtension("json"))
     }
 
     private func storageAvailable() -> Bool {
+        if let used = storageBytes,
+           let limit = RecordingStoragePolicy.limitBytes(gigabytes: UserDefaults.standard.integer(forKey: "recording.limitGB")),
+           used >= limit { return false }
         guard let attributes = try? files.attributesOfFileSystem(forPath: ringURL.path),
               let free = attributes[.systemFreeSize] as? NSNumber else { return false }
         return free.int64Value > 500_000_000
+    }
+
+    private var storageStopReason: String {
+        if let used = storageBytes,
+           let limit = RecordingStoragePolicy.limitBytes(gigabytes: UserDefaults.standard.integer(forKey: "recording.limitGB")),
+           used >= limit { return "Recording limit reached. Saved incident videos are preserved." }
+        return "Recording stopped: keep at least 500 MB free. Saved incidents are preserved."
     }
 
     private func publishIncidents() {

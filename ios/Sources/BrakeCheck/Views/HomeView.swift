@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Trip controls and preferences live here so the camera can stay focused on the road.
 struct HomeView: View {
+    @AppStorage("display.accent") private var accentChoice = "blue"
     @ObservedObject var model: DriveModel
     @ObservedObject var service: SafetyService
     @Binding var useMPH: Bool
@@ -10,20 +11,18 @@ struct HomeView: View {
     @Binding var showFullFrame: Bool
 
     var openCamera: () -> Void
+    var openNavigation: () -> Void
     var tripAction: () -> Void
     var openSettings: () -> Void
     var openContacts: () -> Void
     var openIncidents: () -> Void
+    var openTripHistory: () -> Void
     var openDiagnostics: () -> Void
     var openReplay: () -> Void
     var beginCalibration: () -> Void
 
     private var hasTripSummary: Bool {
         model.tripActive || model.tripMinutes > 0 || model.maxSpeedMPH > 0
-    }
-
-    private var targetControlsAvailable: Bool {
-        (model.cameraReady || model.replaying) && !model.demo && !model.stopping
     }
 
     private var calibrationAvailable: Bool {
@@ -41,18 +40,13 @@ struct HomeView: View {
                     if wide {
                         HStack(alignment: .top, spacing: 20) {
                             navigationCard.frame(maxWidth: .infinity)
-                            VStack(spacing: 20) {
-                                displayCard
-                                targetCard
-                            }
-                            .frame(maxWidth: .infinity)
+                            displayCard.frame(maxWidth: .infinity)
                         }
                     } else {
                         navigationCard
                         displayCard
-                        targetCard
                     }
-                    Text("Swipe between Home and Camera.")
+                    Text("Swipe between pages or use the bottom tabs. On Navigation, swipe the search panel; drag the map to explore.")
                         .font(.footnote)
                         .foregroundStyle(BrakeTheme.muted)
                         .frame(maxWidth: .infinity)
@@ -67,8 +61,8 @@ struct HomeView: View {
             .scrollIndicators(.hidden)
         }
         .background(BrakeTheme.background)
-        .foregroundStyle(.white)
-        .tint(BrakeTheme.accent)
+        .foregroundStyle(BrakeTheme.text)
+        .tint(BrakeTheme.accentColor(named: accentChoice))
     }
 
     private var header: some View {
@@ -189,8 +183,8 @@ struct HomeView: View {
         if model.demo { return "Practice with sample readings on the Camera page." }
         if model.replaying { return "See vehicle tracking and estimated risk on the Camera page." }
         if model.stopping { return "Finishing the recording before your next drive." }
-        if model.tripActive { return "Your road view and driving readings are on the Camera page." }
-        return "Start a trip when you are ready, then switch to the road view."
+        if model.tripActive { return "Keep BrakeCheck on screen for camera tracking and recording. Your road view is on the Camera page." }
+        return "Start a trip when you are ready. Camera tracking and recording work while BrakeCheck is on screen."
     }
 
     private var primaryTitle: String {
@@ -233,6 +227,10 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("Your essentials", icon: "square.grid.2x2")
                 .padding(.bottom, 6)
+            navigationRow("Trip history", detail: model.savedTrips.isEmpty ? "Completed trips save automatically" : "\(model.savedTrips.count) saved trips · view and export metrics", icon: "chart.xyaxis.line", action: openTripHistory)
+            rowDivider
+            navigationRow("Navigation", detail: "Directions with camera tracking still active", icon: "location.north.line", action: openNavigation)
+            rowDivider
             navigationRow("Settings", detail: "Connection, voice, safety, and permissions", icon: "slider.horizontal.3", action: openSettings)
             rowDivider
             navigationRow("Emergency contacts", detail: service.contacts.isEmpty ? "Choose who can receive a check-in" : "\(service.contacts.count) saved contact\(service.contacts.count == 1 ? "" : "s")", icon: "person.2", action: openContacts)
@@ -242,6 +240,9 @@ struct HomeView: View {
             navigationRow("Replay a drive", detail: "Review a recorded journey", icon: "play.rectangle", action: openReplay)
             rowDivider
             navigationRow("Diagnostics", detail: "Camera, GPS, and measurement details", icon: "waveform.path.ecg", action: openDiagnostics)
+            rowDivider
+            navigationRow("Calibrate camera", detail: "While parked, enter a measured vehicle gap", icon: "ruler", action: beginCalibration)
+                .disabled(!calibrationAvailable).opacity(calibrationAvailable ? 1 : 0.4)
         }
         .brakePanel()
     }
@@ -268,59 +269,14 @@ struct HomeView: View {
         .brakePanel()
     }
 
-    private var targetCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionTitle("Car ahead", icon: "scope")
-            Text("BrakeCheck automatically looks for a vehicle ahead in your lane.")
-                .font(.subheadline)
-                .foregroundStyle(BrakeTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
-            Button { model.clearTarget() } label: {
-                Label("Return to auto selection", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.plain)
-            .disabled(!targetControlsAvailable)
-            .opacity(targetControlsAvailable ? 1 : 0.4)
-            rowDivider
-            Button(action: beginCalibration) {
-                HStack(spacing: 12) {
-                    Image(systemName: "ruler")
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Calibrate gap while parked").font(.subheadline.weight(.semibold))
-                        Text("Select a vehicle and enter its measured distance.")
-                            .font(.caption)
-                            .foregroundStyle(BrakeTheme.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                }
-                .frame(minHeight: 44)
-            }
-            .buttonStyle(.plain)
-            .disabled(!calibrationAvailable)
-            .opacity(calibrationAvailable ? 1 : 0.4)
-            if !calibrationAvailable {
-                Text("Calibration is available with the live camera running.")
-                    .font(.caption)
-                    .foregroundStyle(BrakeTheme.muted)
-            }
-        }
-        .foregroundStyle(BrakeTheme.accent)
-        .brakePanel()
-    }
-
     private func sectionTitle(_ title: String, icon: String) -> some View {
         Label(title, systemImage: icon)
             .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(BrakeTheme.text)
     }
 
     private var rowDivider: some View {
-        Rectangle().fill(.white.opacity(0.06)).frame(height: 1).accessibilityHidden(true)
+        Rectangle().fill(BrakeTheme.text.opacity(0.06)).frame(height: 1).accessibilityHidden(true)
     }
 
     private func navigationRow(_ title: String, detail: String, icon: String, action: @escaping () -> Void) -> some View {
@@ -332,7 +288,7 @@ struct HomeView: View {
                     .frame(width: 28)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
                     Text(detail).font(.caption).foregroundStyle(BrakeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }

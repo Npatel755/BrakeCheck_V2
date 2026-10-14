@@ -9,6 +9,10 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
     private var recorder: AVAudioRecorder?
     private var completion: CheckedContinuation<Void, Error>?
     private let speech = AVSpeechSynthesizer()
+    private var activeUtterance: AVSpeechUtterance?
+
+    /// Ownership stays busy until the matching delegate callback releases it.
+    var isBusy: Bool { player != nil || recorder?.isRecording == true || activeUtterance != nil }
 
     override init() {
         super.init()
@@ -44,12 +48,22 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
     }
 
     func speakBrake(language: String) {
+        speak(language == "es" ? "¡Frena ya!" : "Brake now!", language: language, urgent: true)
+    }
+
+    func speakPreview(language: String) {
+        speak(language == "es" ? "Conduce con calma. Te guiaré durante tu viaje." : "Drive comfortably. I'll guide you along the way.",
+              language: language, urgent: false)
+    }
+
+    private func speak(_ text: String, language: String, urgent: Bool) {
         stop()
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
         try? session.setActive(true)
-        let utterance = AVSpeechUtterance(string: language == "es" ? "¡Frena ya!" : "Brake now!")
-        utterance.voice = AVSpeechSynthesisVoice(language: language == "es" ? "es-ES" : "en-US")
+        let utterance = AVSpeechUtterance(string: text)
+        SpeechVoicePreferences.configure(utterance, language: language, urgent: urgent)
+        activeUtterance = utterance
         speech.speak(utterance)
     }
 
@@ -79,6 +93,7 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
 
     func stop() {
         player?.stop(); recorder?.stop()
+        activeUtterance = nil
         speech.stopSpeaking(at: .immediate)
         finish(CancellationError())
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
@@ -101,6 +116,18 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
+            guard self.activeUtterance === utterance else { return }
+            self.activeUtterance = nil
+            if self.player == nil && self.recorder?.isRecording != true {
+                try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            }
+        }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in
+            guard self.activeUtterance === utterance else { return }
+            self.activeUtterance = nil
             if self.player == nil && self.recorder?.isRecording != true {
                 try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
             }

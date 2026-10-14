@@ -1,4 +1,10 @@
 {
+  "status": "Historical YOLO11n conversion below; this detector is excluded from N31",
+  "active_detector_revision": "N31",
+  "active_provenance": [
+    "Sources/BrakeCheck/Resources/ModelLicenses/RTMDetTiny-provenance.json",
+    "Sources/BrakeCheck/Resources/ModelLicenses/RTMDetSmall-provenance.json"
+  ],
   "source_weights_sha256": "0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1",
   "source": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n.pt",
   "export": {
