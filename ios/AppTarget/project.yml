@@ -22,6 +22,8 @@ targets:
     settings:
       base:
         PRODUCT_NAME: BrakeCheck
+        # The package's module is already called BrakeCheck; two modules with one name collide.
+        PRODUCT_MODULE_NAME: BrakeCheckApp
         PRODUCT_BUNDLE_IDENTIFIER: com.brakecheck.prototype
         INFOPLIST_FILE: Info.plist
         GENERATE_INFOPLIST_FILE: NO
