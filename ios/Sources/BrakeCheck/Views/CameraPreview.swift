@@ -68,6 +68,7 @@ final class OrientationSurface: UIView {
 }
 
 struct TargetOverlay: View {
+    @AppStorage("display.accent") private var accentChoice = "blue"
     let trackedBox: CGRect?
     let selecting: Bool
     @Binding var selectedBox: CGRect?
@@ -80,7 +81,7 @@ struct TargetOverlay: View {
                 Color.clear
                 if let box = selecting ? selectedBox : trackedBox {
                     Rectangle()
-                        .stroke(selecting || coasting ? Color.yellow : alert ? BrakeTheme.danger : Color.cyan,
+                        .stroke(selecting || coasting ? BrakeTheme.caution : alert ? BrakeTheme.danger : BrakeTheme.accentColor(named: accentChoice),
                                 style: StrokeStyle(lineWidth: alert ? 3 : 2.5, dash: selecting || coasting ? [6] : []))
                         .frame(width: box.width * geometry.size.width, height: box.height * geometry.size.height)
                         .position(x: box.midX * geometry.size.width, y: (1 - box.midY) * geometry.size.height)
@@ -88,7 +89,8 @@ struct TargetOverlay: View {
                 if selecting, selectedBox == nil {
                     Text("Draw a box around the rear of the parked vehicle")
                         .font(.caption.weight(.semibold)).padding(10)
-                        .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(BrakeTheme.text)
+                        .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 8))
                 }
             }
             .contentShape(Rectangle())

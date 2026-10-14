@@ -19,3 +19,6 @@ __pycache__/
 DerivedData/
 *.ipa
 .DS_Store
+weights/
+yolo11n.pt
+tools/model_migration/artifacts/

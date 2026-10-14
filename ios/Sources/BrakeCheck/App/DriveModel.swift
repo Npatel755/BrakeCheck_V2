@@ -16,6 +16,11 @@ final class DriveModel: ObservableObject {
     let navigation = NavigationService()
     let replay = ReplayService()
     private let speedLog = SpeedLogWriter()
+    private let tripMetricsStore = TripMetricsStore(url: FileManager.default.urls(for: .documentDirectory,
+        in: .userDomainMask)[0].appendingPathComponent("TripMetrics/trip-history.json"))
+    @Published private(set) var savedTrips: [TripMetrics] = []
+    var tripHistoryURL: URL { tripMetricsStore.url }
+    private var tripHadGPSSpeed = false
     // Replay mode: a recorded drive runs through the live tracker and risk estimator.
     @Published var replaying = false
     @Published var replayFrame: UIImage?
@@ -31,6 +36,7 @@ final class DriveModel: ObservableObject {
     @Published var closeCalls = 0
     @Published var maxSpeedMPH: Double = 0
     private var tripStarted = Date()
+    private var lastTripPublishedSecond = -1
     private var brakeWarningLatch = BrakeWarningLatch()
     @Published private(set) var brakeWarningActive = false
     private var wasHardBrake = false
@@ -42,7 +48,7 @@ final class DriveModel: ObservableObject {
 
     private var estimator = LeadRiskContinuity()
     private var cameraRangeEstimator = CameraRangeEstimator()
-    let measurementRevision = "N15"
+    let measurementRevision = "N33"
     private var detectorMeasurementGeneration: Int?
 
     private var speedReading: GPSSpeedSample?
@@ -53,6 +59,7 @@ final class DriveModel: ObservableObject {
     private var targetID: UUID?
     private var currentCameraRisk: RiskSnapshot?
     private var dangerContinuity = LeadDangerContinuity()
+    private var laneDisplayContinuity = LaneDisplayContinuity()
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -140,6 +147,7 @@ final class DriveModel: ObservableObject {
     @Published var gpsStatus = "GPS stopped"
 
     @Published var recorderStatus = "Recorder stopped"
+    @Published var recordingStorageBytes: Int64?
 
     @Published var motionStatus = "Impact sensing off"
 
@@ -154,6 +162,14 @@ final class DriveModel: ObservableObject {
     }
 
     init() {
+        SpeechVoicePreferences.restoreOriginalDefaultsIfNeeded()
+        do {
+            savedTrips = try tripMetricsStore.load()
+            if let last = savedTrips.first {
+                tripMinutes = last.durationSeconds / 60; maxSpeedMPH = last.maxSpeedMPH ?? 0
+                hardBrakes = last.estimatedLeadHardBrakes; closeCalls = last.estimatedCloseCalls
+            }
+        } catch { message = "Could not read saved trip metrics. Your existing history has been kept." }
 
         navigation.useMPH = UserDefaults.standard.object(forKey: "display.mph") as? Bool ?? true
         navigation.canSpeak = { [weak self] in
@@ -167,7 +183,7 @@ final class DriveModel: ObservableObject {
 
         speedService.onSpeed = { [weak self] reading in
 
-            guard let self, self.tripActive, !self.demo else { return }
+            guard let self, self.foreground, self.tripActive, !self.demo else { return }
 
             self.speedReading = reading
             self.camera.tracker.updateEgoSpeed(reading)
@@ -175,6 +191,8 @@ final class DriveModel: ObservableObject {
             self.gpsSimulated = reading?.simulated ?? false
 
             if let reading, self.lastLoggedGPSUptime.map({ reading.measurementUptime > $0 }) ?? true {
+                self.tripHadGPSSpeed = true
+                self.maxSpeedMPH = max(self.maxSpeedMPH, reading.metersPerSecond * 2.2369362921)
                 // Logged at measurement time so replay can line speed up with the video.
                 let measured = Date().addingTimeInterval(reading.measurementUptime - ProcessInfo.processInfo.systemUptime)
                 self.speedLog.append(speed: reading.metersPerSecond, accuracy: reading.accuracy, at: measured)
@@ -187,7 +205,7 @@ final class DriveModel: ObservableObject {
         }
 
         speedService.onFusedSpeed = { [weak self] estimate in
-            guard let self, self.tripActive, !self.demo else { return }
+            guard let self, self.foreground, self.tripActive, !self.demo else { return }
             self.fusedSpeed = estimate?.metersPerSecond
             self.fusedSpeedUncertainty = estimate?.uncertaintyMetersPerSecond
             self.fusedSpeedSource = estimate?.source ?? "GPS fusion unavailable"
@@ -247,6 +265,10 @@ final class DriveModel: ObservableObject {
 
         }
 
+        camera.onRecordingStorage = { [weak self] bytes in
+            DispatchQueue.main.async { self?.recordingStorageBytes = bytes }
+        }
+
         camera.onIncidents = { [weak self] events in
 
             DispatchQueue.main.async { self?.incidents = events }
@@ -274,9 +296,12 @@ final class DriveModel: ObservableObject {
                 guard !self.changingCameraGeometry,
                       uptime >= max(self.latestGeometryChangeUptime, self.latestTrackingResetUptime) else { return }
                 guard TrackingFreshness.measurementIsFresh(capturedAt: uptime,
-                    now: ProcessInfo.processInfo.systemUptime) else { self.detections = []; return }
+                    now: ProcessInfo.processInfo.systemUptime) else {
+                    if !self.detections.isEmpty { self.detections = [] }
+                    return
+                }
                 self.lastDetectionsUptime = uptime
-                self.detections = detections
+                if !detections.isEmpty || !self.detections.isEmpty { self.detections = detections }
 
             }
 
@@ -303,7 +328,9 @@ final class DriveModel: ObservableObject {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo else { return }
                 guard !self.changingCameraGeometry,
                       lane.map({ $0.capturedAt >= self.latestGeometryChangeUptime }) ?? true else { return }
-                self.lanePath = lane
+                let path = self.laneDisplayContinuity.update(lane,
+                    at: ProcessInfo.processInfo.systemUptime)
+                if self.lanePath?.capturedAt != path?.capturedAt { self.lanePath = path }
             }
         }
         camera.tracker.onRoad = { [weak self] road in
@@ -311,7 +338,7 @@ final class DriveModel: ObservableObject {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo else { return }
                 guard !self.changingCameraGeometry,
                       road.map({ $0.capturedAt >= self.latestGeometryChangeUptime }) ?? true else { return }
-                self.roadRegion = road
+                if self.roadRegion?.capturedAt != road?.capturedAt { self.roadRegion = road }
             }
         }
 
@@ -341,15 +368,7 @@ final class DriveModel: ObservableObject {
 
         }
 
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-
-            // Timer is installed on the main run loop.
-
-            Task { @MainActor in self?.tick() }
-
-        }
-
-        if let timer { RunLoop.main.add(timer, forMode: .common) }
+        reconcileDisplayTimer()
 
         replay.onFrame = { [weak self] image, generation in
             DispatchQueue.main.async {
@@ -404,6 +423,8 @@ final class DriveModel: ObservableObject {
         clearTarget("Starting trip · acquiring the lead")
         tripActive = true
         tripStarted = Date(); tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
+        lastTripPublishedSecond = -1
+        tripHadGPSSpeed = false
         lastLoggedGPSUptime = nil
         speedLog.start(at: tripStarted)
         wasHardBrake = false; wasCloseCall = false
@@ -417,6 +438,7 @@ final class DriveModel: ObservableObject {
         requestCameraIfNeeded()
 
         updateImpactService()
+        reconcileDisplayTimer()
 
     }
 
@@ -461,7 +483,14 @@ final class DriveModel: ObservableObject {
         navigation.stopGuidance()
 
         tripActive = false
-        safety.sendTrip(minutes: Date().timeIntervalSince(tripStarted) / 60,
+        let endedAt = Date()
+        tripMinutes = max(0, endedAt.timeIntervalSince(tripStarted) / 60)
+        do {
+            savedTrips = try tripMetricsStore.save(TripMetrics(startedAt: tripStarted, endedAt: endedAt,
+                maxSpeedMPH: tripHadGPSSpeed ? maxSpeedMPH : nil,
+                estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls))
+        } catch { message = "Could not save this trip's metrics. Existing trip history has been kept." }
+        safety.sendTrip(minutes: tripMinutes,
                         hardBrakes: hardBrakes, closeCalls: closeCalls, maxSpeedMPH: maxSpeedMPH)
 
         stopping = true
@@ -481,6 +510,7 @@ final class DriveModel: ObservableObject {
         gpsAccuracy = nil; gpsSimulated = false; gpsSpeedEstimated = false
 
         clearTarget("Trip ended")
+        reconcileDisplayTimer()
 
         UIApplication.shared.isIdleTimerDisabled = false
 
@@ -507,6 +537,12 @@ final class DriveModel: ObservableObject {
         if phase == .background {
 
             foreground = false
+            reconcileDisplayTimer()
+            speedService.stop()
+            clearFusionDisplay()
+            speedReading = nil
+            speed = nil
+            gpsSpeedEstimated = false
             safety.pauseAudio()
 
             if demo { setDemo(false) }
@@ -533,8 +569,11 @@ final class DriveModel: ObservableObject {
             let resumed = !foreground
 
             foreground = true
+            brakeWarningActive = brakeWarningLatch.isActive(at: ProcessInfo.processInfo.systemUptime)
+            safety.resumeForegroundPolling()
 
             if tripActive {
+                speedService.start()
 
                 UIApplication.shared.isIdleTimerDisabled = true
 
@@ -543,6 +582,7 @@ final class DriveModel: ObservableObject {
                 updateImpactService()
 
             }
+            reconcileDisplayTimer()
 
         }
 
@@ -620,6 +660,7 @@ final class DriveModel: ObservableObject {
         speedBlocker = "Needs target"
         collisionBlocker = "Needs target"
         frameAlignmentStatus = "Waiting for camera and GPS"
+        laneDisplayContinuity.reset()
         lanePath = nil
         roadRegion = nil
 
@@ -644,6 +685,7 @@ final class DriveModel: ObservableObject {
     }
 
     func deleteIncident(_ id: UUID) { camera.deleteIncident(id) }
+    func applyRecordingPreferences() { camera.applyRecordingPreferences() }
 
     func setDemo(_ enabled: Bool) {
 
@@ -689,6 +731,7 @@ final class DriveModel: ObservableObject {
             trackingStatus = "Automatic lead candidate selection starts with the camera."
 
         }
+        reconcileDisplayTimer()
 
     }
 
@@ -924,10 +967,25 @@ final class DriveModel: ObservableObject {
 
     }
 
+    private func reconcileDisplayTimer() {
+        let wanted = foreground && (tripActive || demo || replaying || brakeWarningActive)
+        guard wanted else { timer?.invalidate(); timer = nil; return }
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.tick() }
+        }
+        timer.tolerance = 0.04
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
     private func tick() {
+        guard foreground else { reconcileDisplayTimer(); return }
 
         let now = ProcessInfo.processInfo.systemUptime
-        brakeWarningActive = brakeWarningLatch.isActive(at: now)
+        let warningActive = brakeWarningLatch.isActive(at: now)
+        if brakeWarningActive != warningActive { brakeWarningActive = warningActive }
+        reconcileDisplayTimer()
         refreshDangerMeter(at: now)
 
         if demo {
@@ -970,9 +1028,10 @@ final class DriveModel: ObservableObject {
         }
 
         guard tripActive else { return }
-        tripMinutes = Date().timeIntervalSince(tripStarted) / 60
-        if let measured = speedService.reading(at: now) {
-            maxSpeedMPH = max(maxSpeedMPH, measured.metersPerSecond * 2.2369362921)
+        let elapsed = Date().timeIntervalSince(tripStarted)
+        if Int(elapsed) != lastTripPublishedSecond {
+            lastTripPublishedSecond = Int(elapsed)
+            tripMinutes = elapsed / 60
         }
 
         if let reading = speedReading, now - reading.measurementUptime > 1.5 {
@@ -994,10 +1053,11 @@ final class DriveModel: ObservableObject {
     }
 
     private func expireCameraMeasurements(at now: TimeInterval) {
-        if !TrackingFreshness.measurementIsFresh(capturedAt: lastDetectionsUptime, now: now) {
+        if !detections.isEmpty, !TrackingFreshness.measurementIsFresh(capturedAt: lastDetectionsUptime, now: now) {
             detections = []
         }
-        if lanePath?.isUsable(at: now) == false { lanePath = nil }
+        let displayedLane = laneDisplayContinuity.current(at: now)
+        if lanePath?.capturedAt != displayedLane?.capturedAt { lanePath = displayedLane }
         if roadRegion?.isUsable(at: now) == false { roadRegion = nil }
         guard targetID != nil else { return }
         if !TrackingFreshness.identityIsFresh(capturedAt: lastTrackingUptime, now: now) {
@@ -1033,10 +1093,12 @@ final class DriveModel: ObservableObject {
         }
         let hadSpeed = speed != nil
         let estimate = speedService.estimate(at: now)
-        speed = estimate?.metersPerSecond
-        gpsAccuracy = estimate?.accuracy
-        gpsSpeedEstimated = estimate?.isEstimated ?? false
-        egoAcceleration = gpsSpeedEstimated ? nil : speedService.reading(at: now)?.acceleration
+        if speed != estimate?.metersPerSecond { speed = estimate?.metersPerSecond }
+        if gpsAccuracy != estimate?.accuracy { gpsAccuracy = estimate?.accuracy }
+        let estimated = estimate?.isEstimated ?? false
+        if gpsSpeedEstimated != estimated { gpsSpeedEstimated = estimated }
+        let acceleration = estimated ? nil : speedService.reading(at: now)?.acceleration
+        if egoAcceleration != acceleration { egoAcceleration = acceleration }
         if let estimate, estimate.isEstimated {
             gpsStatus = String(format: "GPS gap · estimated speed · last fix %.1f s old · uncertainty ±%.1f m/s",
                 now - estimate.lastMeasurementUptime, estimate.accuracy)
@@ -1052,22 +1114,22 @@ final class DriveModel: ObservableObject {
         guard !demo, !replaying, risk.leadSpeed == nil,
               gpsEstimateLeadEligible, let id = targetID, leadTargetID == id,
               speedService.estimate(at: now) != nil else {
-            estimatedLeadSpeed = nil
+            if estimatedLeadSpeed != nil { estimatedLeadSpeed = nil }
             return
         }
         // Use the speed at the camera capture, rather than today's newest
         // callback. If the next fix has arrived, the display can interpolate.
-        estimatedLeadSpeed = GPSSpeedDisplayRules.estimatedLeadSpeed(ego: speedService.estimate(at: lastTrackingUptime),
+        let next = GPSSpeedDisplayRules.estimatedLeadSpeed(ego: speedService.estimate(at: lastTrackingUptime),
             camera: cameraRange, confidence: currentLeadConfidence, rearConfirmed: true,
             capturedAt: lastTrackingUptime, now: now)
+        if estimatedLeadSpeed != next { estimatedLeadSpeed = next }
     }
 
     private func invalidateRisk(_ reason: String, preserveSamples: Bool = false) {
 
         estimatedLeadSpeed = nil
-        // GPS headway/braking evidence cannot remain in a presentation hold
-        // after its source expires. A current camera-only score starts fresh.
-        if reason.contains("GPS") { dangerContinuity.reset() }
+        // Numeric estimates expire here; the presentation-only danger meter
+        // may retain its last level for up to three seconds while a car remains.
 
         if reason.contains("GPS"), let cameraRisk = currentCameraRisk,
            (0...0.6).contains(ProcessInfo.processInfo.systemUptime - lastTrackingUptime) {
@@ -1100,8 +1162,10 @@ final class DriveModel: ObservableObject {
             dangerMeter = DangerMeterSnapshot(level: risk.level, score: risk.score)
             return
         }
-        dangerMeter = dangerContinuity.update(targetID: targetID,
-            capturedAt: lastTrackingUptime, now: now, risk: risk)
+        let next = dangerContinuity.update(targetID: targetID,
+            capturedAt: lastTrackingUptime, now: now, risk: risk,
+            hasVehicle: targetID != nil || detections.contains { ["car", "truck", "bus", "motorcycle"].contains($0.label) })
+        if dangerMeter != next { dangerMeter = next }
     }
 
     private func updateImpactService() {
@@ -1120,7 +1184,8 @@ final class DriveModel: ObservableObject {
             navigation.stopSpeaking()
             brakeWarningLatch.trigger(at: now)
         }
-        brakeWarningActive = brakeWarningLatch.isActive(at: now)
+        let active = brakeWarningLatch.isActive(at: now)
+        if brakeWarningActive != active { brakeWarningActive = active }
         if critical && !alreadyVisible {
             safety.brakeWarning()
         }
@@ -1156,6 +1221,7 @@ final class DriveModel: ObservableObject {
         camera.tracker.prepare()
         clearTarget("Replay · automatic lead candidate selection")
         replaying = true
+        reconcileDisplayTimer()
         changingCameraGeometry = false
         latestGeometryChangeUptime = ProcessInfo.processInfo.systemUptime
         replayStatus = "Replaying recorded drive"
@@ -1172,6 +1238,7 @@ final class DriveModel: ObservableObject {
         replay.stop()
         replayGeneration = nil
         replaying = false
+        reconcileDisplayTimer()
         navigation.setLiveModeAllowed(true)
         replayStatus = status
         replayFrame = nil

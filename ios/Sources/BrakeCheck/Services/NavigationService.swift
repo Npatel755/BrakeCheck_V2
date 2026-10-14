@@ -4,11 +4,35 @@ import Combine
 import CoreLocation
 import MapKit
 
+extension NavigationService: @preconcurrency MKLocalSearchCompleterDelegate {
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        guard self.completer === completer, foreground, pageVisible, liveModeAllowed,
+              query.trimmingCharacters(in: .whitespacesAndNewlines) == completer.queryFragment else { return }
+        suggestionsLoading = false
+        suggestionError = nil
+        suggestions = completer.results.prefix(8).map { NavigationSuggestion(completion: $0) }
+    }
+
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        guard self.completer === completer else { return }
+        suggestionsLoading = false
+        suggestions = []
+        suggestionError = "Suggestions unavailable. You can still submit a full address."
+    }
+}
+
 struct NavigationSearchResult: Identifiable {
     let id = UUID()
     let title: String
     let subtitle: String
     let item: MKMapItem
+}
+
+struct NavigationSuggestion: Identifiable {
+    let id = UUID()
+    let completion: MKLocalSearchCompletion
+    var title: String { completion.title }
+    var subtitle: String { completion.subtitle }
 }
 
 /// Foreground navigation has its own location stream. These fixes never enter
@@ -20,9 +44,16 @@ final class NavigationService: NSObject, ObservableObject {
             guard query != oldValue else { return }
             cancelSearch()
             results = []
+            updateSuggestions()
         }
     }
     @Published private(set) var results: [NavigationSearchResult] = []
+    @Published private(set) var recentDestinations: [RecentDestination] = []
+    @Published private(set) var suggestions: [NavigationSuggestion] = []
+    @Published private(set) var suggestionsLoading = false
+    @Published private(set) var suggestionError: String?
+    private var completer: MKLocalSearchCompleter?
+    private var completionTask: Task<Void, Never>?
     @Published private(set) var isSearching = false
     @Published private(set) var isCalculating = false
     @Published private(set) var destinationTitle: String?
@@ -31,16 +62,25 @@ final class NavigationService: NSObject, ObservableObject {
     @Published private(set) var hasArrived = false
     @Published private(set) var instruction = "Choose a destination"
     @Published private(set) var routeNotice: String?
+    @Published private(set) var upcomingInstruction: String?
+    @Published private(set) var isRejoiningRoute = false
     @Published private(set) var maneuverDistance: Double?
     @Published private(set) var remainingDistance: Double?
     @Published private(set) var remainingTime: Double?
     @Published private(set) var status = "Search for an address or place."
     @Published private(set) var errorMessage: String?
     @Published private(set) var location: CLLocation?
+    @Published private(set) var lastKnownLocation: CLLocation?
+    @Published private(set) var resolvingDestination: String?
+    @Published private(set) var routeUsesLastKnownLocation = false
+    var mapLocation: CLLocation? { hasFreshLocation ? location : lastKnownLocation }
     @Published private(set) var hasFreshLocation = false
     @Published private(set) var isPaused = false
-    @Published var spokenDirections = true {
-        didSet { if !spokenDirections { stopSpeaking() } }
+    @Published var spokenDirections = UserDefaults.standard.object(forKey: "navigation.spokenDirections") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(spokenDirections, forKey: "navigation.spokenDirections")
+            if !spokenDirections { stopSpeaking() }
+        }
     }
     var useMPH = true
     /// The model synchronously checks safety-audio ownership and live state.
@@ -50,9 +90,9 @@ final class NavigationService: NSObject, ObservableObject {
     private let speech = AVSpeechSynthesizer()
     private var currentUtterance: AVSpeechUtterance?
     private var ownsAudioSession = false
-    private var foreground = true
+    @Published private(set) var foreground = true
     private var liveModeAllowed = true
-    private var pageVisible = false
+    @Published private(set) var pageVisible = false
     private var locationRunning = false
     private var timer: Timer?
     private var interruptionObserver: NSObjectProtocol?
@@ -71,9 +111,23 @@ final class NavigationService: NSObject, ObservableObject {
     private var lastSpokenPrompt: String?
     private var spokenStages: [Int: Int] = [:]
     private var lastRerouteAt = Date.distantPast
+    private var recovery = NavigationRecovery()
 
     override init() {
         super.init()
+        if let data = UserDefaults.standard.data(forKey: "navigation.recents"),
+           let saved = try? JSONDecoder().decode([RecentDestination].self, from: data) {
+            recentDestinations = RecentDestinations.normalized(saved)
+        }
+        if let values = UserDefaults.standard.array(forKey: "navigation.lastGPS") as? [Double], values.count == 4,
+           values.allSatisfy({ $0.isFinite }), (0...100).contains(values[2]),
+           values[3] <= Date().timeIntervalSince1970 {
+            let coordinate = CLLocationCoordinate2D(latitude: values[0], longitude: values[1])
+            if CLLocationCoordinate2DIsValid(coordinate) {
+                lastKnownLocation = CLLocation(coordinate: coordinate, altitude: 0,
+                    horizontalAccuracy: values[2], verticalAccuracy: -1, timestamp: Date(timeIntervalSince1970: values[3]))
+            }
+        }
         manager.delegate = self
         manager.activityType = .automotiveNavigation
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
@@ -92,6 +146,7 @@ final class NavigationService: NSObject, ObservableObject {
 
     func setPageVisible(_ visible: Bool) {
         pageVisible = visible
+        if visible { updateSuggestions() } else { cancelSuggestions() }
         reconcileLocation()
     }
 
@@ -99,6 +154,7 @@ final class NavigationService: NSObject, ObservableObject {
         guard foreground != active else { return }
         foreground = active
         if !active {
+            cancelSuggestions()
             cancelSearch()
             cancelDirections()
             stopSpeaking()
@@ -107,12 +163,14 @@ final class NavigationService: NSObject, ObservableObject {
             lastFixTimestamp = nil
             pauseMeasurements("Navigation paused. Return to BrakeCheck to resume.")
         }
+        if active { updateSuggestions() }
         reconcileLocation()
     }
 
     func setLiveModeAllowed(_ allowed: Bool) {
         liveModeAllowed = allowed
         if !allowed {
+            cancelSuggestions()
             stopGuidance()
             cancelSearch()
             cancelDirections()
@@ -136,6 +194,22 @@ final class NavigationService: NSObject, ObservableObject {
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = text
         request.resultTypes = [.address, .pointOfInterest]
+        performSearch(request, text: text, chooseSingle: false)
+    }
+
+    func chooseSuggestion(_ suggestion: NavigationSuggestion) {
+        guard foreground, liveModeAllowed else { return }
+        query = suggestion.title
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        cancelSearch()
+        resolvingDestination = suggestion.title
+        results = []
+        errorMessage = nil
+        performSearch(MKLocalSearch.Request(completion: suggestion.completion), text: text, chooseSingle: true)
+    }
+
+    private func performSearch(_ request: MKLocalSearch.Request, text: String, chooseSingle: Bool) {
+        cancelSuggestions()
         if hasFreshLocation, let location {
             request.region = MKCoordinateRegion(center: location.coordinate,
                 latitudinalMeters: 50_000, longitudinalMeters: 50_000)
@@ -151,6 +225,7 @@ final class NavigationService: NSObject, ObservableObject {
                       self.liveModeAllowed, self.query.trimmingCharacters(in: .whitespacesAndNewlines) == text else { return }
                 self.isSearching = false
                 self.searchRequest = nil
+                self.resolvingDestination = nil
                 guard let response else {
                     self.errorMessage = "Search could not finish. Check your connection and try again."
                     self.status = "Search unavailable"
@@ -161,14 +236,23 @@ final class NavigationService: NSObject, ObservableObject {
                         subtitle: item.placemark.title ?? "", item: item)
                 }
                 self.status = self.results.isEmpty ? "No matching places. Try a fuller address." : "Choose your destination."
+                if chooseSingle, self.results.count == 1, let result = self.results.first {
+                    self.chooseDestination(result)
+                }
             }
         }
     }
 
     func chooseDestination(_ result: NavigationSearchResult) {
         guard foreground, liveModeAllowed else { return }
+        let coordinate = result.item.placemark.coordinate
+        recentDestinations = RecentDestinations.adding(RecentDestination(title: result.title,
+            subtitle: result.subtitle, latitude: coordinate.latitude, longitude: coordinate.longitude),
+            to: recentDestinations)
+        saveRecents()
         stopGuidance()
         cancelSearch()
+        cancelSuggestions()
         cancelDirections()
         destination = result.item
         destinationTitle = result.title
@@ -184,9 +268,57 @@ final class NavigationService: NSObject, ObservableObject {
         calculateRoute()
     }
 
+    func chooseRecent(_ recent: RecentDestination) {
+        guard recent.valid else { return }
+        query = recent.title
+        let item = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(
+            latitude: recent.latitude, longitude: recent.longitude)))
+        item.name = recent.title
+        chooseDestination(NavigationSearchResult(title: recent.title, subtitle: recent.subtitle, item: item))
+    }
+
+    func removeRecent(_ id: UUID) {
+        recentDestinations.removeAll { $0.id == id }; saveRecents()
+    }
+    func clearRecents() { recentDestinations = []; saveRecents() }
+    private func saveRecents() {
+        if let data = try? JSONEncoder().encode(recentDestinations) {
+            UserDefaults.standard.set(data, forKey: "navigation.recents")
+        }
+    }
+
+    private func cancelSuggestions() {
+        completionTask?.cancel(); completionTask = nil
+        completer?.delegate = nil
+        completer?.cancel(); completer = nil
+        suggestions = []
+        suggestionsLoading = false
+        suggestionError = nil
+    }
+
+    private func updateSuggestions() {
+        cancelSuggestions()
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard foreground, liveModeAllowed, pageVisible, !isNavigating, text.count >= 2 else { return }
+        suggestionsLoading = true
+        completionTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
+            guard let self, !Task.isCancelled, self.query.trimmingCharacters(in: .whitespacesAndNewlines) == text else { return }
+            let completer = MKLocalSearchCompleter()
+            completer.resultTypes = [.address, .pointOfInterest]
+            completer.delegate = self
+            if self.hasFreshLocation, let location = self.location {
+                completer.region = MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 50_000, longitudinalMeters: 50_000)
+            }
+            self.completer = completer
+            completer.queryFragment = text
+        }
+    }
+
     func retryRoute() {
         guard foreground, liveModeAllowed, destination != nil else { return }
         errorMessage = nil
+        recovery.reset()
         needsRoute = true
         reconcileLocation()
         calculateRoute()
@@ -231,6 +363,10 @@ final class NavigationService: NSObject, ObservableObject {
     func stopGuidance() {
         stopSpeaking()
         isNavigating = false
+        isRejoiningRoute = false
+        upcomingInstruction = nil
+        recovery.reset()
+        lastRerouteAt = .distantPast
         isPaused = false
         hasArrived = false
         cancelDirections()
@@ -302,6 +438,8 @@ final class NavigationService: NSObject, ObservableObject {
                 status = isNavigating ? "Resuming · waiting for fresh GPS" : "Finding your location…"
             }
         case .denied, .restricted:
+            lastKnownLocation = nil
+            UserDefaults.standard.removeObject(forKey: "navigation.lastGPS")
             manager.stopUpdatingLocation()
             locationRunning = false
             location = nil
@@ -314,11 +452,14 @@ final class NavigationService: NSObject, ObservableObject {
     }
 
     private func calculateRoute() {
-        guard foreground, liveModeAllowed, let destination, !isCalculating else { return }
-        guard hasFreshLocation, let location else {
-            status = "Waiting for a fresh GPS location to calculate the route."
+        guard foreground, liveModeAllowed, let destination, !isCalculating,
+              recovery.canAttempt(at: Date().timeIntervalSinceReferenceDate) else { return }
+        if let cached = manager.location { cacheLocation(cached) }
+        guard let location = isNavigating ? (hasFreshLocation ? location : nil) : mapLocation else {
+            status = "Finding a starting location. No previous GPS fix is available yet."
             return
         }
+        routeUsesLastKnownLocation = !hasFreshLocation
         cancelDirections()
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: location.coordinate))
@@ -332,7 +473,7 @@ final class NavigationService: NSObject, ObservableObject {
         isCalculating = true
         needsRoute = false
         status = isNavigating ? "Rerouting…" : "Calculating a driving route…"
-        if isNavigating { maneuverDistance = nil; stopSpeaking() }
+        if isNavigating { isRejoiningRoute = true; stopSpeaking() }
         directions.calculate { [weak self] response, error in
             Task { @MainActor [weak self] in
                 guard let self, self.directionsID == token, self.destinationID == targetID,
@@ -345,10 +486,16 @@ final class NavigationService: NSObject, ObservableObject {
                       route.polyline.pointCount >= 2 else {
                     self.errorMessage = "No driving route is available. Check your connection and try another destination or retry."
                     self.status = "Route unavailable"
+                    if error != nil {
+                        self.recovery.failed(at: Date().timeIntervalSinceReferenceDate)
+                        self.needsRoute = true
+                    }
                     if self.isNavigating { self.pauseMeasurements("Route unavailable · retry when connected") }
                     return
                 }
                 self.route = route
+                self.recovery.reset()
+                self.isRejoiningRoute = false
                 self.routeRevision = UUID()
                 self.steps = route.steps
                 self.hasArrived = false
@@ -379,6 +526,7 @@ final class NavigationService: NSObject, ObservableObject {
     private func acceptLocations(_ locations: [CLLocation]) {
         guard foreground, liveModeAllowed, locationRunning,
               let fix = locations.max(by: { $0.timestamp < $1.timestamp }) else { return }
+        cacheLocation(fix)
         let age = Date().timeIntervalSince(fix.timestamp)
         guard age.isFinite, (0...2).contains(age), CLLocationCoordinate2DIsValid(fix.coordinate),
               fix.horizontalAccuracy.isFinite, (0...35).contains(fix.horizontalAccuracy),
@@ -395,6 +543,16 @@ final class NavigationService: NSObject, ObservableObject {
         else if !isSearching && !isCalculating {
             status = route == nil ? "Search for an address or place." : "Route ready. Start navigation when parked."
         }
+    }
+
+    private func cacheLocation(_ fix: CLLocation) {
+        let age = Date().timeIntervalSince(fix.timestamp)
+        guard age.isFinite, age >= 0, CLLocationCoordinate2DIsValid(fix.coordinate),
+              fix.horizontalAccuracy.isFinite, (0...100).contains(fix.horizontalAccuracy),
+              lastKnownLocation.map({ fix.timestamp > $0.timestamp }) ?? true else { return }
+        lastKnownLocation = fix
+        UserDefaults.standard.set([fix.coordinate.latitude, fix.coordinate.longitude,
+            fix.horizontalAccuracy, fix.timestamp.timeIntervalSince1970], forKey: "navigation.lastGPS")
     }
 
     private func updateProgress(_ fix: CLLocation) {
@@ -414,14 +572,12 @@ final class NavigationService: NSObject, ObservableObject {
             return
         }
         if snapshot.offRoute {
-            instruction = "Rejoining your route"
-            routeNotice = nil
-            maneuverDistance = nil
-            remainingDistance = nil
-            remainingTime = nil
+            isRejoiningRoute = true
+            isPaused = true
             stopSpeaking()
             status = "Off route · finding new directions"
-            if Date().timeIntervalSince(lastRerouteAt) >= 20 {
+            if Date().timeIntervalSince(lastRerouteAt) >= 20,
+               recovery.canAttempt(at: Date().timeIntervalSinceReferenceDate) {
                 lastRerouteAt = Date()
                 needsRoute = true
                 calculateRoute()
@@ -429,12 +585,19 @@ final class NavigationService: NSObject, ObservableObject {
             return
         }
         remainingDistance = snapshot.remainingMeters
+        isRejoiningRoute = false
+        if recovery.retryAt != nil {
+            needsRoute = false
+            recovery.reset()
+            errorMessage = nil
+        }
         if let route {
             remainingTime = route.expectedTravelTime * min(1, max(0, snapshot.remainingMeters / route.distance))
         }
         if snapshot.arrived {
             hasArrived = true
             instruction = "You’ve arrived"
+            upcomingInstruction = nil
             routeNotice = nil
             maneuverDistance = nil
             remainingDistance = 0
@@ -447,6 +610,8 @@ final class NavigationService: NSObject, ObservableObject {
         let effectiveIndex = steps.indices.dropFirst(index).first { !steps[$0].instructions.isEmpty } ?? index
         let step = steps.indices.contains(effectiveIndex) ? steps[effectiveIndex] : nil
         instruction = step?.instructions.isEmpty == false ? step!.instructions : "Continue on your route"
+        upcomingInstruction = steps.indices.dropFirst(effectiveIndex + 1)
+            .first(where: { !steps[$0].instructions.isEmpty }).map { steps[$0].instructions }
         routeNotice = step?.notice
         maneuverDistance = snapshot.distanceToStep
         status = "Navigation active"
@@ -463,17 +628,16 @@ final class NavigationService: NSObject, ObservableObject {
         let fresh = location.map { (0...2).contains(Date().timeIntervalSince($0.timestamp)) } ?? false
         hasFreshLocation = fresh
         if !fresh, isNavigating, !hasArrived { pauseMeasurements("GPS paused · waiting for a fresh location") }
+        if fresh, foreground, liveModeAllowed, needsRoute, !isCalculating,
+           recovery.canAttempt(at: Date().timeIntervalSinceReferenceDate) { calculateRoute() }
     }
 
     private func pauseMeasurements(_ reason: String) {
         stopSpeaking()
         if isNavigating && !hasArrived {
             isPaused = true
-            instruction = reason
-            routeNotice = nil
-            maneuverDistance = nil
-            remainingDistance = nil
-            remainingTime = nil
+            // Keep the last measured guidance on screen. A stale fix never
+            // advances route progress or triggers a spoken maneuver.
         }
         status = reason
     }
@@ -500,7 +664,7 @@ final class NavigationService: NSObject, ObservableObject {
             try session.setActive(true)
         } catch { return false }
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: Locale.preferredLanguages.first ?? "en-US")
+        SpeechVoicePreferences.configure(utterance, language: Locale.preferredLanguages.first ?? "en-US")
         currentUtterance = utterance
         ownsAudioSession = true
         lastSpokenPrompt = key
@@ -523,6 +687,7 @@ final class NavigationService: NSObject, ObservableObject {
         searchRequest?.cancel()
         searchRequest = nil
         isSearching = false
+        resolvingDestination = nil
     }
 
     private func cancelDirections() {

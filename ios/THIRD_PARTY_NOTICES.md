@@ -1,6 +1,10 @@
-# Third-party model
+# Third-party models
 
-BrakeCheck bundles a converted **Ultralytics YOLO11n** detector in `Sources/BrakeCheck/Resources/yolo11n.mlpackage`.
+N31 bundles converted **RTMDet-tiny** and **RTMDet-small** COCO detectors under Apache-2.0 in `Sources/BrakeCheck/Resources/DetectorModelData`. The source checkpoint cards, conversion hashes and Apache/MIT notices ship in `Resources/ModelLicenses`. See `N31-MODEL-MIGRATION.md` for provenance and validation limits. YOLOP lane inference and CFV viewpoint inference remain unchanged with their existing MIT/Apache notices.
+
+## Historical prototype detectors (excluded from N31)
+
+Earlier prototype builds bundled converted **Ultralytics YOLO11n** and a traffic-trained **YOLOv8s** detector. These old resource files remain in the development workspace and are excluded from the N31 IPA.
 
 - Upstream project: https://github.com/ultralytics/ultralytics
 - Source weights: https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n.pt

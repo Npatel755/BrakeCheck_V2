@@ -58,13 +58,13 @@ final class DangerConsistencyTests: XCTestCase {
         let measured = RiskSnapshot(level: .high, score: 78, distance: 12, closingSpeed: 5, timeToCollision: 2.4)
         XCTAssertEqual(meter.update(targetID: id, capturedAt: 10, now: 10, risk: measured).score, 78)
         let absent = RiskSnapshot(reason: "Detection gap")
-        for time in [10.1, 10.3, 10.59] {
+        for time in [10.1, 10.3, 10.59, 11, 12.99, 13] {
             let held = meter.update(targetID: id, capturedAt: time, now: time, risk: absent)
             XCTAssertEqual(held.level, .high); XCTAssertEqual(held.score, 78)
             XCTAssertTrue(held.isHeld)
             XCTAssertNil(absent.distance); XCTAssertNil(absent.timeToCollision)
         }
-        let expired = meter.update(targetID: id, capturedAt: 10.61, now: 10.61, risk: absent)
+        let expired = meter.update(targetID: id, capturedAt: 13.01, now: 13.01, risk: absent)
         XCTAssertNil(expired.score); XCTAssertEqual(expired.level, .unknown)
     }
 
@@ -93,10 +93,10 @@ final class DangerConsistencyTests: XCTestCase {
     }
 
     func testExpiredUnorderedOrInvalidScoresNeverBecomeLowerIndication() {
-        for time in [Double.nan, Double.infinity, 9, 10.61] {
+        for time in [Double.nan, Double.infinity, 9, 13.01] {
             var meter = LeadDangerContinuity(); let id = UUID()
             _ = meter.update(targetID: id, capturedAt: 10, now: 10, risk: RiskSnapshot(level: .high, score: 78))
-            let result = meter.update(targetID: id, capturedAt: time, now: 10.61, risk: RiskSnapshot())
+            let result = meter.update(targetID: id, capturedAt: time, now: 13.01, risk: RiskSnapshot())
             XCTAssertNil(result.score)
         }
         for score in [Double.nan, Double.infinity, -1, 101] {
@@ -104,5 +104,33 @@ final class DangerConsistencyTests: XCTestCase {
             XCTAssertNil(meter.update(targetID: UUID(), capturedAt: 10, now: 10,
                 risk: RiskSnapshot(level: .low, score: score)).score)
         }
+    }
+
+    func testConfirmedNoVehicleClearsImmediatelyEvenWithHeldIdentity() {
+        var meter = LeadDangerContinuity(); let id = UUID()
+        _ = meter.update(targetID: id, capturedAt: 10, now: 10, risk: RiskSnapshot(level: .high, score: 78))
+        let cleared = meter.update(targetID: id, capturedAt: 10.1, now: 10.1,
+                                   risk: RiskSnapshot(), hasVehicle: false)
+        XCTAssertNil(cleared.score)
+        XCTAssertEqual(cleared.level, .unknown)
+    }
+
+    func testCarStillVisibleDuringLeadGapCanHoldButCannotRenewReading() {
+        var meter = LeadDangerContinuity()
+        _ = meter.update(targetID: UUID(), capturedAt: 10, now: 10, risk: RiskSnapshot(level: .high, score: 78))
+        let held = meter.update(targetID: nil, capturedAt: 11, now: 11,
+                                risk: RiskSnapshot(level: .low, score: 5), hasVehicle: true)
+        XCTAssertEqual(held.score, 78); XCTAssertTrue(held.isHeld)
+        XCTAssertNil(meter.update(targetID: nil, capturedAt: 13.01, now: 13.01,
+                                 risk: RiskSnapshot(), hasVehicle: true).score)
+    }
+
+    func testDelayedValidScoreCannotStartOrRenewHold() {
+        var meter = LeadDangerContinuity(); let id = UUID()
+        let high = RiskSnapshot(level: .high, score: 78)
+        XCTAssertNil(meter.update(targetID: id, capturedAt: 10, now: 11, risk: high).score)
+        _ = meter.update(targetID: id, capturedAt: 12, now: 12, risk: high)
+        XCTAssertTrue(meter.update(targetID: id, capturedAt: 12, now: 14.9, risk: high).isHeld)
+        XCTAssertNil(meter.update(targetID: id, capturedAt: 12, now: 15.01, risk: high).score)
     }
 }

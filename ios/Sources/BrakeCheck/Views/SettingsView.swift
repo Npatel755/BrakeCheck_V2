@@ -1,186 +1,398 @@
+import AVFoundation
 import SwiftUI
 import UIKit
+
+private enum SettingsCategory: String, CaseIterable, Identifiable {
+    case appearance, camera, recordings, connection, voice, safety, permissions, demo
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .appearance: return "Appearance"
+        case .camera: return "Camera display"
+        case .recordings: return "Recordings & storage"
+        case .connection: return "Connection"
+        case .voice: return "Voice"
+        case .safety: return "Safety"
+        case .permissions: return "Permissions"
+        case .demo: return "Try BrakeCheck"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .appearance: return "paintbrush"
+        case .camera: return "viewfinder"
+        case .recordings: return "externaldrive"
+        case .connection: return "network"
+        case .voice: return "speaker.wave.2"
+        case .safety: return "shield"
+        case .permissions: return "lock.shield"
+        case .demo: return "play.rectangle"
+        }
+    }
+    var detail: String {
+        switch self {
+        case .appearance: return "Choose the look that feels right."
+        case .camera: return "Units and overlays for your road view."
+        case .recordings: return "Manage video space and optional automatic cleanup."
+        case .connection: return "Connect your private BrakeCheck service."
+        case .voice: return "Spoken alerts, language, and check-in replies."
+        case .safety: return "Impact detection and emergency check-ins."
+        case .permissions: return "Manage access to your iPhone's sensors."
+        case .demo: return "Explore sample driving and check-in features."
+        }
+    }
+}
 
 struct SettingsView: View {
     @ObservedObject var model: DriveModel
     @ObservedObject var service: SafetyService
     @ObservedObject var settings: ConnectionSettings
-    @Environment(\.dismiss) private var dismiss
     @State private var busy = false
     @State private var pairing = false
     @State private var showingPairingScanner = false
+    @State private var selectedCategory: SettingsCategory = .appearance
     @Binding var requestDemo: Bool
+    @AppStorage("display.appearance") private var appearance = "dark"
+    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("voice.selectedVoice") private var selectedVoice = ""
+    @AppStorage("voice.delivery") private var voiceDelivery = "original"
+    @AppStorage("voice.backendAlerts") private var backendAlerts = true
+    @AppStorage("display.mph") private var useMPH = true
+    @AppStorage("display.detectionBoxes") private var showDetections = true
+    @AppStorage("display.lanes") private var showLanes = true
+    @AppStorage("display.fullCameraFrame") private var showFullFrame = true
+    @AppStorage("recording.limitGB") private var recordingLimitGB = 0
+    @AppStorage("recording.retentionDays") private var recordingRetentionDays = 0
+    @State private var pendingRetentionDays = 0
+    @State private var confirmRecordingCleanup = false
 
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Connection") {
-                    Button(pairing ? "Pairing…" : "Scan pairing QR") {
-                        showingPairingScanner = true
-                    }
-                    .disabled(pairing || busy)
-
-                    if settings.isPaired {
-                        Label("Paired · \(settings.address)", systemImage: "checkmark.shield.fill")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Run `python pair.py` beside a local backend, or add `--backend-url https://your-service.koyeb.app` for a hosted backend.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Button(busy ? "Connecting…" : "Test saved connection") {
-                        busy = true
-                        Task {
-                            await service.connect()
-                            busy = false
-                        }
-                    }
-                    .disabled(busy || pairing)
-
-                    Label(service.connectionStatus, systemImage: "network")
-                    if let error = service.error {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-
-                    DisclosureGroup("Advanced · manual connection") {
-                        TextField("Backend URL · https://… or http://PC:8000", text: $settings.address)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-
-                        SecureField("Backend app key", text: $settings.appKey)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-
-                        Button(busy ? "Connecting…" : "Save & test manual connection") {
-                            busy = true
-                            Task {
-                                do {
-                                    try settings.saveKey()
-                                    await service.connect()
-                                } catch {
-                                    service.error = error.localizedDescription
-                                }
-                                busy = false
-                            }
-                        }
-                        .disabled(busy || pairing)
-
-                        Text("Use the BRAKECHECK_APP_KEY from your private backend .env. Keep it out of screenshots and messages.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Voice · ElevenLabs") {
-                    Toggle("Spoken alerts and crash check-in", isOn: $settings.voiceEnabled)
-
-                    Picker("Language", selection: $settings.language) {
-                        Text("English").tag("en")
-                        Text("Español").tag("es")
-                    }
-
-                    Button(service.preparing ? "Preparing…" : "Prepare voice for this trip") {
-                        Task { await service.prepareVoice() }
-                    }
-                    .disabled(service.preparing || settings.client == nil)
-
-                    Button("Allow microphone for spoken replies") {
-                        Task { await service.requestMicrophone() }
-                    }
-
-                    Text(service.voiceStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Text("The microphone records a 6-second reply after the check-in prompt ends. Your backend sends that reply to ElevenLabs.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Possible impacts") {
-                    Toggle("Experimental impact detection", isOn: $model.impactEnabled)
-                        .disabled(model.demo)
-
-                    Toggle("Start an emergency check-in on impact", isOn: $settings.autoCheckin)
-                        .disabled(!model.impactEnabled || settings.client == nil)
-
-                    Text("An enabled check-in can message confirmed contacts if you ask for help or do not respond. A phone drop can trigger it. No emergency services are called automatically.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Try BrakeCheck") {
-                    Toggle(
-                        "Simulated driving metrics",
-                        isOn: Binding(
-                            get: { model.demo },
-                            set: { model.setDemo($0) }
-                        )
-                    )
-                    .disabled(model.tripActive || model.stopping)
-
-                    Button("Run crash check-in demo") {
-                        requestDemo = true
-                        dismiss()
-                    }
-                    .disabled(settings.client == nil)
-
-                    Text("The check-in demo can use ElevenLabs credits but never sends emergency messages.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Permissions") {
-                    Button("Open iPhone settings") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(url)
-                        }
-                    }
-
-                    Text("Keep BrakeCheck visible for camera recording. Video pauses when the phone locks or the app goes into the background.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .sheet(isPresented: $showingPairingScanner) {
-            PairingScannerSheet { qrText in
-                beginPairing(qrText)
-            }
-        }
-        .tint(BrakeTheme.accent)
+    private var groups: [(String, [SettingsCategory])] {
+        [("Your app", [.appearance, .camera, .recordings]), ("Connected services", [.connection, .voice]),
+         ("Safety", [.safety, .permissions]), ("Explore", [.demo])]
     }
 
-    // The scanner passes the FULL JSON string, not just the temporary code.
+    var body: some View {
+        GeometryReader { geometry in
+            if geometry.size.width >= 720 {
+                HStack(alignment: .top, spacing: 28) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            hubIdentity
+                            ForEach(groups, id: \.0) { group in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    groupLabel(group.0)
+                                    ForEach(group.1) { category in
+                                        Button { selectedCategory = category } label: {
+                                            Label(category.title, systemImage: category.icon)
+                                                .font(.subheadline.weight(selectedCategory == category ? .semibold : .regular))
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.horizontal, 14).frame(minHeight: 48)
+                                                .foregroundStyle(selectedCategory == category ? BrakeTheme.accent : BrakeTheme.text)
+                                                .background(selectedCategory == category ? BrakeTheme.accent.opacity(0.12) : .clear,
+                                                            in: RoundedRectangle(cornerRadius: 10))
+                                                .overlay(alignment: .leading) {
+                                                    if selectedCategory == category {
+                                                        Capsule().fill(BrakeTheme.accent).frame(width: 3, height: 28)
+                                                    }
+                                                }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityValue(selectedCategory == category ? "Selected" : "")
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 24)
+                    }
+                    .frame(width: 230)
+                    categoryPage(selectedCategory)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .padding(.horizontal, 24)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        hubIdentity
+                        ForEach(groups, id: \.0) { group in
+                            VStack(alignment: .leading, spacing: 12) {
+                                groupLabel(group.0)
+                                VStack(spacing: 0) {
+                                    ForEach(group.1) { category in
+                                        NavigationLink {
+                                            categoryPage(category)
+                                                .modifier(DedicatedPageStyle())
+                                        } label: {
+                                            categoryRow(category)
+                                        }
+                                        .buttonStyle(.plain)
+                                        if category != group.1.last {
+                                            Divider().padding(.leading, 56)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 20))
+                            }
+                        }
+                    }
+                    .padding(20).frame(maxWidth: 640).frame(maxWidth: .infinity)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .background(BrakeTheme.background)
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: settings.language) { _, _ in selectedVoice = "" }
+        .onChange(of: backendAlerts) { _, enabled in
+            if enabled { Task { await service.prepareVoice() } }
+        }
+        .tint(BrakeTheme.accentColor(named: accentChoice))
+    }
+
+    private var hubIdentity: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "gearshape.fill").font(.system(size: 25))
+                .foregroundStyle(BrakeTheme.accent).frame(width: 52, height: 52)
+                .background(BrakeTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Make BrakeCheck yours.").font(.system(size: 23, weight: .semibold))
+                Text("Your preferences, in one place.").font(.subheadline).foregroundStyle(BrakeTheme.muted)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func groupLabel(_ title: String) -> some View {
+        Text(title).font(.caption.weight(.semibold)).foregroundStyle(BrakeTheme.muted)
+            .padding(.horizontal, 4)
+    }
+
+    private func categoryRow(_ category: SettingsCategory) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: category.icon).font(.system(size: 19)).foregroundStyle(BrakeTheme.accent)
+                .frame(width: 26).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
+                Text(category.detail).font(.caption).foregroundStyle(BrakeTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(BrakeTheme.muted)
+        }
+        .padding(.vertical, 16).frame(minHeight: 64)
+        .contentShape(Rectangle())
+    }
+
+    private func categoryPage(_ category: SettingsCategory) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(category.title).font(.system(size: 28, weight: .semibold))
+                    Text(category.detail).font(.subheadline).foregroundStyle(BrakeTheme.muted)
+                }
+                Divider()
+                VStack(alignment: .leading, spacing: 20) {
+                    controls(category)
+                }
+                .font(.subheadline)
+                .textFieldStyle(.roundedBorder)
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+                .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 20))
+            }
+            .padding(.vertical, 24).padding(.horizontal, 20)
+            .frame(maxWidth: 780).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollIndicators(.hidden)
+        .background(BrakeTheme.background)
+        .foregroundStyle(BrakeTheme.text)
+        .navigationTitle(category.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(isPresented: $showingPairingScanner) {
+            PairingScannerSheet { beginPairing($0) }
+        }
+        .alert("Automatically delete old incident videos?", isPresented: $confirmRecordingCleanup) {
+            Button("Enable cleanup", role: .destructive) {
+                recordingRetentionDays = pendingRetentionDays
+                model.applyRecordingPreferences()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Saved incidents older than \(pendingRetentionDays) days will be permanently deleted when recording is idle. Export anything you want to keep first. Trip summaries are kept.")
+        }
+    }
+
+    @ViewBuilder private func controls(_ category: SettingsCategory) -> some View {
+        switch category {
+        case .appearance:
+            Picker("Theme", selection: $appearance) {
+                Text("Light").tag("light")
+                Text("Dark").tag("dark")
+            }.pickerStyle(.segmented)
+            Text("Personalize your accent").font(.headline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], spacing: 12) {
+                ForEach(AccentChoice.allCases) { choice in
+                    Button { accentChoice = choice.rawValue } label: {
+                        VStack(spacing: 8) {
+                            Circle().fill(BrakeTheme.accentColor(named: choice.rawValue))
+                                .frame(width: 34, height: 34)
+                                .overlay {
+                                    if accentChoice == choice.rawValue {
+                                        Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white)
+                                    }
+                                }
+                            Text(choice.title).font(.caption).foregroundStyle(BrakeTheme.text)
+                        }.frame(maxWidth: .infinity, minHeight: 72)
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel("\(choice.title) accent")
+                        .accessibilityValue(accentChoice == choice.rawValue ? "Selected" : "")
+                }
+            }
+            Text("Appearance applies to Home, Camera, Navigation, and these settings.")
+                .foregroundStyle(BrakeTheme.muted)
+        case .camera:
+            Picker("Units", selection: $useMPH) {
+                Text("mph · ft").tag(true)
+                Text("km/h · m").tag(false)
+            }.pickerStyle(.segmented)
+            Toggle("Show vehicle boxes", isOn: $showDetections)
+            Toggle("Show lane and road overlay", isOn: $showLanes)
+            Toggle("Show full camera frame", isOn: $showFullFrame)
+            Text("These preferences also apply to replayed drives.").foregroundStyle(BrakeTheme.muted)
+        case .recordings:
+            LabeledContent("Video space used", value: model.recordingStorageBytes.map {
+                ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
+            } ?? "Checking…")
+            Picker("Recording storage limit", selection: $recordingLimitGB) {
+                Text("No app limit").tag(0)
+                ForEach([1, 2, 5, 10], id: \.self) { value in Text("\(value) GB").tag(value) }
+            }
+            .onChange(of: recordingLimitGB) { _, _ in model.applyRecordingPreferences() }
+            Text("At the limit, recording pauses and saved incident footage is preserved. Camera detection can continue. Recording also stops if the iPhone has less than 500 MB free.")
+                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            Text("Free space or increase the limit, then restart the trip to resume recording.")
+                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            Picker("Automatically delete saved incidents", selection: Binding(
+                get: { recordingRetentionDays },
+                set: { value in
+                    if value == 0 {
+                        recordingRetentionDays = 0
+                        model.applyRecordingPreferences()
+                    } else if value != recordingRetentionDays {
+                        pendingRetentionDays = value
+                        confirmRecordingCleanup = true
+                    }
+                })) {
+                Text("Off · keep saved incidents").tag(0)
+                ForEach([7, 30, 90], id: \.self) { days in Text("After \(days) days").tag(days) }
+            }
+            Text("Cleanup runs between trips. Active incident footage is protected. Exported copies and trip metrics are not deleted.")
+                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            Button("Refresh storage usage") { model.camera.refreshIncidents() }
+        case .connection:
+            Button(pairing ? "Pairing…" : "Scan pairing QR") { showingPairingScanner = true }
+                .disabled(pairing || busy)
+            if settings.isPaired {
+                Label("Paired · \(settings.address)", systemImage: "checkmark.shield.fill")
+                    .foregroundStyle(BrakeTheme.muted)
+            } else {
+                Text("Scan the pairing code from your BrakeCheck service, or enter its address below.")
+                    .foregroundStyle(BrakeTheme.muted)
+            }
+            Button(busy ? "Connecting…" : "Test saved connection") {
+                busy = true
+                Task { await service.connect(); busy = false }
+            }.disabled(busy || pairing)
+            Label(service.connectionStatus, systemImage: "network")
+            if let error = service.error { Text(error).foregroundStyle(BrakeTheme.warning) }
+            DisclosureGroup("Manual connection") {
+                VStack(alignment: .leading, spacing: 16) {
+                    TextField("Backend URL", text: $settings.address)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    SecureField("Backend app key", text: $settings.appKey)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button(busy ? "Connecting…" : "Save and test connection") {
+                        busy = true
+                        Task {
+                            do { try settings.saveKey(); await service.connect() }
+                            catch { service.error = error.localizedDescription }
+                            busy = false
+                        }
+                    }.disabled(busy || pairing)
+                    Text("Keep your private app key out of screenshots and messages.")
+                        .font(.caption).foregroundStyle(BrakeTheme.muted)
+                }.padding(.top, 14)
+            }
+        case .voice:
+            Toggle("Spoken alerts and crash check-in", isOn: $settings.voiceEnabled)
+            Picker("Device voice", selection: $selectedVoice) {
+                Text("Original BrakeCheck voice").tag("")
+                ForEach(SpeechVoicePreferences.availableVoices(language: settings.language), id: \.identifier) { voice in
+                    Text(SpeechVoicePreferences.label(voice)).tag(voice.identifier)
+                }
+            }
+            Picker("Delivery", selection: $voiceDelivery) {
+                Text("Original").tag("original")
+                Text("Gentle").tag("gentle")
+                Text("Balanced").tag("balanced")
+                Text("Clear").tag("clear")
+            }.pickerStyle(.segmented)
+            Button("Restore original voice") {
+                SpeechVoicePreferences.restoreOriginalDefaults()
+            }
+            Button("Preview voice") { service.previewVoice() }
+                .disabled(model.tripActive || service.checkinPresented)
+            Text("Device voices apply to directions and brake alerts. Preview while parked. Brake warnings remain clear and at full volume.")
+                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            Toggle("Use ElevenLabs for brake alerts", isOn: $backendAlerts)
+            Text("ElevenLabs check-in audio uses the voice configured on your connected service.")
+                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            Picker("Language", selection: $settings.language) {
+                Text("English").tag("en")
+                Text("Español").tag("es")
+            }
+            Button(service.preparing ? "Preparing…" : "Prepare voice for this trip") {
+                Task { await service.prepareVoice() }
+            }.disabled(service.preparing || settings.client == nil || !backendAlerts)
+            Button("Allow microphone for spoken replies") {
+                Task { await service.requestMicrophone() }
+            }
+            Text(service.voiceStatus).foregroundStyle(BrakeTheme.muted)
+            Text("The microphone records a 6-second reply after the check-in prompt ends. Your backend sends that reply to ElevenLabs.")
+                .font(.caption).foregroundStyle(BrakeTheme.muted)
+        case .safety:
+            Toggle("Experimental impact detection", isOn: $model.impactEnabled).disabled(model.demo)
+            Toggle("Start an emergency check-in on impact", isOn: $settings.autoCheckin)
+                .disabled(!model.impactEnabled || settings.client == nil)
+            Text("An enabled check-in can message confirmed contacts if you ask for help or do not respond. A phone drop can trigger it. No emergency services are called automatically.")
+                .font(.caption).foregroundStyle(BrakeTheme.muted)
+        case .permissions:
+            Button("Open iPhone settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            Text("Keep BrakeCheck visible for camera recording. Video pauses when the phone locks or the app goes into the background.")
+                .foregroundStyle(BrakeTheme.muted)
+        case .demo:
+            Toggle("Simulated driving metrics", isOn: Binding(get: { model.demo }, set: { model.setDemo($0) }))
+                .disabled(model.tripActive || model.stopping)
+            Button("Run crash check-in demo") { requestDemo = true }
+                .disabled(settings.client == nil)
+            Text("The check-in demo can use ElevenLabs credits but never sends emergency messages.")
+                .font(.caption).foregroundStyle(BrakeTheme.muted)
+        }
+    }
+
     private func beginPairing(_ qrText: String) {
         guard !pairing else { return }
-
-        pairing = true
-        service.error = nil
-
+        pairing = true; service.error = nil
         Task {
             defer { pairing = false }
             do {
-                try await settings.pair(
-                    qrString: qrText,
-                    deviceName: UIDevice.current.name
-                )
+                try await settings.pair(qrString: qrText, deviceName: UIDevice.current.name)
                 await service.connect()
-            } catch {
-                service.error = error.localizedDescription
-            }
+            } catch { service.error = error.localizedDescription }
         }
     }
 }

@@ -10,7 +10,7 @@ struct IncidentListView: View {
     @State private var deleting: IncidentManifest?
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 if model.incidents.isEmpty {
                     ContentUnavailableView("No saved incidents", systemImage: "film.stack",
@@ -35,7 +35,6 @@ struct IncidentListView: View {
                 }
             }
             .navigationTitle("Incidents")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .confirmationDialog("Delete this incident and its saved clips?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("Delete incident", role: .destructive) {
                     if let deleting { model.deleteIncident(deleting.id) }
@@ -46,7 +45,7 @@ struct IncidentListView: View {
     }
 }
 
-private struct IncidentDetailView: View {
+struct IncidentDetailView: View {
     @ObservedObject var model: DriveModel
     let id: UUID
     @State private var playing: VideoSegment?
