@@ -49,7 +49,9 @@ let package = Package(
                 // The trained lane model is also ordinary data on Linux.
                 // Core ML compiles it on the iPhone and caches the result.
                 .copy("Resources/LaneModelData"),
-                .copy("Resources/ViewpointModelData")
+                .copy("Resources/ViewpointModelData"),
+                // Apple's required privacy manifest (required-reason APIs, no tracking).
+                .copy("Resources/PrivacyInfo.xcprivacy")
             ]
         )
     ],
