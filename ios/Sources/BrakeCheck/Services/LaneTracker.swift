@@ -77,6 +77,10 @@ final class LaneTracker {
     private var projectedRoadSource: TimeInterval = -.infinity
 
     func prepare() {
+        guard AppScope.neuralLanes else {
+            onStatus?("Lane paint scanner (trained lane models off in this build)")
+            return
+        }
         stateLock.lock()
         guard !loadingStarted else { stateLock.unlock(); return }
         loadingStarted = true

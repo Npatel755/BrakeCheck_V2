@@ -19,8 +19,19 @@ __pycache__/
 DerivedData/
 *.ipa
 .DS_Store
-weights/
-!ios/Sources/BrakeCheck/Resources/**/weights/
-!ios/Sources/BrakeCheck/Resources/**/weights/**
+# Local snapshot folders made before risky edits (keep them out of the repo)
+*-backup-*/
+# Source checkpoints for tools/model_migration (export_rtmdet.py reads ./weights/).
+# Anchored so the converted Core ML packages' com.apple.CoreML/weights/ folders stay committable:
+# the app can't load the RTMDet detectors without them.
+/weights/
+/ios/weights/
+/tools/model_migration/weights/
 yolo11n.pt
 tools/model_migration/artifacts/
+tools/model_migration/out/
+# Generated on CI by .github/workflows/ios-ipa.yml
+ios/AppTarget/*.xcodeproj/
+ios/AppTarget/Info.plist
+ios/AppTarget/Entry/Assets.xcassets/
+ios/build/

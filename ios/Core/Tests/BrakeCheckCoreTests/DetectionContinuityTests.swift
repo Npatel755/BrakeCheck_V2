@@ -156,8 +156,14 @@ final class DetectionContinuityTests: XCTestCase {
         let duplicate = LeadVehicle(box: box.offsetBy(dx: 0.005, dy: 0), label: "truck", confidence: 0.98)
         let merged = VehicleDetectionRecovery.merge(fullFrame: [car()], recovery: [duplicate, car(other)], imageAspect: 16.0 / 9)
         XCTAssertEqual(merged.count, 2)
-        XCTAssertTrue(merged.contains { $0.box == box && $0.label == "car" })
-        XCTAssertTrue(merged.contains { $0.box == other })
+        // Apple's CGRect.intersection (used when boxes are clipped to the frame) can
+        // change the last bit of the width, so compare boxes within a tolerance.
+        XCTAssertTrue(merged.contains { same($0.box, box) && $0.label == "car" })
+        XCTAssertTrue(merged.contains { same($0.box, other) })
+    }
+    private func same(_ a: CGRect, _ b: CGRect, tolerance: CGFloat = 1e-9) -> Bool {
+        abs(a.minX - b.minX) < tolerance && abs(a.minY - b.minY) < tolerance
+            && abs(a.width - b.width) < tolerance && abs(a.height - b.height) < tolerance
     }
     func testBetterWholeCarRecoveryCanReplaceAWeakFullFrameBox() {
         let improved = car(box.offsetBy(dx: 0.004, dy: 0), confidence: 0.9)

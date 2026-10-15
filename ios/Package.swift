@@ -53,8 +53,9 @@ let package = Package(
 
             path: "Sources/BrakeCheck",
 
-            // The old Ultralytics/YOLOP models aren't shipped. Xcode picks up any .mlmodel in the
-            // target automatically, and two of these share the name model.mlmodel, so it can't resolve.
+            // The old Ultralytics (AGPL) detectors stay on disk for comparison only.
+            // Without this, Xcode's SwiftPM treats their .mlmodel files as resources
+            // (duplicate 'model.mlmodel' error, and AGPL weights in the app).
             exclude: [
                 "Resources/YOLOModelData"
             ],
@@ -69,6 +70,8 @@ let package = Package(
                 // Core ML compiles it on the iPhone and caches the result.
                 .copy("Resources/LaneModelData"),
                 .copy("Resources/ViewpointModelData"),
+                // Apple's required privacy manifest (required-reason APIs, no tracking).
+                .copy("Resources/PrivacyInfo.xcprivacy"),
                 // Red Hat Display, the app's typeface (OFL-1.1); registered at runtime by BrakeFont.
                 .copy("Resources/Fonts")
             ]

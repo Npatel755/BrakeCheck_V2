@@ -72,6 +72,7 @@ struct ContentView: View {
                         .modifier(DedicatedPageStyle())
                 }
         }
+        .modifier(CrashTextCover(flow: model.crashText))
     }
 
     @ViewBuilder private func destinationPage(_ destination: HomeDestination) -> some View {
@@ -79,7 +80,9 @@ struct ContentView: View {
         case .settings:
             SettingsScreen(model: model, service: safety, settings: safety.settings, requestDemo: $requestDemo,
                 openCameraSetup: { destinationPath = []; page = .camera; showCameraSetup = true }).equatable()
-        case .contacts: ContactsView(service: safety)
+        case .contacts:
+            if AppScope.connectedServices { ContactsView(service: safety) }
+            else { CrashTextSetupView(model: model, flow: model.crashText) }
         case .incidents: IncidentListView(model: model)
         case .tripHistory: TripHistoryView(model: model, useMPH: useMPH)
         case .diagnostics: MeasurementDiagnosticsView(model: model)
@@ -199,7 +202,7 @@ struct ContentView: View {
 
     private var arSyncedPages: some View {
         syncedPages
-        .task { await safety.connectIfPaired() }
+        .task { if AppScope.connectedServices { await safety.connectIfPaired() } }
         .onAppear { updateARDemand() }
         .onChange(of: page) { _, _ in updateARDemand() }
         .onChange(of: navigation.isNavigating) { _, _ in updateARDemand() }
@@ -464,7 +467,8 @@ struct ContentView: View {
             : ("STANDBY", BrakeTheme.muted)
         return HStack(spacing: 5) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text("\(text) · \(model.measurementRevision)").font(.brake(size: 10, weight: .bold)).tracking(1)
+            Text(AppScope.developerTools ? "\(text) · \(model.measurementRevision)" : text)
+                .font(.brake(size: 10, weight: .bold)).tracking(1)
         }
         .padding(.horizontal, 10).frame(height: 26)
         .background(BrakeTheme.cameraSurface, in: Capsule())

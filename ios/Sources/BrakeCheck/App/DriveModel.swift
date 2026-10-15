@@ -246,11 +246,18 @@ final class DriveModel: ObservableObject {
 
     @Published var message: String?
 
-    @Published var impactEnabled = false {
+    /// Remembered across launches so crash texts keep working once set up.
+    @Published var impactEnabled = UserDefaults.standard.bool(forKey: "safety.impactEnabled") {
 
-        didSet { updateImpactService() }
+        didSet {
+            UserDefaults.standard.set(impactEnabled, forKey: "safety.impactEnabled")
+            updateImpactService()
+        }
 
     }
+
+    /// Phone-only crash check-in and texts (Release builds; Debug keeps the Photon check-in).
+    let crashText = CrashTextFlow()
 
     init() {
         SpeechVoicePreferences.restoreOriginalDefaultsIfNeeded()
@@ -317,9 +324,11 @@ final class DriveModel: ObservableObject {
 
             self.camera.markIncident(reason: String(format: "Experimental impact candidate, %.1f g", g))
 
-            if self.safety.settings.autoCheckin {
+            if AppScope.connectedServices && self.safety.settings.autoCheckin {
                 self.safety.beginCheckin(location: self.speedService.latestLocation,
                     speedMPH: self.speed.map { $0 * 2.2369362921 }, dryRun: false)
+            } else if !AppScope.connectedServices && self.crashText.hasContacts {
+                self.crashText.begin(location: self.speedService.latestLocation)
             } else {
                 self.message = "Possible impact detected. Preserving available video."
             }
@@ -840,6 +849,14 @@ final class DriveModel: ObservableObject {
 
     func deleteIncident(_ id: UUID) { camera.deleteIncident(id) }
     func applyRecordingPreferences() { camera.applyRecordingPreferences() }
+
+    /// Deletes the saved GPS speed logs, except the one an active trip is writing.
+    func deleteSpeedLogs() {
+        let active = speedLog.url?.lastPathComponent
+        for url in SpeedLogReader.savedLogs() where url.lastPathComponent != active {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
 
     func setDemo(_ enabled: Bool) {
 

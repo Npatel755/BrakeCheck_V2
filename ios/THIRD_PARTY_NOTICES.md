@@ -20,5 +20,5 @@ The iPhone app uses Apple's system frameworks SwiftUI, UIKit, Core Location, AVF
 ## Fonts
 
 - Red Hat Display (Light, Regular, Medium, SemiBold, Bold, ExtraBold, Black), Copyright 2021 The Red Hat Project Authors.
-- License: SIL Open Font License 1.1. Text bundled at `Sources/BrakeCheck/Resources/Fonts/OFL.txt`.
+- License: SIL Open Font License 1.1. Text bundled at `Sources/BrakeCheck/Resources/Fonts/OFL.txt` and shown in Settings › About & licences.
 - Source: https://github.com/RedHatOfficial/RedHatFont (`fonts/Proportional/RedHatDisplay/ttf`), unmodified.

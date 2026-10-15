@@ -1,5 +1,5 @@
-# Package manifests are hashed model assets; Windows checkout must not change them.
-ios/Sources/BrakeCheck/Resources/DetectorModelData/**/Manifest.json text eol=lf
-ios/Sources/BrakeCheck/Resources/LaneModelData/**/Manifest.json text eol=lf
-*.mlmodel -text
-*.bin -text
+# Core ML packages and model notices are hashed byte for byte (provenance JSON, model cache).
+# Never let Git convert their line endings on Windows checkouts.
+ios/Sources/BrakeCheck/Resources/** -text
+*.mlmodel binary
+*.bin binary
