@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Shared appearance for pages reached from Home, outside the swipe tabs.
 struct DedicatedPageStyle: ViewModifier {
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     func body(content: Content) -> some View {
         content
             .scrollContentBackground(.hidden)

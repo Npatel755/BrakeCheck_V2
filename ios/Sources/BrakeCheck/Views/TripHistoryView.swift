@@ -24,7 +24,7 @@ struct TripHistoryView: View {
                     }.brakePanel()
                     ForEach(model.savedTrips) { trip in
                         NavigationLink {
-                            TripSummaryView(model: model, trip: trip, useMPH: useMPH)
+                            TripDetailView(model: model, trip: trip, useMPH: useMPH)
                                 .modifier(DedicatedPageStyle())
                         } label: {
                             VStack(alignment: .leading, spacing: 12) {
@@ -76,56 +76,6 @@ struct TripHistoryView: View {
             try TripMetricsCSV.encode(model.savedTrips).write(to: url, atomically: true, encoding: .utf8)
             csvURL = url
         } catch { exportError = error.localizedDescription }
-    }
-}
-
-private struct TripSummaryView: View {
-    @ObservedObject var model: DriveModel
-    let trip: TripMetrics
-    let useMPH: Bool
-    private var incidents: [IncidentManifest] {
-        model.incidents.filter { $0.triggerTime >= trip.startedAt && $0.triggerTime <= trip.endedAt }
-    }
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(trip.startedAt.formatted(date: .complete, time: .shortened)).font(.brake(.title2, weight: .bold))
-                VStack(spacing: 14) {
-                    LabeledContent("Started", value: trip.startedAt.formatted(date: .omitted, time: .shortened))
-                    LabeledContent("Ended", value: trip.endedAt.formatted(date: .omitted, time: .shortened))
-                    LabeledContent("Duration", value: tripDuration(trip.durationSeconds))
-                    LabeledContent("Maximum GPS speed", value: tripSpeed(trip.maxSpeedMPH, useMPH: useMPH))
-                }.brakePanel()
-                VStack(alignment: .leading, spacing: 14) {
-                    Label("Camera estimates", systemImage: "viewfinder").font(.brake(.headline))
-                    LabeledContent("Estimated lead hard brakes", value: "\(trip.estimatedLeadHardBrakes)")
-                    LabeledContent("Estimated closing events", value: "\(trip.estimatedCloseCalls)")
-                    Text("Closing events count estimated closing time below 2 seconds. These counts depend on camera visibility and tracking; they do not prove a collision or fault.")
-                        .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                }.brakePanel()
-                VStack(alignment: .leading, spacing: 14) {
-                    Label("Saved incident footage", systemImage: "film.stack").font(.brake(.headline))
-                    if incidents.isEmpty {
-                        Text("No incident footage currently saved for this trip.").font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
-                    }
-                    ForEach(incidents) { incident in
-                        NavigationLink {
-                            IncidentDetailView(model: model, id: incident.id)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(incident.reason).font(.brake(.subheadline, weight: .medium))
-                                    Text("\(incident.triggerTime.formatted(date: .omitted, time: .shortened)) · \(incident.segments.count) clips")
-                                        .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                            }.foregroundStyle(BrakeTheme.accent)
-                        }
-                    }
-                }.brakePanel()
-            }.padding(20)
-        }.foregroundStyle(BrakeTheme.text).navigationTitle("Trip summary")
     }
 }
 

@@ -2,7 +2,7 @@ import SwiftUI
 import BrakeCheckCore
 
 struct RoadAreaOverlay: View {
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     var road: RoadRegion?
     var body: some View {
         GeometryReader { geometry in
@@ -23,7 +23,7 @@ struct RoadAreaOverlay: View {
 }
 
 struct LeadCorridorOverlay: View {
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     var lane: LanePath?
     var body: some View {
         GeometryReader { geometry in
@@ -63,7 +63,7 @@ struct CameraPerceptionOverlay: View {
 }
 
 struct DetectionOverlay: View {
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     let detections: [VehicleDetection]
     var hazardTargetID: UUID? = nil
     var leadTargetID: UUID? = nil

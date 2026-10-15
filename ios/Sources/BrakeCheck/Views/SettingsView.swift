@@ -84,7 +84,7 @@ struct SettingsView: View {
     @Binding var requestDemo: Bool
     var openCameraSetup: (() -> Void)? = nil
     @AppStorage("display.appearance") private var appearance = "dark"
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     @AppStorage("voice.selectedVoice") private var selectedVoice = ""
     @AppStorage("voice.delivery") private var voiceDelivery = "original"
     @AppStorage("voice.backendAlerts") private var backendAlerts = true
@@ -98,6 +98,8 @@ struct SettingsView: View {
     @State private var pendingRetentionDays = 0
     @State private var confirmRecordingCleanup = false
     @State private var confirmSpeedLogDelete = false
+    @State private var confirmRouteDelete = false
+    @AppStorage("checklist.skip") private var skipChecklist = false
     @State private var speedLogCount = SpeedLogReader.savedLogs().count
 
     private var groups: [(String, [SettingsCategory])] {
@@ -278,7 +280,7 @@ struct SettingsView: View {
                 Text("Light").tag("light")
                 Text("Dark").tag("dark")
             }.pickerStyle(.segmented)
-            Text("Personalize your accent").font(.brake(.headline))
+            Text("Color theme").font(.brake(.headline))
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], spacing: 12) {
                 ForEach(AccentChoice.allCases) { choice in
                     Button { accentChoice = choice.rawValue } label: {
@@ -287,13 +289,15 @@ struct SettingsView: View {
                                 .frame(width: 34, height: 34)
                                 .overlay {
                                     if accentChoice == choice.rawValue {
-                                        Image(systemName: "checkmark").font(.brake(.caption, weight: .bold)).foregroundStyle(.white)
+                                        Image(systemName: "checkmark").font(.brake(.caption, weight: .bold))
+                                            // Polar's swatch is near-white at night.
+                                            .foregroundStyle(choice == .polar ? Color(white: 0.5) : .white)
                                     }
                                 }
                             Text(choice.title).font(.brake(.caption)).foregroundStyle(BrakeTheme.text)
                         }.frame(maxWidth: .infinity, minHeight: 72)
                     }.buttonStyle(.plain)
-                        .accessibilityLabel("\(choice.title) accent")
+                        .accessibilityLabel("\(choice.title) theme")
                         .accessibilityValue(accentChoice == choice.rawValue ? "Selected" : "")
                 }
             }
@@ -354,6 +358,16 @@ struct SettingsView: View {
                     Button("Cancel", role: .cancel) { }
                 } message: {
                     Text("Replays of past drives will use an assumed speed instead. The log for a trip in progress is kept.")
+                }
+            Divider()
+            Text("Each trip also saves its route and the moments BrakeCheck flagged, for the map on the trip page. They stay on this iPhone.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+            Button("Delete trip routes", role: .destructive) { confirmRouteDelete = true }
+                .alert("Delete all saved trip routes?", isPresented: $confirmRouteDelete) {
+                    Button("Delete", role: .destructive) { TripRoute.deleteAll() }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("Trip pages will show their totals without a map. Trip history is kept.")
                 }
         case .connection:
             Button(pairing ? "Pairing…" : "Scan pairing QR") { showingPairingScanner = true }
@@ -431,6 +445,7 @@ struct SettingsView: View {
                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             }
         case .safety:
+            Toggle("Pre-drive checklist before each trip", isOn: Binding(get: { !skipChecklist }, set: { skipChecklist = !$0 }))
             Toggle("Experimental impact detection", isOn: Binding(get: { impactEnabled }, set: { model.impactEnabled = $0 })).disabled(demoMode)
             if AppScope.connectedServices {
                 Toggle("Start an emergency check-in on impact", isOn: $settings.autoCheckin)

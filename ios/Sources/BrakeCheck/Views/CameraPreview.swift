@@ -73,7 +73,7 @@ final class OrientationSurface: UIView {
 }
 
 struct TargetOverlay: View {
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     let trackedBox: CGRect?
     let selecting: Bool
     @Binding var selectedBox: CGRect?

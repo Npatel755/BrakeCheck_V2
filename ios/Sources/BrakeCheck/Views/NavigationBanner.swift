@@ -6,7 +6,7 @@ import SwiftUI
 /// beside the risk pill; portrait spans the width above it. The road ribbon stays in CameraNavigationOverlay.
 struct NavigationBanner: View {
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     @ObservedObject var navigation: NavigationService
     @ObservedObject var presentation: CameraARPresentation
     /// During a brake warning the card drops to one line so the alert reads first.

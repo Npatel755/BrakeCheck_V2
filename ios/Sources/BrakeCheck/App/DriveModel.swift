@@ -244,6 +244,9 @@ final class DriveModel: ObservableObject {
 
     @Published var incidents: [IncidentManifest] = []
 
+    /// The route and flagged moments of the current trip, for the trip page (saved on this iPhone).
+    let tripRoute = TripRouteRecorder()
+
     @Published var message: String?
 
     /// Remembered across launches so crash texts keep working once set up.
@@ -295,6 +298,7 @@ final class DriveModel: ObservableObject {
                 let measured = Date().addingTimeInterval(reading.measurementUptime - ProcessInfo.processInfo.systemUptime)
                 self.speedLog.append(speed: reading.metersPerSecond, accuracy: reading.accuracy, at: measured)
                 self.lastLoggedGPSUptime = reading.measurementUptime
+                if let location = self.speedService.latestLocation { self.tripRoute.add(location) }
             }
 
             if reading == nil { self.invalidateRisk("GPS speed unavailable.") }
@@ -587,6 +591,7 @@ final class DriveModel: ObservableObject {
         lastLoggedGPSUptime = nil
         speedLog.start(at: tripStarted)
         wasHardBrake = false; wasCloseCall = false
+        tripRoute.start(destination: navigation.isNavigating ? navigation.destinationTitle : nil)
         Task { await safety.prepareVoice() }
 
         clearFusionDisplay()
@@ -645,10 +650,15 @@ final class DriveModel: ObservableObject {
         let endedAt = Date()
         tripMinutes = max(0, endedAt.timeIntervalSince(tripStarted) / 60)
         do {
-            savedTrips = try tripMetricsStore.save(TripMetrics(startedAt: tripStarted, endedAt: endedAt,
+            let trip = TripMetrics(startedAt: tripStarted, endedAt: endedAt,
                 maxSpeedMPH: tripHadGPSSpeed ? maxSpeedMPH : nil,
-                estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls))
-        } catch { message = "Could not save this trip's metrics. Existing trip history has been kept." }
+                estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls)
+            savedTrips = try tripMetricsStore.save(trip)
+            tripRoute.finish(tripID: trip.id)
+        } catch {
+            tripRoute.cancel()
+            message = "Could not save this trip's metrics. Existing trip history has been kept."
+        }
         safety.sendTrip(minutes: tripMinutes,
                         hardBrakes: hardBrakes, closeCalls: closeCalls, maxSpeedMPH: maxSpeedMPH)
 
@@ -1361,14 +1371,22 @@ final class DriveModel: ObservableObject {
         }
         let active = brakeWarningLatch.isActive(at: now)
         if brakeWarningActive != active { brakeWarningActive = active }
+        let mph = speed.map { $0 * 2.2369362921 }
         if critical && !alreadyVisible {
             safety.brakeWarning()
+            tripRoute.add(.brakeAlert, at: speedService.latestLocation, speedMPH: mph, closingSeconds: risk.timeToCollision)
         }
         let braking = (risk.leadAcceleration ?? 0) < -3
-        if braking && !wasHardBrake { hardBrakes += 1 }
+        if braking && !wasHardBrake {
+            hardBrakes += 1
+            tripRoute.add(.hardBrake, at: speedService.latestLocation, speedMPH: mph, closingSeconds: nil)
+        }
         wasHardBrake = braking
         let close = risk.timeToCollision.map { $0 < 2 } ?? false
-        if close && !wasCloseCall { closeCalls += 1 }
+        if close && !wasCloseCall {
+            closeCalls += 1
+            tripRoute.add(.closeCall, at: speedService.latestLocation, speedMPH: mph, closingSeconds: risk.timeToCollision)
+        }
         wasCloseCall = close
     }
 

@@ -18,13 +18,14 @@ struct ContentView: View {
     }
     private enum HomeDestination: Hashable {
         case settings, contacts, incidents, tripHistory, diagnostics, replay
+        case trip(UUID)
     }
     @State private var destinationPath: [HomeDestination] = []
     @ObservedObject var model: DriveModel
     @ObservedObject private var safety: SafetyService
     @ObservedObject private var navigation: NavigationService
     @AppStorage("display.mph") private var useMPH = true
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     @AppStorage("display.detectionBoxes") private var showDetections = true
     @AppStorage("display.lanes") private var showLanes = true
     @AppStorage("navigation.cameraAR") private var cameraAR = true
@@ -87,6 +88,10 @@ struct ContentView: View {
         case .tripHistory: TripHistoryView(model: model, useMPH: useMPH)
         case .diagnostics: MeasurementDiagnosticsView(model: model)
         case .replay: ReplayView(model: model)
+        case .trip(let id):
+            if let trip = model.savedTrips.first(where: { $0.id == id }) {
+                TripDetailView(model: model, trip: trip, useMPH: useMPH)
+            }
         }
     }
 
@@ -224,7 +229,8 @@ struct ContentView: View {
                  openIncidents: { destinationPath.append(.incidents) },
                  openTripHistory: { destinationPath.append(.tripHistory) },
                  openDiagnostics: { destinationPath.append(.diagnostics) },
-                 openReplay: { destinationPath.append(.replay) }, beginCalibration: beginCalibration)
+                 openReplay: { destinationPath.append(.replay) }, beginCalibration: beginCalibration,
+                 openTrip: { destinationPath.append(.trip($0)) })
     }
 
     private func cameraPage(portrait: Bool) -> some View {

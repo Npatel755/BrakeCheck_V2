@@ -2,13 +2,13 @@ import SwiftUI
 
 /// Brake lamp and wordmark in the shared blue, with text that follows appearance.
 struct BrakeLogo: View {
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     var size: CGFloat = 25
 
     var body: some View {
         HStack(spacing: size * 0.3) {
             BrakeLamp().frame(width: size * 1.2, height: size * 1.2)
-            (Text("Brake").foregroundColor(BrakeTheme.text) + Text("Check").foregroundColor(BrakeTheme.accent))
+            (Text("Brake").foregroundColor(BrakeTheme.text) + Text("Check").foregroundColor(BrakeTheme.accentText))
                 .font(.brake(size: size, weight: .bold)).tracking(-size * 0.025)
                 .lineLimit(1).fixedSize()
         }
@@ -21,7 +21,7 @@ struct BrakeLogo: View {
 /// The ISO brake warning lamp: a ring with an exclamation mark and an arc on each side.
 /// Drawn on a 28-unit grid so it stays sharp at any size.
 struct BrakeLamp: View {
-    var color: Color = BrakeTheme.amber
+    var color: Color = BrakeTheme.accentText
     var lineWidth: CGFloat = 2.6
 
     var body: some View {

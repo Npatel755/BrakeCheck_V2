@@ -18,7 +18,7 @@ struct NavigationView: View {
     @State private var searchSection: SearchSection = .search
     @State private var confirmingClearRecents = false
     @AppStorage("display.appearance") private var appearance = "dark"
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
 
     private var canStart: Bool {
         navigation.route != nil && !navigation.isCalculating && navigation.hasFreshLocation
