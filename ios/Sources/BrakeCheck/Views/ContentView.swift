@@ -156,7 +156,11 @@ struct ContentView: View {
     }
 
     private var syncedPages: some View {
-        presentedPages
+        observingNavigation(observingCamera(observingCheckin(presentedPages)))
+    }
+
+    private func observingCheckin<Content: View>(_ content: Content) -> some View {
+        content
         .onChange(of: safety.checkinPresented) { _, presented in
             if !presented { showCheckin = false }
             else { destinationPath = []; showCheckin = true }
@@ -169,6 +173,10 @@ struct ContentView: View {
             navigation.setPageVisible(destinations.isEmpty && page == .navigation && !selecting)
             if destinations.isEmpty { presentPendingCheckin() }
         }
+    }
+
+    private func observingCamera<Content: View>(_ content: Content) -> some View {
+        content
         .onChange(of: model.cameraReady) { _, ready in if !ready { selecting = false; selection = nil } }
         .onChange(of: model.captureGeometry) { _, _ in selecting = false; selection = nil }
         .onChange(of: model.changingCameraGeometry) { _, changing in
@@ -177,6 +185,10 @@ struct ContentView: View {
         .onChange(of: model.tripActive) { _, active in
             if active { page = navigation.isNavigating ? .navigation : .camera }
         }
+    }
+
+    private func observingNavigation<Content: View>(_ content: Content) -> some View {
+        content
         .onChange(of: navigation.isNavigating) { _, active in if active { page = .navigation } }
         .onChange(of: page) { _, destination in navigation.setPageVisible(destinationPath.isEmpty && destination == .navigation && !selecting) }
         .onChange(of: selecting) { _, active in navigation.setPageVisible(destinationPath.isEmpty && page == .navigation && !active) }
