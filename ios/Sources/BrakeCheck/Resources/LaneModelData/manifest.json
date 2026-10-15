@@ -34,11 +34,11 @@
     }
   ],
   "files": {
-    "SegFormerRoad.mlpackage/Data/com.apple.CoreML/model.mlmodel": "943e8fbfa71663c8218e69e9580248260c17248a869786bbb75f2c370b83f439",
-    "SegFormerRoad.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "477f10bd51a02cfac0db2a819c454ffb09709e2011e23a00d8ee337e6ce6f0a1",
-    "SegFormerRoad.mlpackage/Manifest.json": "02821e7a6f902a2312469dce6e6c4e859ddc728e9f2af13c832ec5ebf7c40717",
-    "UFLDLane.mlpackage/Data/com.apple.CoreML/model.mlmodel": "9eb4a1fdbe9e74ffa32114193af05ed59b1fd0cc534e3a01a3c35c8d04584694",
-    "UFLDLane.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "b1066e24ffb3bee79244eadf73d2eeec0913b3e1e3b377c14f737f7c2e5480f3",
-    "UFLDLane.mlpackage/Manifest.json": "cf8afdd8ce6f9b08c360dab7ff92ef1958a68008e84dc58147f9570f3c49ce9f"
+    "SegFormerRoad/Data/com.apple.CoreML/model.mlmodel": "943e8fbfa71663c8218e69e9580248260c17248a869786bbb75f2c370b83f439",
+    "SegFormerRoad/Data/com.apple.CoreML/weights/weight.bin": "477f10bd51a02cfac0db2a819c454ffb09709e2011e23a00d8ee337e6ce6f0a1",
+    "SegFormerRoad/Manifest.json": "02821e7a6f902a2312469dce6e6c4e859ddc728e9f2af13c832ec5ebf7c40717",
+    "UFLDLane/Data/com.apple.CoreML/model.mlmodel": "9eb4a1fdbe9e74ffa32114193af05ed59b1fd0cc534e3a01a3c35c8d04584694",
+    "UFLDLane/Data/com.apple.CoreML/weights/weight.bin": "b1066e24ffb3bee79244eadf73d2eeec0913b3e1e3b377c14f737f7c2e5480f3",
+    "UFLDLane/Manifest.json": "cf8afdd8ce6f9b08c360dab7ff92ef1958a68008e84dc58147f9570f3c49ce9f"
   }
 }

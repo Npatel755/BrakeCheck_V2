@@ -6,6 +6,8 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
+import tempfile
 import zipfile
 import coremltools as ct
 
@@ -22,8 +24,11 @@ def main():
         assert hashlib.sha256((RESOURCES / relative).read_bytes()).hexdigest() == expected, relative
     expected_outputs = {"UFLDLane": [1, 201, 18, 4], "SegFormerRoad": [1, 2, 384, 640]}
     for record in manifest["models"]:
-        model = ct.models.MLModel(str(RESOURCES / f'{record["name"]}.mlpackage'), skip_model_load=True)
-        spec = model.get_spec()
+        # The bundle stores packages without the .mlpackage suffix; coremltools needs it.
+        with tempfile.TemporaryDirectory() as scratch:
+            package = Path(scratch) / f'{record["name"]}.mlpackage'
+            shutil.copytree(RESOURCES / record["name"], package)
+            spec = ct.models.MLModel(str(package), skip_model_load=True).get_spec()
         image = spec.description.input[0]
         assert image.name == "image"
         assert [image.type.imageType.height, image.type.imageType.width] == record["input"][-2:]

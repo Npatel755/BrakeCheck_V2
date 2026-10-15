@@ -8,6 +8,7 @@ and hashes. RGB byte normalization is embedded in both graphs.
 import argparse
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 import coremltools as ct
@@ -86,7 +87,13 @@ def export(net, shape, name, output_name, metadata):
         convert_to="mlprogram", minimum_deployment_target=ct.target.iOS17,
         compute_precision=ct.precision.FLOAT16)
     converted.user_defined_metadata.update(metadata)
-    converted.save(str(RESOURCES / f"{name}.mlpackage"))
+    # Stored without the .mlpackage suffix (like DetectorModelData): Xcode compiles any
+    # .mlpackage it finds in resources, and two packages both contain model.mlmodel.
+    staged, package = RESOURCES / f"{name}.mlpackage", RESOURCES / name
+    converted.save(str(staged))
+    if package.exists():
+        shutil.rmtree(package)
+    staged.rename(package)
     return {"name": name, "input": list(shape), "output": output_name, **metadata}
 
 
@@ -115,7 +122,7 @@ def main():
         "preprocessing": "RGB bytes; ImageNet normalization; stretch full frame",
         "decoder": "[1,2,384,640] softmax probabilities: non-road, road"})
     files = {}
-    for path in sorted(RESOURCES.glob("*.mlpackage/**/*")):
+    for path in sorted(p for name in ("SegFormerRoad", "UFLDLane") for p in (RESOURCES / name).glob("**/*")):
         if path.is_file():
             files[str(path.relative_to(RESOURCES))] = hashlib.sha256(path.read_bytes()).hexdigest()
     (RESOURCES / "manifest.json").write_text(json.dumps({"models": [lane, road], "files": files}, indent=2) + "\n")

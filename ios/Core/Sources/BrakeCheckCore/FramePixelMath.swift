@@ -10,12 +10,16 @@ public enum FramePixelMath {
     public static func fullRangeChroma(_ video: UInt8) -> UInt8 {
         clamped(128 + (Int(video) - 128) * 255 / 224)
     }
+    // Typed intermediates: Xcode's type checker times out on the one-line integer sums.
     public static func luma(red: UInt8, green: UInt8, blue: UInt8) -> UInt8 {
-        UInt8((77 * Int(red) + 150 * Int(green) + 29 * Int(blue) + 128) >> 8)
+        let r: Int = 77 * Int(red), g: Int = 150 * Int(green), b: Int = 29 * Int(blue)
+        return UInt8((r + g + b + 128) >> 8)
     }
     public static func chroma(red: UInt8, green: UInt8, blue: UInt8) -> (UInt8, UInt8) {
-        (clamped(128 + ((-43 * Int(red) - 85 * Int(green) + 128 * Int(blue) + 128) >> 8)),
-         clamped(128 + ((128 * Int(red) - 107 * Int(green) - 21 * Int(blue) + 128) >> 8)))
+        let r = Int(red), g = Int(green), b = Int(blue)
+        let cb: Int = (-43 * r - 85 * g + 128 * b + 128) >> 8
+        let cr: Int = (128 * r - 107 * g - 21 * b + 128) >> 8
+        return (clamped(128 + cb), clamped(128 + cr))
     }
     private static func clamped(_ value: Int) -> UInt8 { UInt8(max(0, min(255, value))) }
 }
