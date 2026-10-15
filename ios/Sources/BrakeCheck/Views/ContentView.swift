@@ -347,21 +347,32 @@ struct ContentView: View {
 
     // MARK: - Layouts
 
+    /// Directions show whenever a route is active; the "Directions on the road" setting only controls the ribbon.
+    private var showsDirections: Bool { page == .camera && navigation.isNavigating && !selecting }
+
+    private func directionsBanner(large: Bool) -> some View {
+        NavigationBanner(navigation: navigation, presentation: model.arPresentation,
+            compact: critical, large: large, onSetup: { showCameraSetup = true })
+    }
+
     private var landscapeHUD: some View {
         VStack(spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                brand(size: 25)
-                Spacer(minLength: 0)
-                if page == .camera && cameraAR && navigation.isNavigating && !selecting {
-                    CameraNavigationStatusView(navigation: navigation, presentation: model.arPresentation,
-                        onSetup: { showCameraSetup = true })
-                        .frame(maxWidth: 280, alignment: .trailing)
-                } else {
+            if showsDirections {
+                // Maps-style card top-left, the danger meter top-right; the middle of the road stays clear.
+                HStack(alignment: .top, spacing: 12) {
+                    directionsBanner(large: false).frame(maxWidth: 400, alignment: .leading)
+                    Spacer(minLength: 0)
+                    if critical || running { riskPill(large: false).padding(.top, 4) }
+                }
+            } else {
+                HStack(alignment: .top, spacing: 8) {
+                    brand(size: 25)
+                    Spacer(minLength: 0)
                     cameraSetupShortcut
                 }
-            }
-            if critical || (running && !selecting) {
-                riskPill(large: false)
+                if critical || (running && !selecting) {
+                    riskPill(large: false)
+                }
             }
             Spacer(minLength: 0)
             if selecting { calibrationControls.frame(maxWidth: 440) }
@@ -375,16 +386,18 @@ struct ContentView: View {
     /// Vertical: status and the danger meter above an unobstructed road, readouts below.
     private var portraitHUD: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 8) {
-                brand(size: 19)
-                Spacer(minLength: 0)
-                cameraSetupShortcut
+            if showsDirections {
+                // The card replaces the brand row so directions sit at the very top, as in Maps.
+                directionsBanner(large: true)
+            } else {
+                HStack(spacing: 8) {
+                    brand(size: 19)
+                    Spacer(minLength: 0)
+                    cameraSetupShortcut
+                }
             }
             if critical || (running && !selecting) {
                 riskPill(large: true)
-            }
-            if page == .camera && cameraAR && navigation.isNavigating && !selecting {
-                CameraNavigationStatusView(navigation: navigation, presentation: model.arPresentation, onSetup: { showCameraSetup = true })
             }
             Spacer(minLength: 0)
             if selecting { calibrationControls }
