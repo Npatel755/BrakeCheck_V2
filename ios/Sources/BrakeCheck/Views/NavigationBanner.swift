@@ -38,7 +38,7 @@ struct NavigationBanner: View {
             #if DEBUG
             // Developer builds keep the road-alignment reason that the old status box showed.
             if presentation.level != .aligned && !compact {
-                Text(presentation.guidanceDetail).font(.caption).lineLimit(2)
+                Text(presentation.guidanceDetail).font(.brake(.caption)).lineLimit(2)
                     .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 4)
                     .background(.black.opacity(0.65), in: Capsule())
             }
@@ -50,21 +50,21 @@ struct NavigationBanner: View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: large ? 16 : 14) {
                 Image(systemName: symbol)
-                    .font(.system(size: compact ? 24 : large ? 40 : 36, weight: .bold))
+                    .font(.brake(size: compact ? 24 : large ? 40 : 36, weight: .bold))
                     .frame(width: compact ? 30 : large ? 50 : 44)
                 if compact {
-                    Text(compactLine).font(.system(size: 17, weight: .bold)).lineLimit(1).minimumScaleFactor(0.75)
+                    Text(compactLine).font(.brake(size: 17, weight: .bold)).lineLimit(1).minimumScaleFactor(0.75)
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         if let distance {
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text(distance.value).font(.system(size: large ? 46 : 42, weight: .heavy)).fontWidth(.condensed)
+                                Text(distance.value).font(.brake(size: large ? 46 : 42, weight: .heavy))
                                     .monospacedDigit().contentTransition(.numericText())
-                                Text(distance.unit).font(.system(size: large ? 22 : 20, weight: .bold)).fontWidth(.condensed)
+                                Text(distance.unit).font(.brake(size: large ? 22 : 20, weight: .bold))
                             }
                             .animation(.easeOut(duration: 0.2), value: distance.value)
                         }
-                        Text(primary).font(.system(size: distance == nil ? (large ? 24 : 22) : (large ? 19 : 18), weight: .semibold))
+                        Text(primary).font(.brake(size: distance == nil ? (large ? 24 : 22) : (large ? 19 : 18), weight: .semibold))
                             .lineLimit(2).minimumScaleFactor(0.8).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -88,8 +88,8 @@ struct NavigationBanner: View {
             if navigation.isPaused {
                 Text(navigation.status).lineLimit(1).minimumScaleFactor(0.8)
             } else if let next = navigation.upcomingInstruction, !navigation.hasArrived {
-                Text("Then").font(.system(size: 15, weight: .semibold)).opacity(0.75)
-                Image(systemName: NavigationManeuver.symbol(for: next)).font(.system(size: 15, weight: .bold))
+                Text("Then").font(.brake(size: 15, weight: .semibold)).opacity(0.75)
+                Image(systemName: NavigationManeuver.symbol(for: next)).font(.brake(size: 15, weight: .bold))
                 Text(Self.road(in: next)).lineLimit(1).minimumScaleFactor(0.8)
             } else if let summary = tripSummary {
                 Text(summary).lineLimit(1).minimumScaleFactor(0.8)
@@ -100,7 +100,7 @@ struct NavigationBanner: View {
             if let onSetup {
                 Button(action: onSetup) {
                     Image(systemName: presentation.alignmentLocked ? "lock.fill" : "viewfinder")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.brake(size: 14, weight: .bold))
                         .frame(width: 32, height: 32)
                         .background(ink.opacity(0.14), in: Circle())
                 }
@@ -108,7 +108,7 @@ struct NavigationBanner: View {
                 .accessibilityLabel(presentation.alignmentLocked ? "Alignment locked. Adjust camera setup" : "Camera setup")
             }
         }
-        .font(.system(size: 16, weight: .semibold))
+        .font(.brake(size: 16, weight: .semibold))
         .padding(.horizontal, large ? 18 : 16).frame(minHeight: 42)
         .background(Color.black.opacity(colorScheme == .dark ? 0.14 : 0.18))
     }

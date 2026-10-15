@@ -47,7 +47,7 @@ struct HomeView: View {
                         displayCard
                     }
                     Text("Swipe between pages or use the bottom tabs. On Navigation, swipe the search panel; drag the map to explore.")
-                        .font(.footnote)
+                        .font(.brake(.footnote))
                         .foregroundStyle(BrakeTheme.muted)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 2)
@@ -71,17 +71,17 @@ struct HomeView: View {
                 BrakeLogo(size: 25)
                 Spacer(minLength: 8)
                 Text("HOME")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.brake(size: 10, weight: .bold))
                     .tracking(1.6)
                     .foregroundStyle(BrakeTheme.muted)
             }
             VStack(alignment: .leading, spacing: 6) {
                 Text("Your drive, at a glance.")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.brake(size: 28, weight: .semibold))
                     .tracking(-0.7)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Trip controls, recordings, and preferences.")
-                    .font(.subheadline)
+                    .font(.brake(.subheadline))
                     .foregroundStyle(BrakeTheme.muted)
             }
         }
@@ -91,7 +91,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: model.replaying ? "play.rectangle.fill" : "car.front.waves.up.fill")
-                    .font(.system(size: 25, weight: .regular))
+                    .font(.brake(size: 25, weight: .regular))
                     .foregroundStyle(BrakeTheme.amber)
                     .frame(width: 48, height: 48)
                     .background(BrakeTheme.amber.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
@@ -99,10 +99,10 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     statusLabel
                     Text(sessionTitle)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.brake(size: 20, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
                     Text(sessionDetail)
-                        .font(.subheadline)
+                        .font(.brake(.subheadline))
                         .foregroundStyle(BrakeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -111,7 +111,7 @@ struct HomeView: View {
 
             Button(action: tripAction) {
                 Label(primaryTitle, systemImage: model.tripActive || model.replaying ? "stop.fill" : "play.fill")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.brake(size: 16, weight: .bold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
                     .foregroundStyle(model.tripActive ? Color.white : BrakeTheme.background)
@@ -124,7 +124,7 @@ struct HomeView: View {
             HStack(spacing: 16) {
                 Button(action: openCamera) {
                     Label(model.replaying ? "View replay" : "Open camera", systemImage: "video")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.brake(.subheadline, weight: .semibold))
                         .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
@@ -133,7 +133,7 @@ struct HomeView: View {
                 if model.tripActive && !model.demo && !model.replaying {
                     Button { model.markIncident() } label: {
                         Label("Save clip", systemImage: "bookmark.fill")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.brake(.subheadline, weight: .semibold))
                             .frame(minHeight: 44)
                     }
                     .buttonStyle(.plain)
@@ -150,7 +150,7 @@ struct HomeView: View {
         HStack(spacing: 6) {
             Circle().fill(statusColor).frame(width: 6, height: 6)
             Text(statusText)
-                .font(.system(size: 10, weight: .bold))
+                .font(.brake(size: 10, weight: .bold))
                 .tracking(1.1)
                 .foregroundStyle(statusColor)
         }
@@ -215,10 +215,10 @@ struct HomeView: View {
     private func summaryValue(_ title: String, value: String, unit: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value).font(.system(size: 26, weight: .semibold)).monospacedDigit()
-                if let unit { Text(unit).font(.caption).foregroundStyle(BrakeTheme.muted) }
+                Text(value).font(.brake(size: 26, weight: .semibold)).monospacedDigit()
+                if let unit { Text(unit).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted) }
             }
-            Text(title).font(.caption).foregroundStyle(BrakeTheme.muted)
+            Text(title).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         }
         .accessibilityElement(children: .combine)
     }
@@ -251,7 +251,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 18) {
             sectionTitle("Camera display", icon: "viewfinder")
             VStack(alignment: .leading, spacing: 8) {
-                Text("Units").font(.subheadline.weight(.medium))
+                Text("Units").font(.brake(.subheadline, weight: .medium))
                 Picker("Units", selection: $useMPH) {
                     Text("mph · ft").tag(true)
                     Text("km/h · m").tag(false)
@@ -262,16 +262,16 @@ struct HomeView: View {
             Toggle("Show lane and road overlay", isOn: $showLanes)
             Toggle("Show full camera frame", isOn: $showFullFrame)
             Text("These preferences also apply to replayed drives.")
-                .font(.caption)
+                .font(.brake(.caption))
                 .foregroundStyle(BrakeTheme.muted)
         }
-        .font(.subheadline)
+        .font(.brake(.subheadline))
         .brakePanel()
     }
 
     private func sectionTitle(_ title: String, icon: String) -> some View {
         Label(title, systemImage: icon)
-            .font(.system(size: 16, weight: .semibold))
+            .font(.brake(size: 16, weight: .semibold))
             .foregroundStyle(BrakeTheme.text)
     }
 
@@ -283,18 +283,18 @@ struct HomeView: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.brake(size: 18, weight: .medium))
                     .foregroundStyle(BrakeTheme.accent)
                     .frame(width: 28)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
-                    Text(detail).font(.caption).foregroundStyle(BrakeTheme.muted)
+                    Text(title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
+                    Text(detail).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.brake(size: 11, weight: .semibold))
                     .foregroundStyle(BrakeTheme.muted)
                     .accessibilityHidden(true)
             }

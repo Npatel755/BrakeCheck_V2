@@ -68,7 +68,9 @@ let package = Package(
                 // UFLD lanes and SegFormer roads are ordinary data on Linux.
                 // Core ML compiles it on the iPhone and caches the result.
                 .copy("Resources/LaneModelData"),
-                .copy("Resources/ViewpointModelData")
+                .copy("Resources/ViewpointModelData"),
+                // Red Hat Display, the app's typeface (OFL-1.1); registered at runtime by BrakeFont.
+                .copy("Resources/Fonts")
             ]
         )
     ],

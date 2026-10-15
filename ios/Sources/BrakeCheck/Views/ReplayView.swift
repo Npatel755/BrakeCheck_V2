@@ -44,7 +44,7 @@ struct ReplayView: View {
                 Section("1 · Recorded drive") {
                     if replayable.isEmpty {
                         Text("No saved incidents with video yet. During a drive, tap Save incident right after the moment you want to show; it keeps the footage around it.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.brake(.caption)).foregroundStyle(.secondary)
                     }
                     ForEach(replayable) { incident in
                         Button {
@@ -55,7 +55,7 @@ struct ReplayView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(incident.triggerTime.formatted(date: .abbreviated, time: .standard))
                                     Text("\(incident.segments.count) clips · \(incident.reason)")
-                                        .font(.caption2).foregroundStyle(.secondary)
+                                        .font(.brake(.caption2)).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 if video == .incident(incident.id) { Image(systemName: "checkmark") }
@@ -76,7 +76,7 @@ struct ReplayView: View {
                         }
                     }
                     Text("Save a video to Files on this iPhone before importing it. A video still on your computer will not appear here.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.brake(.caption)).foregroundStyle(.secondary)
                 }
 
                 Section("2 · Speed during that drive") {
@@ -104,15 +104,15 @@ struct ReplayView: View {
 
                     if speedChoice == .videoOnly {
                         Text("Replay shows vehicle, lane, and road detections. Camera route AR needs synchronized GPS and route data and is available during live navigation only.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.brake(.caption)).foregroundStyle(.secondary)
                     } else if speedChoice == .assumed {
                         Stepper(String(format: "%.0f mph", assumedMPH), value: $assumedMPH, in: 5...80, step: 5)
                         Text("Lead-car speed and deceleration will be estimates built on this assumption, and the screen says so.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.brake(.caption)).foregroundStyle(.secondary)
                     } else {
                         Stepper(String(format: "Speed log offset %+.1f s", offset), value: $offset, in: -30...30, step: 0.5)
                         Text("BrakeCheck logs speed on every trip and matches it to its own recordings by clock time. Use the offset only for a log from another app or phone.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.brake(.caption)).foregroundStyle(.secondary)
                     }
                 }
 
@@ -120,11 +120,11 @@ struct ReplayView: View {
                     Button("Start replay") { start() }
                         .disabled(video == nil || model.replaying || model.tripActive || model.demo)
                     if let error {
-                        Text(error).font(.caption).foregroundStyle(.orange)
+                        Text(error).font(.brake(.caption)).foregroundStyle(.orange)
                     }
                     if model.tripActive || model.demo {
                         Text("End the trip and turn off simulated metrics first.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.brake(.caption)).foregroundStyle(.secondary)
                     }
                 }
             }

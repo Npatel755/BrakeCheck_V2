@@ -26,20 +26,20 @@ struct CameraCalibrationControls: View {
         VStack(alignment: .leading, spacing: 12) {
             if completed {
                 Label(presentation.alignmentLocked ? "Alignment locked" : "Mount saved", systemImage: "checkmark.circle.fill")
-                    .font(.headline).foregroundStyle(.green)
+                    .font(.brake(.headline)).foregroundStyle(.green)
                 Text("Returning to the camera. Road alignment finishes automatically when stable lanes appear; no further setup taps are needed.")
-                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             } else {
                 if liveCameraSetup {
                     Label(presentation.alignmentLocked ? "Alignment locked" : presentation.mountConfirmed ? "Waiting for road alignment" : "Set up your mount",
                           systemImage: presentation.alignmentLocked ? "lock.fill" : "viewfinder")
-                        .font(.headline).foregroundStyle(presentation.alignmentLocked ? .green : BrakeTheme.accent)
+                        .font(.brake(.headline)).foregroundStyle(presentation.alignmentLocked ? .green : BrakeTheme.accent)
                     Text("While parked, secure the phone facing forward and set the lens height below. Lane markings are not needed here. The app aligns to the road automatically later.")
-                        .font(.caption).foregroundStyle(BrakeTheme.muted)
+                        .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 } else {
-                    Text("Camera alignment").font(.headline)
+                    Text("Camera alignment").font(.brake(.headline))
                     Text("Use Camera setup on the live road view. A saved alignment survives brief tracking gaps; reset it only when you change the mount.")
-                        .font(.caption).foregroundStyle(BrakeTheme.muted)
+                        .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 }
                 LabeledContent("Lens above pavement", value: useFeet
                     ? String(format: "%.1f ft", mountHeight / 0.3048) : String(format: "%.2f m", mountHeight))
@@ -47,7 +47,7 @@ struct CameraCalibrationControls: View {
                        in: 0.5...3, step: 0.025).disabled(aligning)
                     .accessibilityLabel("Camera lens height above pavement")
                 Text("Measure from the lens down to the road, including the vehicle's height. Keep your measured value for this mount.")
-                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
 
                 if liveCameraSetup {
                     if aligning {
@@ -63,18 +63,18 @@ struct CameraCalibrationControls: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!aligning && (!cameraReady || changingGeometry || moving || model.demo || model.replaying))
                     if !cameraReady {
-                        Text("Start a live trip to align the camera.").font(.caption).foregroundStyle(BrakeTheme.muted)
+                        Text("Start a live trip to align the camera.").font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     } else if moving {
-                        Text("GPS indicates movement. Park before using setup.").font(.caption).foregroundStyle(BrakeTheme.muted)
+                        Text("GPS indicates movement. Park before using setup.").font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     } else if changingGeometry {
-                        Text("Keep the phone orientation steady.").font(.caption).foregroundStyle(BrakeTheme.muted)
+                        Text("Keep the phone orientation steady.").font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     } else if aligning {
                         Text("Waiting for camera geometry. No lane markings are needed to save your mount.")
-                            .font(.caption).foregroundStyle(BrakeTheme.muted)
+                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     }
                 } else if let openCameraSetup {
                     Button("Open live camera setup", action: openCameraSetup).disabled(!cameraReady || model.demo || model.replaying)
-                    if !cameraReady { Text("Start a live trip first.").font(.caption).foregroundStyle(BrakeTheme.muted) }
+                    if !cameraReady { Text("Start a live trip first.").font(.brake(.caption)).foregroundStyle(BrakeTheme.muted) }
                 }
 
                 DisclosureGroup("Advanced adjustments") {
@@ -138,7 +138,7 @@ struct CameraCalibrationOverlay: View {
                 Color.clear.contentShape(Rectangle()).onTapGesture { }
                 VStack(spacing: 8) {
                     HStack {
-                        Text("Camera setup").font(.headline)
+                        Text("Camera setup").font(.brake(.headline))
                         Spacer()
                         Button("Close", systemImage: "xmark.circle.fill", action: onClose).labelStyle(.iconOnly)
                     }
@@ -165,7 +165,7 @@ struct CameraAlignmentShortcut: View {
             Label(presentation.alignmentLocked ? "Alignment locked" : presentation.mountConfirmed ? "Mount saved" : "Camera setup",
                   systemImage: presentation.alignmentLocked ? "lock.fill" : "viewfinder")
         }
-        .font(.caption.weight(.semibold)).foregroundStyle(presentation.alignmentLocked ? .green : BrakeTheme.accent)
+        .font(.brake(.caption, weight: .semibold)).foregroundStyle(presentation.alignmentLocked ? .green : BrakeTheme.accent)
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(BrakeTheme.cameraSurface, in: Capsule())
     }

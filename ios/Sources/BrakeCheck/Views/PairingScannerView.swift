@@ -154,7 +154,7 @@ struct PairingScannerSheet: View {
                 QRCodeScanner(onCode: handleScan, onError: { scanError = $0 })
                     .ignoresSafeArea(edges: .bottom)
                 Text("Scan the one-time QR code from your BrakeCheck backend.")
-                    .font(.callout.weight(.medium))
+                    .font(.brake(.callout, weight: .medium))
                     .multilineTextAlignment(.center)
                     .padding(14)
                     .frame(maxWidth: .infinity)

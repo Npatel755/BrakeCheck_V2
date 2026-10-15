@@ -9,7 +9,7 @@ struct BrakeLogo: View {
         HStack(spacing: size * 0.3) {
             BrakeLamp().frame(width: size * 1.2, height: size * 1.2)
             (Text("Brake").foregroundColor(BrakeTheme.text) + Text("Check").foregroundColor(BrakeTheme.accent))
-                .font(.system(size: size, weight: .bold)).tracking(-size * 0.025)
+                .font(.brake(size: size, weight: .bold)).tracking(-size * 0.025)
                 .lineLimit(1).fixedSize()
         }
         .accessibilityElement(children: .ignore)

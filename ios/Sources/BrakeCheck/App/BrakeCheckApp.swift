@@ -11,6 +11,8 @@ struct BrakeCheckApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(model: model)
+                // Red Hat Display for any text without its own font (forms, labels, buttons).
+                .font(.brake(.body))
                 .preferredColorScheme(appearance == "light" ? .light : .dark)
                 .onChange(of: scenePhase) { _, phase in model.sceneChanged(phase) }
         }

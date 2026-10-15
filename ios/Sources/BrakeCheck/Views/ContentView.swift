@@ -243,7 +243,7 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         Circle().fill(page == destination ? BrakeTheme.accent : BrakeTheme.muted.opacity(0.45))
                             .frame(width: 5, height: 5)
-                        Text(destination.title).font(.system(size: 13, weight: .semibold))
+                        Text(destination.title).font(.brake(size: 13, weight: .semibold))
                     }
                     .foregroundStyle(page == destination ? BrakeTheme.accent : BrakeTheme.muted)
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -296,7 +296,7 @@ struct ContentView: View {
                     ? (model.detectorStatus.contains("could not load") ? "Detection unavailable" : "Preparing detection") : nil)
             if !critical && !model.demo && !model.replaying && !model.detectorReady && model.detectorStatus.contains("could not load") {
                 Button("Detection failed · tap for details") { model.message = model.detectorStatus }
-                    .font(.caption).foregroundStyle(BrakeTheme.caution)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.caution)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(.black.opacity(0.65), in: Capsule())
             }
@@ -354,14 +354,14 @@ struct ContentView: View {
             BrakeTheme.panel.ignoresSafeArea()
             VStack(spacing: 10) {
                 Image(systemName: model.demo ? "car.side.hill.up.fill" : "car.front.waves.up.fill")
-                    .font(.system(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accent.opacity(0.7))
+                    .font(.brake(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accent.opacity(0.7))
                 Text(model.demo ? "Simulated drive" : "A clearer view ahead.")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.brake(size: 22, weight: .semibold))
                 Text(model.demo ? "Practice numbers · no camera" : "Start a trip to see the road and track vehicles.")
-                    .font(.system(size: 12)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
+                    .font(.brake(size: 12)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
                 if !model.demo {
                     Text("Swipe to Home for trip controls.")
-                        .font(.system(size: 12)).foregroundStyle(BrakeTheme.accent)
+                        .font(.brake(size: 12)).foregroundStyle(BrakeTheme.accent)
                 }
             }
             .padding(.horizontal, 24)
@@ -464,7 +464,7 @@ struct ContentView: View {
             : ("STANDBY", BrakeTheme.muted)
         return HStack(spacing: 5) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text("\(text) · \(model.measurementRevision)").font(.system(size: 10, weight: .bold)).tracking(1)
+            Text("\(text) · \(model.measurementRevision)").font(.brake(size: 10, weight: .bold)).tracking(1)
         }
         .padding(.horizontal, 10).frame(height: 26)
         .background(BrakeTheme.cameraSurface, in: Capsule())
@@ -484,20 +484,20 @@ struct ContentView: View {
     private func speedReadout(size: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(model.gpsSpeedEstimated ? "EST. SPEED" : "SPEED")
-                .font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(size: 10, weight: .bold)).tracking(1).foregroundStyle(BrakeTheme.muted)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(model.speed.map { String(format: "%.0f", $0 * factor) } ?? "--")
-                    .font(.system(size: size, weight: .semibold)).monospacedDigit().tracking(-2)
+                    .font(.brake(size: size, weight: .semibold)).monospacedDigit().tracking(-2)
                     .foregroundStyle(model.speed == nil ? BrakeTheme.muted : BrakeTheme.text)
-                Text(unit).font(.system(size: 15, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
+                Text(unit).font(.brake(size: 15, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
             }
             if model.replaying {
                 Text(model.replaySpeedSource.hasPrefix("ASSUMED") ? "ASSUMED SPEED" : "RECORDED SPEED")
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(BrakeTheme.warning)
+                    .font(.brake(size: 9, weight: .semibold)).foregroundStyle(BrakeTheme.warning)
             } else if model.gpsSpeedEstimated {
-                Text("GPS GAP · ESTIMATED").font(.system(size: 9, weight: .semibold)).foregroundStyle(BrakeTheme.warning)
+                Text("GPS GAP · ESTIMATED").font(.brake(size: 9, weight: .semibold)).foregroundStyle(BrakeTheme.warning)
             } else if model.speed == nil {
-                Text("Waiting for GPS").font(.system(size: 11)).foregroundStyle(BrakeTheme.muted)
+                Text("Waiting for GPS").font(.brake(size: 11)).foregroundStyle(BrakeTheme.muted)
             }
         }
         .shadow(color: colorScheme == .dark ? .black.opacity(0.5) : .clear, radius: 6)
@@ -540,19 +540,19 @@ struct ContentView: View {
     private func hudNumber(_ label: String, _ value: String?, _ unit: String, size: CGFloat,
                            alert: Bool = false, unavailable: String? = nil) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
-            Text(value ?? "--").font(.system(size: size, weight: .semibold)).monospacedDigit()
+            Text(label).font(.brake(size: 11, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
+            Text(value ?? "--").font(.brake(size: size, weight: .semibold)).monospacedDigit()
                 .foregroundColor(alert ? BrakeTheme.danger : BrakeTheme.text)
-            + Text(" \(unit)").font(.system(size: 12, weight: .semibold)).foregroundColor(BrakeTheme.muted)
+            + Text(" \(unit)").font(.brake(size: 12, weight: .semibold)).foregroundColor(BrakeTheme.muted)
             if value == nil, let unavailable, !unavailable.isEmpty {
-                Text(unavailable).font(.system(size: 10)).foregroundStyle(BrakeTheme.muted)
+                Text(unavailable).font(.brake(size: 10)).foregroundStyle(BrakeTheme.muted)
             }
         }
     }
 
     private var calibrationControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("While parked, draw around the rear of a vehicle and enter its measured gap.").font(.caption)
+            Text("While parked, draw around the rear of a vehicle and enter its measured gap.").font(.brake(.caption))
             HStack {
                 TextField("Meters", text: $measuredDistance).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
                 Button("Track") {

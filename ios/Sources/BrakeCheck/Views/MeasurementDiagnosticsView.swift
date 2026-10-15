@@ -21,7 +21,7 @@ struct MeasurementDiagnosticsView: View {
                     Text(model.frameAlignmentStatus)
                     Text(model.risk.reason)
                     Text("A confirmed lead uses fresh camera range and gap motion without needing lane detection or GPS. Closure acceleration describes the relative gap, not the lead's absolute acceleration. Stale or clipped measurements pause the numbers. A triggered brake warning remains visible for at least five seconds. It says BRAKE ALERT once current risk is no longer critical.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.brake(.caption)).foregroundStyle(.secondary)
                 }
                 Section("Camera and models") {
                     Picker("Detection lighting", selection: $model.detectorLightingMode) {
@@ -31,7 +31,7 @@ struct MeasurementDiagnosticsView: View {
                     }
                     .pickerStyle(.segmented)
                     Text(model.detectorLightingStatus)
-                        .font(.caption)
+                        .font(.brake(.caption))
                     Label(model.cameraStatus, systemImage: "video")
                     Label(model.detectorStatus, systemImage: "viewfinder")
                     Label(model.recorderStatus, systemImage: "record.circle")
@@ -42,7 +42,7 @@ struct MeasurementDiagnosticsView: View {
                     LabeledContent("GPS speed", value: model.speed.map { String(format: "%.2f m/s", $0) } ?? "Unavailable")
                     LabeledContent("GPS uncertainty", value: model.gpsAccuracy.map { String(format: "±%.2f m/s", $0) } ?? "Unavailable")
                     Text("Brief GPS gaps can show an estimated speed for up to 2.5 seconds from the last accepted fix, with growing uncertainty. A later reliable fix can interpolate an earlier camera frame. These estimates do not become measured GPS fixes, braking evidence, or logged speed. Current camera gap motion supplies danger independently.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.brake(.caption)).foregroundStyle(.secondary)
                     Label(model.motionStatus, systemImage: "waveform.path")
                 }
                 Section("Experimental fusion · display only") {
@@ -51,7 +51,7 @@ struct MeasurementDiagnosticsView: View {
                     Text(model.fusedSpeedSource)
                     Text(model.fusionStatus)
                     Text("Absolute lead speed uses GPS. Camera gap motion can supply collision indication independently. Experimental fused speed does not supply collision estimates.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.brake(.caption)).foregroundStyle(.secondary)
                 }
                 Section("This trip") {
                     LabeledContent("Duration", value: String(format: "%.1f min", model.tripMinutes))
@@ -62,7 +62,7 @@ struct MeasurementDiagnosticsView: View {
                     LabeledContent("Estimated lead acceleration", value: model.risk.leadAcceleration.map { String(format: "%.1f m/s²", $0) } ?? "—")
                 }
             }
-            .font(.subheadline)
+            .font(.brake(.subheadline))
             .navigationTitle("Diagnostics · \(model.measurementRevision)")
             .navigationBarTitleDisplayMode(.inline)
         }

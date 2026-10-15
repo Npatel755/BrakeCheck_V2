@@ -44,21 +44,21 @@ VStack(spacing: 14) {
                         .stroke(ringColor, style: StrokeStyle(lineWidth: 8, lineCap: .round)).rotationEffect(.degrees(-90))
                         .animation(.linear(duration: 0.3), value: service.remaining)
                     if service.resolved {
-                        Image(systemName: "checkmark").font(.system(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accent)
+                        Image(systemName: "checkmark").font(.brake(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accent)
                     } else {
-                        Text("\(service.remaining)").font(.system(size: 54, weight: .light, design: .rounded)).monospacedDigit()
+                        Text("\(service.remaining)").font(.brake(size: 54, weight: .light)).monospacedDigit()
                             .foregroundStyle(service.remaining <= 5 ? BrakeTheme.danger : .white)
                     }
                 }.frame(width: size, height: size)
                 Text(service.isDryRun ? "DEMO · NO MESSAGES" : "EMERGENCY CHECK-IN")
-                    .font(.system(size: 11, weight: .bold)).tracking(1).foregroundStyle(ringColor)
+                    .font(.brake(size: 11, weight: .bold)).tracking(1).foregroundStyle(ringColor)
             }
     }
 
     private var responsePanel: some View {
 VStack(alignment: .leading, spacing: 15) {
-                Text(service.checkinTitle).font(.system(size: 30, weight: .semibold, design: .rounded))
-                Text(service.checkinDetail).font(.subheadline).foregroundStyle(BrakeTheme.muted).fixedSize(horizontal: false, vertical: true)
+                Text(service.checkinTitle).font(.brake(size: 30, weight: .semibold))
+                Text(service.checkinDetail).font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted).fixedSize(horizontal: false, vertical: true)
                 if service.resolved {
                     Button("Done") { service.closeCheckin() }.buttonStyle(.borderedProminent).tint(BrakeTheme.accent).foregroundStyle(BrakeTheme.background)
                 } else {
@@ -71,10 +71,10 @@ VStack(alignment: .leading, spacing: 15) {
                         }.buttonStyle(.borderedProminent).tint(BrakeTheme.danger)
                     }.disabled(!service.canRespond)
                     if service.connectionLost {
-                        Button("Close with result unknown") { confirmClose = true }.font(.caption)
+                        Button("Close with result unknown") { confirmClose = true }.font(.brake(.caption))
                     }
                     Text(service.isDryRun ? "This rehearsal never alerts contacts." : "No response triggers a message to confirmed contacts. Emergency services are not called.")
-                        .font(.caption).foregroundStyle(BrakeTheme.muted)
+                        .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
     }

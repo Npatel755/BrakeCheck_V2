@@ -113,7 +113,7 @@ struct SettingsView: View {
                                     ForEach(group.1) { category in
                                         Button { selectedCategory = category } label: {
                                             Label(category.title, systemImage: category.icon)
-                                                .font(.subheadline.weight(selectedCategory == category ? .semibold : .regular))
+                                                .font(.brake(.subheadline, weight: selectedCategory == category ? .semibold : .regular))
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                                 .padding(.horizontal, 14).frame(minHeight: 48)
                                                 .foregroundStyle(selectedCategory == category ? BrakeTheme.accent : BrakeTheme.text)
@@ -186,33 +186,33 @@ struct SettingsView: View {
 
     private var hubIdentity: some View {
         HStack(spacing: 14) {
-            Image(systemName: "gearshape.fill").font(.system(size: 25))
+            Image(systemName: "gearshape.fill").font(.brake(size: 25))
                 .foregroundStyle(BrakeTheme.accent).frame(width: 52, height: 52)
                 .background(BrakeTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
             VStack(alignment: .leading, spacing: 5) {
-                Text("Make BrakeCheck yours.").font(.system(size: 23, weight: .semibold))
-                Text("Your preferences, in one place.").font(.subheadline).foregroundStyle(BrakeTheme.muted)
+                Text("Make BrakeCheck yours.").font(.brake(size: 23, weight: .semibold))
+                Text("Your preferences, in one place.").font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
             }
         }
         .accessibilityElement(children: .combine)
     }
 
     private func groupLabel(_ title: String) -> some View {
-        Text(title).font(.caption.weight(.semibold)).foregroundStyle(BrakeTheme.muted)
+        Text(title).font(.brake(.caption, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
             .padding(.horizontal, 4)
     }
 
     private func categoryRow(_ category: SettingsCategory) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: category.icon).font(.system(size: 19)).foregroundStyle(BrakeTheme.accent)
+            Image(systemName: category.icon).font(.brake(size: 19)).foregroundStyle(BrakeTheme.accent)
                 .frame(width: 26).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text(category.title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
-                Text(category.detail).font(.caption).foregroundStyle(BrakeTheme.muted)
+                Text(category.title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
+                Text(category.detail).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 4)
-            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(BrakeTheme.muted)
+            Image(systemName: "chevron.right").font(.brake(.caption, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
         }
         .padding(.vertical, 16).frame(minHeight: 64)
         .contentShape(Rectangle())
@@ -222,14 +222,14 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(category.title).font(.system(size: 28, weight: .semibold))
-                    Text(category.detail).font(.subheadline).foregroundStyle(BrakeTheme.muted)
+                    Text(category.title).font(.brake(size: 28, weight: .semibold))
+                    Text(category.detail).font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 20) {
                     controls(category)
                 }
-                .font(.subheadline)
+                .font(.brake(.subheadline))
                 .textFieldStyle(.roundedBorder)
                 .buttonStyle(.bordered)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -271,7 +271,7 @@ struct SettingsView: View {
                 Text("Light").tag("light")
                 Text("Dark").tag("dark")
             }.pickerStyle(.segmented)
-            Text("Personalize your accent").font(.headline)
+            Text("Personalize your accent").font(.brake(.headline))
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], spacing: 12) {
                 ForEach(AccentChoice.allCases) { choice in
                     Button { accentChoice = choice.rawValue } label: {
@@ -280,10 +280,10 @@ struct SettingsView: View {
                                 .frame(width: 34, height: 34)
                                 .overlay {
                                     if accentChoice == choice.rawValue {
-                                        Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white)
+                                        Image(systemName: "checkmark").font(.brake(.caption, weight: .bold)).foregroundStyle(.white)
                                     }
                                 }
-                            Text(choice.title).font(.caption).foregroundStyle(BrakeTheme.text)
+                            Text(choice.title).font(.brake(.caption)).foregroundStyle(BrakeTheme.text)
                         }.frame(maxWidth: .infinity, minHeight: 72)
                     }.buttonStyle(.plain)
                         .accessibilityLabel("\(choice.title) accent")
@@ -313,9 +313,9 @@ struct SettingsView: View {
             }
             .onChange(of: recordingLimitGB) { _, _ in model.applyRecordingPreferences() }
             Text("At the limit, recording pauses and saved incident footage is preserved. Camera detection can continue. Recording also stops if the iPhone has less than 500 MB free.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Text("Free space or increase the limit, then restart the trip to resume recording.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Picker("Automatically delete saved incidents", selection: Binding(
                 get: { recordingRetentionDays },
                 set: { value in
@@ -331,7 +331,7 @@ struct SettingsView: View {
                 ForEach([7, 30, 90], id: \.self) { days in Text("After \(days) days").tag(days) }
             }
             Text("Cleanup runs between trips. Active incident footage is protected. Exported copies and trip metrics are not deleted.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Button("Refresh storage usage") { model.camera.refreshIncidents() }
         case .connection:
             Button(pairing ? "Pairing…" : "Scan pairing QR") { showingPairingScanner = true }
@@ -364,7 +364,7 @@ struct SettingsView: View {
                         }
                     }.disabled(busy || pairing)
                     Text("Keep your private app key out of screenshots and messages.")
-                        .font(.caption).foregroundStyle(BrakeTheme.muted)
+                        .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 }.padding(.top, 14)
             }
         case .voice:
@@ -387,10 +387,10 @@ struct SettingsView: View {
             Button("Preview voice") { service.previewVoice() }
                 .disabled(tripActive || service.checkinPresented)
             Text("Device voices apply to directions and brake alerts. Preview while parked. Brake warnings remain clear and at full volume.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Toggle("Use ElevenLabs for brake alerts", isOn: $backendAlerts)
             Text("ElevenLabs check-in audio uses the voice configured on your connected service.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Picker("Language", selection: $settings.language) {
                 Text("English").tag("en")
                 Text("Español").tag("es")
@@ -403,13 +403,13 @@ struct SettingsView: View {
             }
             Text(service.voiceStatus).foregroundStyle(BrakeTheme.muted)
             Text("The microphone records a 6-second reply after the check-in prompt ends. Your backend sends that reply to ElevenLabs.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .safety:
             Toggle("Experimental impact detection", isOn: Binding(get: { impactEnabled }, set: { model.impactEnabled = $0 })).disabled(demoMode)
             Toggle("Start an emergency check-in on impact", isOn: $settings.autoCheckin)
                 .disabled(!impactEnabled || settings.client == nil)
             Text("An enabled check-in can message confirmed contacts if you ask for help or do not respond. A phone drop can trigger it. No emergency services are called automatically.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .permissions:
             Button("Open iPhone settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
@@ -422,7 +422,7 @@ struct SettingsView: View {
             Button("Run crash check-in demo") { requestDemo = true }
                 .disabled(settings.client == nil)
             Text("The check-in demo can use ElevenLabs credits but never sends emergency messages.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         }
     }
 
@@ -466,7 +466,7 @@ struct DiagnosticsView: View {
                     Text(model.fusedSpeedSource)
                     Text(model.fusionStatus)
                     Text("Collision estimates use GPS, not this experimental fused speed.")
-                        .font(.caption)
+                        .font(.brake(.caption))
                         .foregroundStyle(.secondary)
                 }
 
@@ -479,7 +479,7 @@ struct DiagnosticsView: View {
                     LabeledContent("Estimated lead acceleration", value: model.risk.leadAcceleration.map { String(format: "%.1f m/s²", $0) } ?? "—")
                 }
             }
-            .font(.subheadline)
+            .font(.brake(.subheadline))
             .navigationTitle("Diagnostics")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

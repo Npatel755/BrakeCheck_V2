@@ -93,7 +93,7 @@ struct TargetOverlay: View {
                 }
                 if selecting, selectedBox == nil {
                     Text("Draw a box around the rear of the parked vehicle")
-                        .font(.caption.weight(.semibold)).padding(10)
+                        .font(.brake(.caption, weight: .semibold)).padding(10)
                         .foregroundStyle(BrakeTheme.text)
                         .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 8))
                 }

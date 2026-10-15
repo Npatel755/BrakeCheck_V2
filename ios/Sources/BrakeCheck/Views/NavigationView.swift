@@ -47,7 +47,7 @@ struct NavigationView: View {
                     .overlay(alignment: .bottomTrailing) {
                         Button { recenterTrigger += 1 } label: {
                             Image(systemName: "location.north.fill")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(.brake(size: 18, weight: .semibold))
                                 .frame(width: 48, height: 48)
                                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }
@@ -114,7 +114,7 @@ struct NavigationView: View {
                     Capsule().fill(BrakeTheme.muted.opacity(0.5)).frame(width: 36, height: 4)
                     HStack {
                         Text(navigation.isNavigating ? "YOUR DRIVE" : "WHERE TO?")
-                            .font(.system(size: 10, weight: .bold)).tracking(2)
+                            .font(.brake(size: 10, weight: .bold)).tracking(2)
                         Spacer()
                         Image(systemName: panelExpanded ? "chevron.down" : "chevron.up")
                     }
@@ -131,26 +131,26 @@ struct NavigationView: View {
                         if panelExpanded {
                             activeControls
                             if let error = navigation.errorMessage { activeErrorCard(error) }
-                            Text(cameraTrackingText).font(.caption).foregroundStyle(BrakeTheme.muted)
+                            Text(cameraTrackingText).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                         }
                     } else {
                         if navigation.route == nil { searchCard }
                         if let error = navigation.errorMessage { errorCard(error) }
                         if let title = navigation.resolvingDestination {
-                            HStack { ProgressView(); Text("Finding \(title)…").font(.subheadline) }
+                            HStack { ProgressView(); Text("Finding \(title)…").font(.brake(.subheadline)) }
                                 .frame(maxWidth: .infinity, alignment: .leading).brakePanel()
                         } else if navigation.isCalculating {
-                            HStack { ProgressView(); Text("Finding your route…").font(.subheadline) }
+                            HStack { ProgressView(); Text("Finding your route…").font(.brake(.subheadline)) }
                                 .frame(maxWidth: .infinity, alignment: .leading).brakePanel()
                         } else if navigation.destinationTitle != nil && navigation.route == nil {
-                            Text(navigation.status).font(.caption).foregroundStyle(BrakeTheme.muted)
+                            Text(navigation.status).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                         }
                         if navigation.route != nil { routePreview; startControls }
                         if navigation.query.isEmpty && navigation.route == nil {
                             Text("A clear route. A calmer drive.")
-                                .font(.headline).foregroundStyle(BrakeTheme.accent)
+                                .font(.brake(.headline)).foregroundStyle(BrakeTheme.accent)
                             Text("Search for a destination while parked. Suggestions appear as you type.")
-                                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                         }
                     }
                 }
@@ -168,11 +168,11 @@ struct NavigationView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 Label("Navigation", systemImage: "location.north.line.fill")
-                    .font(.system(size: 21, weight: .semibold))
+                    .font(.brake(size: 21, weight: .semibold))
                     .foregroundStyle(BrakeTheme.text)
                 HStack(spacing: 5) {
                     Circle().fill(cameraTrackingColor).frame(width: 5, height: 5)
-                    Text(cameraTrackingText).font(.caption).foregroundStyle(BrakeTheme.muted)
+                    Text(cameraTrackingText).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 }
             }
             Spacer(minLength: 0)
@@ -185,7 +185,7 @@ struct NavigationView: View {
             .accessibilityLabel(appearance == "dark" ? "Use light mode" : "Use dark mode")
             Button(action: openCamera) {
                 Label("Camera", systemImage: "video")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.brake(.subheadline, weight: .semibold))
                     .padding(.horizontal, 13)
                     .frame(minHeight: 44)
                     .background(BrakeTheme.panel, in: Capsule())
@@ -221,7 +221,7 @@ struct NavigationView: View {
                 if navigation.isCalculating {
                     HStack(spacing: 10) {
                         ProgressView().tint(BrakeTheme.accent)
-                        Text("Finding a driving route…").font(.subheadline)
+                        Text("Finding a driving route…").font(.brake(.subheadline))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .brakePanel()
@@ -234,21 +234,21 @@ struct NavigationView: View {
                     startControls
                 } else if !navigation.isCalculating && navigation.results.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Plan your next drive.").font(.headline)
+                        Text("Plan your next drive.").font(.brake(.headline))
                         Text("Search for a destination while parked. Your camera tracking stays on when you switch pages during a trip.")
-                            .font(.subheadline)
+                            .font(.brake(.subheadline))
                             .foregroundStyle(BrakeTheme.muted)
                     }
                     .brakePanel()
                 }
                 if !navigation.status.isEmpty {
                     Text(navigation.status)
-                        .font(.caption)
+                        .font(.brake(.caption))
                         .foregroundStyle(BrakeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("Maps and route searches require a network connection.")
-                    .font(.caption)
+                    .font(.brake(.caption))
                     .foregroundStyle(BrakeTheme.muted)
             }
             .padding(.horizontal, 20)
@@ -265,7 +265,7 @@ struct NavigationView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(BrakeTheme.muted)
                 TextField("Address, place, or city", text: $navigation.query)
-                    .font(.subheadline)
+                    .font(.brake(.subheadline))
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled(false)
                     .submitLabel(.search)
@@ -292,7 +292,7 @@ struct NavigationView: View {
                 recentDestinationsCard
             } else {
             if let error = navigation.suggestionError {
-                Text(error).font(.caption).foregroundStyle(BrakeTheme.muted)
+                Text(error).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             }
             ForEach(navigation.suggestions) { suggestion in
                 Button {
@@ -306,13 +306,13 @@ struct NavigationView: View {
                             .foregroundStyle(BrakeTheme.accent)
                             .frame(width: 28)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(suggestion.title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
+                            Text(suggestion.title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
                             if !suggestion.subtitle.isEmpty {
-                                Text(suggestion.subtitle).font(.caption).foregroundStyle(BrakeTheme.muted).lineLimit(2)
+                                Text(suggestion.subtitle).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted).lineLimit(2)
                             }
                         }
                         Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.left").font(.caption).foregroundStyle(BrakeTheme.muted)
+                        Image(systemName: "arrow.up.left").font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                     .contentShape(Rectangle())
@@ -323,7 +323,7 @@ struct NavigationView: View {
             }
             Button(action: submitSearch) {
                 Text(navigation.isSearching ? "Searching…" : "Search destinations")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.brake(.subheadline, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(BrakeTheme.accent.opacity(0.1), in: Capsule())
@@ -340,14 +340,14 @@ struct NavigationView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "mappin.circle.fill").foregroundStyle(BrakeTheme.amber)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(result.title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
+                            Text(result.title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
                             if !result.subtitle.isEmpty {
-                                Text(result.subtitle).font(.caption).foregroundStyle(BrakeTheme.muted)
+                                Text(result.subtitle).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                         Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(BrakeTheme.muted)
+                        Image(systemName: "chevron.right").font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     }
                     .padding(.vertical, 10)
                     .frame(minHeight: 44)
@@ -377,22 +377,22 @@ struct NavigationView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: "clock.arrow.circlepath").foregroundStyle(BrakeTheme.accent)
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(recent.title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
+                                    Text(recent.title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
                                     if !recent.subtitle.isEmpty {
-                                        Text(recent.subtitle).font(.caption).foregroundStyle(BrakeTheme.muted).lineLimit(2)
+                                        Text(recent.subtitle).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted).lineLimit(2)
                                     }
                                 }
                                 Spacer(minLength: 0)
                             }.frame(minHeight: 48).contentShape(Rectangle())
                         }.buttonStyle(.plain)
                         Button { navigation.removeRecent(recent.id) } label: {
-                            Image(systemName: "xmark").font(.caption).frame(width: 44, height: 44)
+                            Image(systemName: "xmark").font(.brake(.caption)).frame(width: 44, height: 44)
                         }.buttonStyle(.plain).foregroundStyle(BrakeTheme.muted)
                             .accessibilityLabel("Remove \(recent.title) from recents")
                     }
                 }
                 Button("Clear recents") { confirmingClearRecents = true }
-                    .font(.caption).frame(minHeight: 44)
+                    .font(.brake(.caption)).frame(minHeight: 44)
             }
         }
     }
@@ -408,11 +408,11 @@ struct NavigationView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "mappin.and.ellipse").foregroundStyle(BrakeTheme.amber)
                 Text(navigation.destinationTitle ?? "Your destination")
-                    .font(.headline)
+                    .font(.brake(.headline))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Button { navigation.clearDestination() } label: {
-                    Image(systemName: "xmark").font(.subheadline.weight(.semibold)).frame(width: 32, height: 32)
+                    Image(systemName: "xmark").font(.brake(.subheadline, weight: .semibold)).frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(BrakeTheme.muted)
@@ -421,7 +421,7 @@ struct NavigationView: View {
             journeyMetrics(time: navigation.route?.expectedTravelTime, distance: navigation.route?.distance)
             if navigation.routeUsesLastKnownLocation {
                 Label("Route starts at your last known GPS location", systemImage: "location.circle")
-                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             }
         }
         .brakePanel()
@@ -430,10 +430,10 @@ struct NavigationView: View {
     private var startControls: some View {
         VStack(alignment: .leading, spacing: 12) {
             Toggle("Spoken directions", isOn: $navigation.spokenDirections)
-                .font(.subheadline)
+                .font(.brake(.subheadline))
             Button(action: startDrive) {
                 Label("Start navigation", systemImage: "location.north.fill")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.brake(size: 16, weight: .bold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
                     .foregroundStyle(BrakeTheme.background)
@@ -444,13 +444,13 @@ struct NavigationView: View {
             .opacity(canStart ? 1 : 0.4)
             if model.demo || model.replaying {
                 Text("Stop the simulated drive or replay before starting navigation.")
-                    .font(.caption).foregroundStyle(BrakeTheme.warning)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
             } else if !navigation.hasFreshLocation {
                 Text("Waiting for a fresh GPS location before starting.")
-                    .font(.caption).foregroundStyle(BrakeTheme.warning)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
             } else if !model.tripActive {
                 Text("Starting navigation also starts your camera trip.")
-                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             }
         }
         .brakePanel()
@@ -496,39 +496,39 @@ struct NavigationView: View {
         HStack(alignment: .center, spacing: 14) {
             Image(systemName: navigation.hasArrived ? "checkmark.circle.fill" : navigation.isRejoiningRoute
                   ? "arrow.triangle.turn.up.right.diamond" : NavigationManeuver.symbol(for: navigation.instruction))
-                .font(.system(size: 25, weight: .semibold))
+                .font(.brake(size: 25, weight: .semibold))
                 .foregroundStyle(BrakeTheme.accent)
                 .frame(width: 32)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 if navigation.hasArrived {
-                    Text("You’ve arrived").font(.headline).foregroundStyle(BrakeTheme.accent)
+                    Text("You’ve arrived").font(.brake(.headline)).foregroundStyle(BrakeTheme.accent)
                     Text(navigation.destinationTitle ?? "Destination reached.")
-                        .font(.subheadline).foregroundStyle(BrakeTheme.muted)
+                        .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if navigation.isRejoiningRoute {
                     HStack {
                         if navigation.isCalculating { ProgressView().tint(BrakeTheme.accent) }
                         Text(navigation.isCalculating ? "Finding a new route…" : "Rejoining your route")
-                            .font(.headline)
+                            .font(.brake(.headline))
                     }
                     Text(navigation.destinationTitle ?? "Your destination stays selected.")
-                        .font(.subheadline).foregroundStyle(BrakeTheme.muted)
+                        .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
                 } else {
                     if let distance = navigation.maneuverDistance, distance.isFinite {
                         Text(distance < 20 ? "Now" : "In \(distanceText(distance))")
-                            .font(.system(size: 22, weight: .semibold)).monospacedDigit()
+                            .font(.brake(size: 22, weight: .semibold)).monospacedDigit()
                     }
                     Text(navigation.instruction.isEmpty ? "Follow the route" : navigation.instruction)
-                        .font(.headline)
+                        .font(.brake(.headline))
                         .fixedSize(horizontal: false, vertical: true)
                     if let next = navigation.upcomingInstruction {
                         Label("Then \(next)", systemImage: NavigationManeuver.symbol(for: next))
-                            .font(.caption).foregroundStyle(BrakeTheme.muted)
+                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                             .lineLimit(2)
                     }
                     if let notice = navigation.routeNotice, !notice.isEmpty {
-                        Text(notice).font(.caption).foregroundStyle(BrakeTheme.warning)
+                        Text(notice).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -541,7 +541,7 @@ struct NavigationView: View {
     private var activeJourneyCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let destination = navigation.destinationTitle {
-                Text(destination).font(.caption.weight(.semibold)).foregroundStyle(BrakeTheme.muted).lineLimit(1)
+                Text(destination).font(.brake(.caption, weight: .semibold)).foregroundStyle(BrakeTheme.muted).lineLimit(1)
             }
             journeyMetrics(time: navigation.hasArrived ? 0 : navigation.remainingTime,
                            distance: navigation.hasArrived ? 0 : navigation.remainingDistance)
@@ -553,7 +553,7 @@ struct NavigationView: View {
         HStack(spacing: 10) {
             Button { navigation.spokenDirections.toggle() } label: {
                 Label(navigation.spokenDirections ? "Mute" : "Unmute", systemImage: navigation.spokenDirections ? "speaker.wave.2" : "speaker.slash")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.brake(.subheadline, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .background(BrakeTheme.panel, in: Capsule())
             }
@@ -561,7 +561,7 @@ struct NavigationView: View {
             .accessibilityLabel(navigation.spokenDirections ? "Mute spoken directions" : "Enable spoken directions")
             Button { navigation.stopGuidance() } label: {
                 Label(navigation.hasArrived ? "Done" : "Stop", systemImage: navigation.hasArrived ? "checkmark" : "stop.fill")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.brake(.subheadline, weight: .semibold))
                     .foregroundStyle(BrakeTheme.danger)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .background(BrakeTheme.danger.opacity(0.12), in: Capsule())
@@ -578,7 +578,7 @@ struct NavigationView: View {
             .overlay(alignment: .topTrailing) {
                 Button { recenterTrigger += 1 } label: {
                     Image(systemName: "location.fill")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.brake(size: 17, weight: .semibold))
                         .foregroundStyle(BrakeTheme.accent)
                         .frame(width: 44, height: 44)
                         .background(BrakeTheme.panel, in: Circle())
@@ -593,11 +593,11 @@ struct NavigationView: View {
     private func errorCard(_ error: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(error, systemImage: "exclamationmark.triangle")
-                .font(.subheadline).foregroundStyle(BrakeTheme.warning)
+                .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.warning)
                 .fixedSize(horizontal: false, vertical: true)
             if navigation.destinationTitle != nil {
                 Button("Try route again") { navigation.retryRoute() }
-                    .font(.subheadline.weight(.semibold))
+                    .font(.brake(.subheadline, weight: .semibold))
                     .disabled(navigation.isCalculating)
             }
         }
@@ -606,11 +606,11 @@ struct NavigationView: View {
 
     private func activeErrorCard(_ error: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(error).font(.caption).foregroundStyle(BrakeTheme.warning)
+            Text(error).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
                 .lineLimit(3).fixedSize(horizontal: false, vertical: true)
             Button { navigation.retryRoute() } label: {
                 Label(navigation.isCalculating ? "Finding route…" : "Try route again", systemImage: "arrow.clockwise")
-                    .font(.caption.weight(.semibold)).frame(minHeight: 32)
+                    .font(.brake(.caption, weight: .semibold)).frame(minHeight: 32)
             }
             .buttonStyle(.plain)
             .disabled(navigation.isCalculating)
@@ -632,8 +632,8 @@ struct NavigationView: View {
 
     private func journeyValue(_ title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(value).font(.system(size: 18, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-            Text(title).font(.caption).foregroundStyle(BrakeTheme.muted)
+            Text(value).font(.brake(size: 18, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            Text(title).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         }
         .accessibilityElement(children: .combine)
     }
