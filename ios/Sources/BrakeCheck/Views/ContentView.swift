@@ -87,7 +87,24 @@ struct ContentView: View {
         }
     }
 
+    // The modifier chain is split across several properties: as one chain, Xcode 26's type checker times out.
     private var drivingPages: some View {
+        arSyncedPages
+            .overlay {
+                if showCameraSetup {
+                    CameraCalibrationOverlay(model: model, presentation: model.arPresentation, cameraAR: $cameraAR,
+                        onClose: { showCameraSetup = false })
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: showCameraSetup)
+    }
+
+    private var messageShown: Binding<Bool> {
+        Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })
+    }
+
+    private var pageStack: some View {
         GeometryReader { geometry in
             let portrait = geometry.size.height > geometry.size.width
             ZStack {
@@ -116,6 +133,10 @@ struct ContentView: View {
                 if critical { BrakeEdgeGlow() }
             }
         }
+    }
+
+    private var presentedPages: some View {
+        pageStack
         .background {
             InterfaceOrientationObserver { model.interfaceOrientationChanged($0) }
                 .allowsHitTesting(false)
@@ -126,12 +147,16 @@ struct ContentView: View {
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .fullScreenCover(isPresented: $showCheckin) { CrashCheckinView(service: safety) }
-        .alert("BrakeCheck", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+        .alert("BrakeCheck", isPresented: messageShown) {
             Button("OK", role: .cancel) { model.message = nil }
         } message: { Text(model.message ?? "") }
         .confirmationDialog("End this trip? Remaining post-event recording will stop.", isPresented: $stopping, titleVisibility: .visible) {
             Button("End trip", role: .destructive) { selecting = false; model.endTrip(); page = .home }
         }
+    }
+
+    private var syncedPages: some View {
+        presentedPages
         .onChange(of: safety.checkinPresented) { _, presented in
             if !presented { showCheckin = false }
             else { destinationPath = []; showCheckin = true }
@@ -158,6 +183,10 @@ struct ContentView: View {
         .onChange(of: useMPH) { _, miles in navigation.useMPH = miles }
         .onChange(of: model.replaying) { _, active in if active { page = .camera } }
         .onChange(of: model.demo) { _, active in if active { page = .camera } }
+    }
+
+    private var arSyncedPages: some View {
+        syncedPages
         .task { await safety.connectIfPaired() }
         .onAppear { updateARDemand() }
         .onChange(of: page) { _, _ in updateARDemand() }
@@ -165,14 +194,6 @@ struct ContentView: View {
         .onChange(of: cameraAR) { _, _ in updateARDemand() }
         .onChange(of: selecting) { _, _ in updateARDemand() }
         .onDisappear { model.setARCameraVisible(false) }
-        .overlay {
-            if showCameraSetup {
-                CameraCalibrationOverlay(model: model, presentation: model.arPresentation, cameraAR: $cameraAR,
-                    onClose: { showCameraSetup = false })
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.easeOut(duration: 0.2), value: showCameraSetup)
     }
     private func updateARDemand() {
         model.setARCameraVisible(page == .camera && cameraAR && !selecting && destinationPath.isEmpty)
