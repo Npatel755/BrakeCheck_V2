@@ -396,7 +396,7 @@ struct SettingsView: View {
                 Text("An enabled check-in can message confirmed contacts if you ask for help or do not respond. A phone drop can trigger it. No emergency services are called automatically.")
                     .font(.caption).foregroundStyle(BrakeTheme.muted)
             } else {
-                Text("A possible impact saves the available video around it to Incidents. A phone drop can trigger it. BrakeCheck doesn't contact anyone or call emergency services.")
+                Text("A possible impact saves the available video around it to Incidents. With Crash texts set up (Home › Crash texts), BrakeCheck also asks if you're okay and can text your contacts. A phone drop can trigger it. BrakeCheck never calls emergency services.")
                     .font(.caption).foregroundStyle(BrakeTheme.muted)
             }
         case .permissions:

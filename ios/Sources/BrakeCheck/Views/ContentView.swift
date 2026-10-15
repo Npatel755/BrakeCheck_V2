@@ -69,13 +69,16 @@ struct ContentView: View {
                         .modifier(DedicatedPageStyle())
                 }
         }
+        .modifier(CrashTextCover(flow: model.crashText))
     }
 
     @ViewBuilder private func destinationPage(_ destination: HomeDestination) -> some View {
         switch destination {
         case .settings:
             SettingsView(model: model, service: safety, settings: safety.settings, requestDemo: $requestDemo)
-        case .contacts: ContactsView(service: safety)
+        case .contacts:
+            if AppScope.connectedServices { ContactsView(service: safety) }
+            else { CrashTextSetupView(model: model, flow: model.crashText) }
         case .incidents: IncidentListView(model: model)
         case .tripHistory: TripHistoryView(model: model, useMPH: useMPH)
         case .diagnostics: MeasurementDiagnosticsView(model: model)

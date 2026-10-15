@@ -250,6 +250,9 @@ final class SpeedService: NSObject, CLLocationManagerDelegate {
         if age >= -0.5, age <= 15, horizontalAccuracy >= 0, horizontalAccuracy <= 100, !simulated {
             latestLocation = CrashLocation(latitude: location.coordinate.latitude,
                 longitude: location.coordinate.longitude, measuredAt: location.timestamp)
+            // For a manual "Hey Siri, BrakeCheck SOS" (CrashTextStore throttles the writes).
+            CrashTextStore.shared.noteLocation(latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude, at: location.timestamp)
         }
 
         // MARK: - Validate Raw GPS

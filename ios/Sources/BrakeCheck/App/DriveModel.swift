@@ -155,11 +155,18 @@ final class DriveModel: ObservableObject {
 
     @Published var message: String?
 
-    @Published var impactEnabled = false {
+    /// Remembered across launches so crash texts keep working once set up.
+    @Published var impactEnabled = UserDefaults.standard.bool(forKey: "safety.impactEnabled") {
 
-        didSet { updateImpactService() }
+        didSet {
+            UserDefaults.standard.set(impactEnabled, forKey: "safety.impactEnabled")
+            updateImpactService()
+        }
 
     }
+
+    /// Phone-only crash check-in and texts (Release builds; Debug keeps the Photon check-in).
+    let crashText = CrashTextFlow()
 
     init() {
         SpeechVoicePreferences.restoreOriginalDefaultsIfNeeded()
@@ -229,6 +236,8 @@ final class DriveModel: ObservableObject {
             if AppScope.connectedServices && self.safety.settings.autoCheckin {
                 self.safety.beginCheckin(location: self.speedService.latestLocation,
                     speedMPH: self.speed.map { $0 * 2.2369362921 }, dryRun: false)
+            } else if !AppScope.connectedServices && self.crashText.hasContacts {
+                self.crashText.begin(location: self.speedService.latestLocation)
             } else {
                 self.message = "Possible impact detected. Preserving available video."
             }

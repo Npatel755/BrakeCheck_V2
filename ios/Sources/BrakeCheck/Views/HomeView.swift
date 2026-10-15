@@ -25,6 +25,15 @@ struct HomeView: View {
         model.tripActive || model.tripMinutes > 0 || model.maxSpeedMPH > 0
     }
 
+    @AppStorage("crashText.hasContacts") private var hasCrashTextContacts = false
+    @AppStorage("crashText.promptDismissed") private var crashTextPromptDismissed = false
+
+    /// Offered after the first finished trip instead of during first-launch onboarding.
+    private var showsCrashTextPrompt: Bool {
+        !AppScope.connectedServices && !model.savedTrips.isEmpty && !model.tripActive
+            && !hasCrashTextContacts && !crashTextPromptDismissed
+    }
+
     private var calibrationAvailable: Bool {
         model.cameraReady && !model.replaying && !model.demo && !model.stopping
     }
@@ -37,6 +46,9 @@ struct HomeView: View {
                     header
                     sessionCard
                     if hasTripSummary { tripSummary }
+                    if showsCrashTextPrompt {
+                        CrashTextPromptCard(setUp: openContacts, dismiss: { crashTextPromptDismissed = true })
+                    }
                     if wide {
                         HStack(alignment: .top, spacing: 20) {
                             navigationCard.frame(maxWidth: .infinity)
@@ -235,6 +247,10 @@ struct HomeView: View {
             rowDivider
             if AppScope.connectedServices {
                 navigationRow("Emergency contacts", detail: service.contacts.isEmpty ? "Choose who can receive a check-in" : "\(service.contacts.count) saved contact\(service.contacts.count == 1 ? "" : "s")", icon: "person.2", action: openContacts)
+                rowDivider
+            } else {
+                // Phone-only builds: openContacts leads to Crash texts (CrashTextSetupView).
+                navigationRow("Crash texts", detail: hasCrashTextContacts ? "On · text your people if you crash" : "Text someone if you crash", icon: "message.badge.waveform", action: openContacts)
                 rowDivider
             }
             navigationRow("Saved incidents", detail: model.incidents.isEmpty ? "Your saved clips and event details" : "\(model.incidents.count) saved incident\(model.incidents.count == 1 ? "" : "s")", icon: "film.stack", action: openIncidents)
