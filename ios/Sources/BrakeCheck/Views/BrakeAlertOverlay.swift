@@ -39,7 +39,7 @@ struct RiskPill: View {
                 DangerSteps(score: meterScore, onAlert: critical && currentCritical, large: large)
             }
         }
-        .font(.system(size: large ? 17 : 14, weight: critical ? .heavy : .bold))
+        .font(.brake(size: large ? 17 : 14, weight: critical ? .heavy : .bold))
         .foregroundStyle(.white)
         .padding(.horizontal, large ? 18 : 14)
         .frame(height: large ? 44 : 34)

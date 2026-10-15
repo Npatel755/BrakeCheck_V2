@@ -51,7 +51,9 @@ let package = Package(
                 .copy("Resources/LaneModelData"),
                 .copy("Resources/ViewpointModelData"),
                 // Apple's required privacy manifest (required-reason APIs, no tracking).
-                .copy("Resources/PrivacyInfo.xcprivacy")
+                .copy("Resources/PrivacyInfo.xcprivacy"),
+                // Red Hat Display, the app's typeface (OFL-1.1); registered at runtime by BrakeFont.
+                .copy("Resources/Fonts")
             ]
         )
     ],

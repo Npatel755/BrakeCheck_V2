@@ -10,14 +10,14 @@ struct DriverAidNoticeView: View {
             VStack(alignment: .leading, spacing: 22) {
                 BrakeLogo(size: 30)
                 Text("A driver aid, not a safety system.")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.brake(size: 28, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 point("eye", "Keep your eyes on the road. BrakeCheck's warnings can be late, missed, or wrong.")
                 point("iphone.gen3", "Mount the phone and set it up before you drive. Don't touch it while moving.")
                 point("car.rear.road.lane", "Distances and speeds are estimates from the camera and GPS, and are less reliable at night or in rain.")
                 Button(action: accept) {
                     Text("I understand")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.brake(size: 16, weight: .bold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                         .foregroundStyle(BrakeTheme.background)
@@ -38,11 +38,11 @@ struct DriverAidNoticeView: View {
     private func point(_ icon: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 20))
+                .font(.brake(size: 20))
                 .foregroundStyle(BrakeTheme.accent)
                 .frame(width: 28)
                 .accessibilityHidden(true)
-            Text(text).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+            Text(text).font(.brake(.subheadline)).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

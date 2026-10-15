@@ -66,24 +66,24 @@ struct CrashTextCheckinView: View {
                 Circle().trim(from: 0, to: CGFloat(flow.remaining) / CGFloat(CrashTextFlow.countdownSeconds))
                     .stroke(ringColor, style: StrokeStyle(lineWidth: 10, lineCap: .round)).rotationEffect(.degrees(-90))
                     .animation(.linear(duration: 0.3), value: flow.remaining)
-                Text("\(flow.remaining)").font(.system(size: 60, weight: .light, design: .rounded)).monospacedDigit()
+                Text("\(flow.remaining)").font(.brake(size: 60, weight: .light)).monospacedDigit()
             }
             .frame(width: 190, height: 190)
             Text(flow.practice ? "PRACTICE · NOBODY IS TEXTED" : "POSSIBLE CRASH")
-                .font(.system(size: 12, weight: .bold)).tracking(1.2).foregroundStyle(ringColor)
+                .font(.brake(size: 12, weight: .bold)).tracking(1.2).foregroundStyle(ringColor)
             VStack(spacing: 8) {
-                Text("Are you okay?").font(.system(size: 34, weight: .semibold, design: .rounded))
+                Text("Are you okay?").font(.brake(size: 34, weight: .semibold))
                 Text("If you don't answer, BrakeCheck texts your emergency contacts your location.")
-                    .font(.subheadline).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
+                    .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
             }
             VStack(spacing: 12) {
                 Button { flow.imOkay() } label: {
-                    Label("I'm okay", systemImage: "checkmark").font(.title3.weight(.semibold))
+                    Label("I'm okay", systemImage: "checkmark").font(.brake(.title3, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 64)
                 }
                 .buttonStyle(.borderedProminent).tint(BrakeTheme.accent).foregroundStyle(BrakeTheme.background)
                 Button { flow.sendHelp() } label: {
-                    Label("Text my contacts now", systemImage: "exclamationmark.bubble.fill").font(.title3.weight(.semibold))
+                    Label("Text my contacts now", systemImage: "exclamationmark.bubble.fill").font(.brake(.title3, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 64)
                 }
                 .buttonStyle(.borderedProminent).tint(BrakeTheme.danger)
@@ -93,8 +93,8 @@ struct CrashTextCheckinView: View {
 
     private func status(title: String, detail: String) -> some View {
         VStack(spacing: 10) {
-            Text(title).font(.system(size: 28, weight: .semibold, design: .rounded)).multilineTextAlignment(.center)
-            Text(detail).font(.subheadline).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
+            Text(title).font(.brake(size: 28, weight: .semibold)).multilineTextAlignment(.center)
+            Text(detail).font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, 60)
@@ -163,16 +163,16 @@ struct CrashTextSetupView: View {
     var body: some View {
         Form {
             Section {
-                Label("Text someone if you crash", systemImage: "message.badge.waveform.fill").font(.headline)
+                Label("Text someone if you crash", systemImage: "message.badge.waveform.fill").font(.brake(.headline))
                 Text("If BrakeCheck senses a possible crash during a trip, it asks if you're okay. If you ask for help or don't answer in \(CrashTextFlow.countdownSeconds) seconds, it texts these people where you are.")
-                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             }
 
             Section("Who to text") {
                 ForEach(contacts) { contact in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(contact.name).font(.headline)
-                        Text(contact.phone).font(.caption).foregroundStyle(BrakeTheme.muted)
+                        Text(contact.name).font(.brake(.headline))
+                        Text(contact.phone).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     }
                 }
                 .onDelete { contacts.remove(atOffsets: $0); save() }
@@ -206,7 +206,7 @@ struct CrashTextSetupView: View {
                     Label("Automatic sending is on", systemImage: "checkmark.seal.fill").foregroundStyle(BrakeTheme.accent)
                 } else {
                     Text("Without this, BrakeCheck opens a ready-to-send text and you tap Send. With it, the text goes out even if you can't tap.")
-                        .font(.caption).foregroundStyle(BrakeTheme.muted)
+                        .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 }
                 if let link = URL(string: CrashTextStore.shortcutLink), !CrashTextStore.shortcutLink.isEmpty {
                     Button { openURL(link) } label: {
@@ -220,9 +220,9 @@ struct CrashTextSetupView: View {
                         Label(flow.checking ? "Checking…" : "Check the \(CrashTextStore.shortcutName) Shortcut", systemImage: "checkmark.circle")
                     }.disabled(flow.checking)
                     Text("The one-tap Shortcut link isn't published yet. If you built the Shortcut yourself, keep the name \"\(CrashTextStore.shortcutName)\" and tap Check.")
-                        .font(.caption).foregroundStyle(BrakeTheme.muted)
+                        .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 }
-                if let status = flow.checkStatus { Text(status).font(.caption) }
+                if let status = flow.checkStatus { Text(status).font(.brake(.caption)) }
             }
 
             Section {
@@ -233,7 +233,7 @@ struct CrashTextSetupView: View {
 
             Section {
                 Text("BrakeCheck can't call 911. On iPhone 14 and later, Apple's Crash Detection can, and it texts your emergency contacts too. Check it's on in Settings › Emergency SOS.")
-                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             }
         }
         .navigationTitle("Crash texts").navigationBarTitleDisplayMode(.inline)
@@ -305,23 +305,23 @@ struct CrashTextPromptCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: "message.badge.waveform.fill")
-                    .font(.system(size: 22)).foregroundStyle(BrakeTheme.accent)
+                    .font(.brake(size: 22)).foregroundStyle(BrakeTheme.accent)
                     .frame(width: 44, height: 44)
                     .background(BrakeTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Text someone if you crash?").font(.system(size: 17, weight: .semibold))
+                    Text("Text someone if you crash?").font(.brake(size: 17, weight: .semibold))
                     Text("BrakeCheck can text your people where you are if it senses a crash. Takes about 10 seconds.")
-                        .font(.subheadline).foregroundStyle(BrakeTheme.muted).fixedSize(horizontal: false, vertical: true)
+                        .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted).fixedSize(horizontal: false, vertical: true)
                 }
             }
             HStack(spacing: 12) {
                 Button(action: setUp) {
-                    Text("Set up").font(.subheadline.weight(.bold)).frame(maxWidth: .infinity, minHeight: 44)
+                    Text("Set up").font(.brake(.subheadline, weight: .bold)).frame(maxWidth: .infinity, minHeight: 44)
                         .foregroundStyle(BrakeTheme.background).background(BrakeTheme.accent, in: Capsule())
                 }
                 Button(action: dismiss) {
-                    Text("Not now").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                    Text("Not now").font(.brake(.subheadline, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
                         .foregroundStyle(BrakeTheme.muted)
                 }
             }
