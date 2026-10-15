@@ -479,14 +479,6 @@ final class LaneTracker {
 
     private func locateModel(named name: String) throws -> URL {
         for bundle in [Bundle.module, Bundle.main] + Bundle.allBundles + Bundle.allFrameworks {
-            // Packages are stored without the .mlpackage suffix so Xcode doesn't compile them as
-            // resources (both contain model.mlmodel); compiledModel restores the suffix.
-            let roots = [bundle.url(forResource: "LaneModelData", withExtension: nil),
-                         bundle.resourceURL?.appendingPathComponent("LaneModelData")]
-            for root in roots.compactMap({ $0 }) {
-                let model = root.appendingPathComponent(name, isDirectory: true)
-                if FileManager.default.fileExists(atPath: model.appendingPathComponent("Manifest.json").path) { return model }
-            }
             if let source = bundle.url(forResource: "LaneModelData", withExtension: nil) {
                 let model = source.appendingPathComponent("\(name).mlpackage")
                 if FileManager.default.fileExists(atPath: model.path) { return model }
@@ -515,12 +507,7 @@ final class LaneTracker {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appendingPathComponent("\(source.deletingPathExtension().lastPathComponent)-\(digest.prefix(16)).mlmodelc", isDirectory: true)
         if FileManager.default.fileExists(atPath: destination.path) { return destination }
-        // Core ML needs the .mlpackage suffix, so a suffix-less bundle copy is staged first.
-        let staged = source.pathExtension.lowercased() == "mlpackage" ? nil
-            : FileManager.default.temporaryDirectory.appendingPathComponent("BrakeCheckLane-\(UUID().uuidString).mlpackage", isDirectory: true)
-        if let staged { try FileManager.default.copyItem(at: source, to: staged) }
-        defer { if let staged { try? FileManager.default.removeItem(at: staged) } }
-        let compiled = try MLModel.compileModel(at: staged ?? source)
+        let compiled = try MLModel.compileModel(at: source)
         try FileManager.default.copyItem(at: compiled, to: destination)
         return destination
     }

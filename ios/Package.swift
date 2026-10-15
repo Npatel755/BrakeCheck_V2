@@ -53,6 +53,12 @@ let package = Package(
 
             path: "Sources/BrakeCheck",
 
+            // The old Ultralytics/YOLOP models aren't shipped. Xcode picks up any .mlmodel in the
+            // target automatically, and two of these share the name model.mlmodel, so it can't resolve.
+            exclude: [
+                "Resources/YOLOModelData"
+            ],
+
             resources: [
                 // Copy permissive RTMDet packages as ordinary resource data.
                 // Avoid triggering Apple's coremlc during
