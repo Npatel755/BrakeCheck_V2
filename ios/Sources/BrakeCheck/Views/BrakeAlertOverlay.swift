@@ -5,7 +5,7 @@ import SwiftUI
 /// at critical, where it turns red at the same moment as the "Brake" voice and haptic.
 /// A recent alert remains visible without describing a recovered target as critical.
 struct RiskPill: View {
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     let risk: RiskSnapshot
     let critical: Bool
     var meter: DangerMeterSnapshot? = nil
@@ -41,7 +41,7 @@ struct RiskPill: View {
                 DangerSteps(score: meterScore, onAlert: critical && currentCritical, large: large)
             }
         }
-        .font(.system(size: large ? 17 : 14, weight: critical ? .heavy : .bold))
+        .font(.brake(size: large ? 17 : 14, weight: critical ? .heavy : .bold))
         .foregroundStyle(.white)
         .padding(.horizontal, large ? 18 : 14)
         .frame(height: large ? 44 : 34)
@@ -61,7 +61,7 @@ struct RiskPill: View {
 
 /// Four small steps that light up in order, blue to red. Step edges match the score cut-offs in RiskRules.evaluate.
 struct DangerSteps: View {
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     let score: Double?
     /// On the red BRAKE background the steps are drawn in white.
     var onAlert = false

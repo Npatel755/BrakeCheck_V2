@@ -32,6 +32,8 @@ public struct RoadVisibilityMask {
 public struct CameraARScene {
     public let lane: LanePath?
     public let road: RoadRegion?
+    /// Raw model pixels for diagnostics only; never used as route support.
+    public let diagnosticRoadMask: RoadVisibilityMask?
     public let laneObservedAt: TimeInterval
     public let roadObservedAt: TimeInterval
     public let capturedAt: TimeInterval
@@ -39,8 +41,10 @@ public struct CameraARScene {
     public let obstaclesFresh: Bool
     public let isPredicted: Bool
     public init(lane: LanePath?, road: RoadRegion?, laneObservedAt: TimeInterval, roadObservedAt: TimeInterval,
-                capturedAt: TimeInterval, obstacles: [CGRect] = [], obstaclesFresh: Bool = true, isPredicted: Bool = false) {
+                capturedAt: TimeInterval, obstacles: [CGRect] = [], obstaclesFresh: Bool = true,
+                isPredicted: Bool = false, diagnosticRoadMask: RoadVisibilityMask? = nil) {
         self.lane = lane; self.road = road; self.laneObservedAt = laneObservedAt
+        self.diagnosticRoadMask = diagnosticRoadMask
         self.roadObservedAt = roadObservedAt; self.capturedAt = capturedAt
         self.obstacles = obstacles; self.obstaclesFresh = obstaclesFresh
         self.isPredicted = isPredicted
@@ -87,7 +91,8 @@ public struct CameraARSceneTracker {
                                     capturedAt: time, visibility: predictedRoad.visibility)
         return CameraARScene(lane: predictedLane, road: reducedRoad, laneObservedAt: latest.laneObservedAt,
             roadObservedAt: latest.roadObservedAt, capturedAt: time, obstacles: observation.obstacles,
-            obstaclesFresh: observation.obstaclesFresh, isPredicted: true)
+            obstaclesFresh: observation.obstaclesFresh, isPredicted: true,
+            diagnosticRoadMask: observation.diagnosticRoadMask)
     }
 }
 

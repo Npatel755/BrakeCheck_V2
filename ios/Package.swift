@@ -59,10 +59,12 @@ let package = Package(
                 // the Linux/xtool build.
                 .copy("Resources/DetectorModelData"),
                 .copy("Resources/ModelLicenses"),
-                // UFLD lanes and SegFormer roads are ordinary data on Linux.
+                // UFLD and SegFormer weights are ordinary data on Linux.
                 // Core ML compiles it on the iPhone and caches the result.
                 .copy("Resources/LaneModelData"),
-                .copy("Resources/ViewpointModelData")
+                .copy("Resources/ViewpointModelData"),
+                // Red Hat Display is registered at runtime by BrakeFont.
+                .copy("Resources/Fonts")
             ]
         )
     ],

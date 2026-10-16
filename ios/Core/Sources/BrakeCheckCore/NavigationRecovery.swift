@@ -19,6 +19,7 @@ public struct NavigationRecovery {
 public enum NavigationManeuver {
     public static func symbol(for instruction: String) -> String {
         let text = instruction.lowercased()
+        if text.isEmpty || text == "navigation paused" { return "pause.fill" }
         if text.contains("u-turn") || text.contains("u turn") { return "arrow.uturn.left" }
         if text.contains("roundabout") { return "arrow.clockwise" }
         if text.hasPrefix("merge") { return "arrow.merge" }

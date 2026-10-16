@@ -5,7 +5,7 @@ struct CrashCheckinView: View {
     @State private var confirmClose = false
     /// The ring warms up as the countdown runs out, so the deadline reads at a glance.
     private var ringColor: Color {
-        if service.resolved { return BrakeTheme.accent }
+        if service.resolved { return service.resultNeedsAttention ? BrakeTheme.danger : BrakeTheme.accent }
         return service.remaining <= 5 ? BrakeTheme.danger : service.remaining <= 10 ? BrakeTheme.warning : BrakeTheme.accent
     }
     var body: some View {
@@ -44,7 +44,8 @@ VStack(spacing: 14) {
                         .stroke(ringColor, style: StrokeStyle(lineWidth: 8, lineCap: .round)).rotationEffect(.degrees(-90))
                         .animation(.linear(duration: 0.3), value: service.remaining)
                     if service.resolved {
-                        Image(systemName: "checkmark").font(.system(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accent)
+                        Image(systemName: service.resultNeedsAttention ? "exclamationmark.triangle" : "checkmark")
+                            .font(.system(size: 44, weight: .light)).foregroundStyle(ringColor)
                     } else {
                         Text("\(service.remaining)").font(.system(size: 54, weight: .light, design: .rounded)).monospacedDigit()
                             .foregroundStyle(service.remaining <= 5 ? BrakeTheme.danger : .white)

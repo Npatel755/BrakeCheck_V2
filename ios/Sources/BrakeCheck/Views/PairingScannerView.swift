@@ -19,6 +19,8 @@ final class QRScannerController: UIViewController, AVCaptureMetadataOutputObject
     private let sessionQueue = DispatchQueue(label: "com.brakecheck.qr-scanner")
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var configured = false
+    private var sessionReady = false
+    private var isVisible = false
     private var scanned = false
     private let onCode: (String) -> Void
     private let onError: (String) -> Void
@@ -40,7 +42,9 @@ final class QRScannerController: UIViewController, AVCaptureMetadataOutputObject
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 DispatchQueue.main.async {
-                    if granted { self?.configureSession() }
+                    if granted {
+                        if self?.isVisible == true { self?.configureSession() }
+                    }
                     else { self?.showError("Allow camera access in iPhone Settings to scan the pairing QR code.") }
                 }
             }
@@ -54,10 +58,27 @@ final class QRScannerController: UIViewController, AVCaptureMetadataOutputObject
         previewLayer?.frame = view.bounds
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        isVisible = true
+        if AVCaptureDevice.authorizationStatus(for: .video) == .authorized {
+            configureSession()
+        }
+        startIfVisible()
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        isVisible = false
         sessionQueue.async { [session = self.session] in
             if session.isRunning { session.stopRunning() }
+        }
+    }
+
+    private func startIfVisible() {
+        guard isVisible, sessionReady, !scanned else { return }
+        sessionQueue.async { [session] in
+            if !session.isRunning { session.startRunning() }
         }
     }
 
@@ -91,7 +112,8 @@ final class QRScannerController: UIViewController, AVCaptureMetadataOutputObject
                     layer.frame = self.view.bounds
                     self.view.layer.insertSublayer(layer, at: 0)
                     self.previewLayer = layer
-                    self.sessionQueue.async { self.session.startRunning() }
+                    self.sessionReady = true
+                    self.startIfVisible()
                 }
             } catch {
                 DispatchQueue.main.async { self.showError(error.localizedDescription) }

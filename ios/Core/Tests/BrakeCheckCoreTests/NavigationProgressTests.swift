@@ -80,8 +80,10 @@ final class NavigationProgressTests: XCTestCase {
         XCTAssertEqual(noise.progressMeters, 10, accuracy: 0.01)
         XCTAssertEqual(noise.distanceFromRoute, 60, accuracy: 0.01)
         XCTAssertFalse(noise.offRoute)
+        XCTAssertFalse(noise.positionReliable)
         let recovered = try fix(&tracker, 25, at: 2)
         XCTAssertFalse(recovered.offRoute)
+        XCTAssertTrue(recovered.positionReliable)
         XCTAssertEqual(recovered.progressMeters, 25, accuracy: 0.01)
     }
 
@@ -107,7 +109,28 @@ final class NavigationProgressTests: XCTestCase {
         for time in [1.0, 2.0, 3.0] {
             let uncertain = try fix(&tracker, 40, 25, at: time)
             XCTAssertFalse(uncertain.offRoute)
+            XCTAssertFalse(uncertain.positionReliable)
             XCTAssertEqual(uncertain.progressMeters, 0, accuracy: 0.01)
+        }
+    }
+
+    func testUnreachableButNearbyFixCannotAuthorizeGuidance() throws {
+        var tracker = straight()
+        _ = try fix(&tracker, 0, at: 0)
+        let jump = try XCTUnwrap(tracker.update(coordinate: point(80), horizontalAccuracy: 5,
+            timestamp: 1, now: 1, speed: 0))
+        XCTAssertFalse(jump.positionReliable)
+        XCTAssertEqual(jump.progressMeters, 0, accuracy: 0.01)
+        XCTAssertFalse(jump.offRoute) // Rerouting still requires confirmation.
+    }
+
+    func testParkedFixIgnoresRetainedOppositeCourse() throws {
+        var tracker = straight()
+        for time in [0.0, 1.0, 2.0] {
+            let fix = try XCTUnwrap(tracker.update(coordinate: point(0), horizontalAccuracy: 5,
+                timestamp: time, now: time, courseDegrees: 270, courseAccuracy: 5, speed: 0))
+            XCTAssertTrue(fix.positionReliable)
+            XCTAssertFalse(fix.offRoute)
         }
     }
 
@@ -216,5 +239,10 @@ final class NavigationProgressTests: XCTestCase {
             var tracker = NavigationProgressTracker(coordinates: coordinates, routeDistance: distance, stepDistances: steps)
             XCTAssertNil(tracker.update(coordinate: point(0), horizontalAccuracy: 5, timestamp: 0, now: 0))
         }
+    }
+
+    func testPausedNavigationDoesNotShowStraightAheadArrow() {
+        XCTAssertEqual(NavigationManeuver.symbol(for: "Navigation paused"), "pause.fill")
+        XCTAssertEqual(NavigationManeuver.symbol(for: ""), "pause.fill")
     }
 }

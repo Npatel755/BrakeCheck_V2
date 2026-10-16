@@ -68,6 +68,7 @@ final class NavigationService: NSObject, ObservableObject {
     @Published private(set) var isNavigating = false
     @Published private(set) var hasArrived = false
     @Published private(set) var instruction = "Choose a destination"
+    @Published private(set) var lastRouteInstruction = "Continue on your route"
     @Published private(set) var routeNotice: String?
     @Published private(set) var upcomingInstruction: String?
     @Published private(set) var isRejoiningRoute = false
@@ -127,7 +128,7 @@ final class NavigationService: NSObject, ObservableObject {
             recentDestinations = RecentDestinations.normalized(saved)
         }
         if let values = UserDefaults.standard.array(forKey: "navigation.lastGPS") as? [Double], values.count == 4,
-           values.allSatisfy({ $0.isFinite }), (0...100).contains(values[2]),
+           values.allSatisfy({ $0.isFinite }), (0...65).contains(values[2]),
            values[3] <= Date().timeIntervalSince1970 {
             let coordinate = CLLocationCoordinate2D(latitude: values[0], longitude: values[1])
             if CLLocationCoordinate2DIsValid(coordinate) {
@@ -168,7 +169,7 @@ final class NavigationService: NSObject, ObservableObject {
             location = nil
             hasFreshLocation = false
             lastFixTimestamp = nil
-            pauseMeasurements("Navigation paused. Return to BrakeCheck to resume.")
+            pauseMeasurements("Last known route")
         }
         if active { updateSuggestions() }
         reconcileLocation()
@@ -217,7 +218,7 @@ final class NavigationService: NSObject, ObservableObject {
 
     private func performSearch(_ request: MKLocalSearch.Request, text: String, chooseSingle: Bool) {
         cancelSuggestions()
-        if hasFreshLocation, let location {
+        if let location = mapLocation {
             request.region = MKCoordinateRegion(center: location.coordinate,
                 latitudinalMeters: 50_000, longitudinalMeters: 50_000)
         }
@@ -314,7 +315,7 @@ final class NavigationService: NSObject, ObservableObject {
             let completer = MKLocalSearchCompleter()
             completer.resultTypes = [.address, .pointOfInterest]
             completer.delegate = self
-            if self.hasFreshLocation, let location = self.location {
+            if let location = self.mapLocation {
                 completer.region = MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 50_000, longitudinalMeters: 50_000)
             }
             self.completer = completer
@@ -352,18 +353,23 @@ final class NavigationService: NSObject, ObservableObject {
     }
 
     func startGuidance() {
-        guard foreground, liveModeAllowed, route != nil, !isCalculating, hasFreshLocation else {
-            errorMessage = "A route and fresh GPS location are needed to start navigation."
+        guard foreground, liveModeAllowed, route != nil, !isCalculating, mapLocation != nil else {
+            errorMessage = "Choose a route from a known starting position first."
             return
         }
         isNavigating = true
         hasArrived = false
-        isPaused = false
+        isPaused = !hasFreshLocation
         lastSpokenPrompt = nil
         spokenStages = [:]
         resetProgress()
         reconcileLocation()
-        if let location { updateProgress(location) }
+        if hasFreshLocation, let location { updateProgress(location) }
+        else {
+            lastRouteInstruction = steps.first(where: { !$0.instructions.isEmpty })?.instructions ?? "Continue on your route"
+            instruction = lastRouteInstruction
+            maneuverDistance = nil
+        }
     }
 
     /// Ending navigation leaves the route preview and the camera trip intact.
@@ -442,7 +448,7 @@ final class NavigationService: NSObject, ObservableObject {
                 locationRunning = true
                 locationEligibleAfter = Date()
                 manager.startUpdatingLocation()
-                status = isNavigating ? "Resuming · waiting for fresh GPS" : "Finding your location…"
+                status = isNavigating ? "Last known route" : "Map position updating"
             }
         case .denied, .restricted:
             lastKnownLocation = nil
@@ -463,7 +469,7 @@ final class NavigationService: NSObject, ObservableObject {
               recovery.canAttempt(at: Date().timeIntervalSinceReferenceDate) else { return }
         if let cached = manager.location { cacheLocation(cached) }
         guard let location = isNavigating ? (hasFreshLocation ? location : nil) : mapLocation else {
-            status = "Finding a starting location. No previous GPS fix is available yet."
+            status = "Search is available. Route preview needs a starting position."
             return
         }
         routeUsesLastKnownLocation = !hasFreshLocation
@@ -512,6 +518,7 @@ final class NavigationService: NSObject, ObservableObject {
                 self.remainingDistance = route.distance
                 self.remainingTime = route.expectedTravelTime
                 self.instruction = "Route preview"
+                self.lastRouteInstruction = self.steps.first(where: { !$0.instructions.isEmpty })?.instructions ?? "Continue on your route"
                 self.status = self.isNavigating ? "Navigation active" : "Route ready. Start navigation when parked."
                 self.errorMessage = nil
                 if self.isNavigating, self.hasFreshLocation, let fix = self.location { self.updateProgress(fix) }
@@ -533,21 +540,29 @@ final class NavigationService: NSObject, ObservableObject {
     }
 
     private func acceptLocations(_ locations: [CLLocation]) {
-        guard foreground, liveModeAllowed, locationRunning,
-              let fix = locations.max(by: { $0.timestamp < $1.timestamp }) else { return }
-        cacheLocation(fix)
-        let age = Date().timeIntervalSince(fix.timestamp)
-        guard age.isFinite, (0...2).contains(age), CLLocationCoordinate2DIsValid(fix.coordinate),
-              fix.horizontalAccuracy.isFinite, (0...35).contains(fix.horizontalAccuracy),
-              fix.timestamp >= locationEligibleAfter,
-              lastFixTimestamp.map({ fix.timestamp > $0 }) ?? true else { return }
+        guard foreground, liveModeAllowed, locationRunning, !locations.isEmpty else { return }
+        let now = Date()
+        let samples = locations.map { fix in
+            NavigationLocationSample(timestamp: fix.timestamp.timeIntervalSinceReferenceDate,
+                horizontalAccuracy: fix.horizontalAccuracy,
+                coordinateValid: CLLocationCoordinate2DIsValid(fix.coordinate))
+        }
+        guard let index = NavigationLocationSelection.newestFreshIndex(samples,
+            now: now.timeIntervalSinceReferenceDate,
+            eligibleAfter: locationEligibleAfter.timeIntervalSinceReferenceDate,
+            lastAccepted: lastFixTimestamp?.timeIntervalSinceReferenceDate) else { return }
+        let fix = locations[index]
         lastFixTimestamp = fix.timestamp
+        cacheLocation(fix)
         location = fix
-        hasFreshLocation = true
-        if needsRoute { calculateRoute() }
+        let age = now.timeIntervalSince(fix.timestamp)
+        let reliableForTurns = age <= 2 && fix.horizontalAccuracy <= 35
+        hasFreshLocation = reliableForTurns
+        if needsRoute && reliableForTurns { calculateRoute() }
         if isNavigating {
             if hasArrived { status = "Destination reached · end navigation when ready" }
-            else { updateProgress(fix) }
+            else if reliableForTurns { updateProgress(fix) }
+            else { pauseMeasurements("Last known route") }
         }
         else if !isSearching && !isCalculating {
             status = route == nil ? "Search for an address or place." : "Route ready. Start navigation when parked."
@@ -557,7 +572,7 @@ final class NavigationService: NSObject, ObservableObject {
     private func cacheLocation(_ fix: CLLocation) {
         let age = Date().timeIntervalSince(fix.timestamp)
         guard age.isFinite, age >= 0, CLLocationCoordinate2DIsValid(fix.coordinate),
-              fix.horizontalAccuracy.isFinite, (0...100).contains(fix.horizontalAccuracy),
+              fix.horizontalAccuracy.isFinite, (0...65).contains(fix.horizontalAccuracy),
               lastKnownLocation.map({ fix.timestamp > $0.timestamp }) ?? true else { return }
         lastKnownLocation = fix
         UserDefaults.standard.set([fix.coordinate.latitude, fix.coordinate.longitude,
@@ -572,22 +587,15 @@ final class NavigationService: NSObject, ObservableObject {
                 timestamp: fix.timestamp.timeIntervalSinceReferenceDate,
                 now: Date().timeIntervalSinceReferenceDate, courseDegrees: fix.course,
                 courseAccuracy: fix.courseAccuracy, speed: fix.speed) else {
-            pauseMeasurements("GPS paused · waiting for a reliable route position")
+            pauseMeasurements("Route position uncertain")
             return
         }
         routeProgress = progress
         cameraMapMatchConfidence = snapshot.mapMatchConfidence
         cameraMapMatchAmbiguous = snapshot.mapMatchAmbiguous
-        isPaused = false
-        if !snapshot.offRoute, snapshot.distanceFromRoute > max(35, fix.horizontalAccuracy * 2 + 10) {
-            pauseMeasurements("Checking route position · waiting for reliable GPS")
-            return
-        }
         if snapshot.offRoute {
             isRejoiningRoute = true
-            isPaused = true
-            stopSpeaking()
-            status = "Off route · finding new directions"
+            pauseMeasurements("Off route · finding new directions")
             if Date().timeIntervalSince(lastRerouteAt) >= 20,
                recovery.canAttempt(at: Date().timeIntervalSinceReferenceDate) {
                 lastRerouteAt = Date()
@@ -596,6 +604,11 @@ final class NavigationService: NSObject, ObservableObject {
             }
             return
         }
+        guard snapshot.positionReliable else {
+            pauseMeasurements("Route position uncertain")
+            return
+        }
+        isPaused = false
         remainingDistance = snapshot.remainingMeters
         isRejoiningRoute = false
         if recovery.retryAt != nil {
@@ -622,6 +635,7 @@ final class NavigationService: NSObject, ObservableObject {
         let effectiveIndex = steps.indices.dropFirst(index).first { !steps[$0].instructions.isEmpty } ?? index
         let step = steps.indices.contains(effectiveIndex) ? steps[effectiveIndex] : nil
         instruction = step?.instructions.isEmpty == false ? step!.instructions : "Continue on your route"
+        lastRouteInstruction = instruction
         upcomingInstruction = steps.indices.dropFirst(effectiveIndex + 1)
             .first(where: { !steps[$0].instructions.isEmpty }).map { steps[$0].instructions }
         routeNotice = step?.notice
@@ -637,9 +651,13 @@ final class NavigationService: NSObject, ObservableObject {
     }
 
     private func checkFreshness() {
-        let fresh = location.map { (0...2).contains(Date().timeIntervalSince($0.timestamp)) } ?? false
+        let wasFresh = hasFreshLocation
+        let fresh = location.map {
+            (0...2).contains(Date().timeIntervalSince($0.timestamp)) &&
+                $0.horizontalAccuracy >= 0 && $0.horizontalAccuracy <= 35
+        } ?? false
         hasFreshLocation = fresh
-        if !fresh, isNavigating, !hasArrived { pauseMeasurements("GPS paused · waiting for a fresh location") }
+        if !fresh, wasFresh, isNavigating, !hasArrived { pauseMeasurements("Last known route") }
         if fresh, foreground, liveModeAllowed, needsRoute, !isCalculating,
            recovery.canAttempt(at: Date().timeIntervalSinceReferenceDate) { calculateRoute() }
     }
@@ -649,8 +667,8 @@ final class NavigationService: NSObject, ObservableObject {
         stopSpeaking()
         if isNavigating && !hasArrived {
             isPaused = true
-            // Keep the last measured guidance on screen. A stale fix never
-            // advances route progress or triggers a spoken maneuver.
+            // Keep the last verified turn and distance visible, but do not
+            // advance progress or speak directions from an old location.
         }
         status = reason
     }
@@ -726,9 +744,10 @@ extension NavigationService: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor [weak self] in
             guard let self, self.foreground, self.locationRunning else { return }
+            if (error as? CLError)?.code == .locationUnknown { return }
             self.hasFreshLocation = false
             self.location = nil
-            self.pauseMeasurements("GPS unavailable · waiting for location")
+            self.pauseMeasurements("Last known route")
         }
     }
 }

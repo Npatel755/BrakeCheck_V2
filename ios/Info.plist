@@ -7,7 +7,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>0.4.0</string>
 	<key>CFBundleVersion</key>
-	<string>40</string>
+	<string>53</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -26,9 +26,11 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>BrakeCheck uses your location to plan driving routes and show turn guidance. During a trip it also uses location speed to show your speed and estimate the lead vehicle's speed while the app is on screen.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>BrakeCheck records a short spoken reply after a possible impact, then sends it to your backend and ElevenLabs for transcription.</string>
+	<string>BrakeCheck records a short spoken reply after a possible impact so it can be checked on your iPhone.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>When enabled, BrakeCheck uses motion readings to mark possible impacts and preserve available dashcam footage.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>BrakeCheck recognizes a short crash check-in reply on your iPhone when on-device speech recognition is available.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

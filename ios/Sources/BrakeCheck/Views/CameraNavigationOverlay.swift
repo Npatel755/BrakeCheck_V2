@@ -40,6 +40,8 @@ struct CameraNavigationOverlay: View {
 
     @State private var projectionCache = CameraRouteRenderCache()
 
+    @State private var renderedKey: CameraRouteRenderCache.Key?
+
     private var calibration: CameraRouteCalibration {
 
         CameraRouteCalibration(heightMeters: mountHeight, horizonOffset: horizonOffset, yawDegrees: mountYaw, referenceHorizon: verifiedHorizon)
@@ -154,7 +156,10 @@ struct CameraNavigationOverlay: View {
 
                 Canvas { context, size in
 
-                    guard level == .aligned, !current.isEmpty, scene?.road?.visibility != nil else { return }
+                    // A newly captured mask must never clip a ribbon smoothed
+                    // from the previous route/camera frame while state catches up.
+                    guard level == .aligned, !current.isEmpty, renderedKey == projectionCache.key,
+                          scene?.road?.visibility != nil else { return }
 
                     context.clip(to: presentation.visibilityPath().applying(CGAffineTransform(scaleX: size.width, y: size.height)))
 
@@ -258,11 +263,15 @@ struct CameraNavigationOverlay: View {
 
                 }
 
-                .onAppear { ribbon = smoother.update(current, at: ProcessInfo.processInfo.systemUptime, lane: scene?.lane, road: scene?.road) }
+                .onAppear {
+                    ribbon = smoother.update(current, at: ProcessInfo.processInfo.systemUptime, lane: scene?.lane, road: scene?.road)
+                    renderedKey = projectionCache.key
+                }
 
                 .onChange(of: timeline.date) { _, _ in
 
                     ribbon = smoother.update(current, at: ProcessInfo.processInfo.systemUptime, lane: scene?.lane, road: scene?.road)
+                    renderedKey = projectionCache.key
 
                     stableConfidence = confidenceTracker.update(requested, observedAt: scene?.capturedAt ?? 0)
 

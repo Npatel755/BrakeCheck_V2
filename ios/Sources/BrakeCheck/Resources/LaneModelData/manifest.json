@@ -1,23 +1,23 @@
 {
   "models": [
     {
-      "name": "UFLDLane",
+      "name": "CommaLane",
       "input": [
         1,
         3,
-        288,
-        800
+        384,
+        512
       ],
-      "output": "lane_logits",
-      "source": "https://github.com/cfzd/Ultra-Fast-Lane-Detection",
-      "checkpoint_url": "https://drive.google.com/uc?id=1zXBRTw50WOzvUp6XKsi8Zrk3MUC3uFuq",
-      "checkpoint_sha256": "7cb18e128fda9f7f6be36a338dd8e7a2a948ce2a03dad878f0e651409b4a5b51",
+      "output": "lane_scores",
+      "source": "https://huggingface.co/commaai/comma10k-segnet",
+      "revision": "b642c614eb0737fe7befa229f47fbd0245033038",
+      "checkpoint_sha256": "8208672861ad1b111dc98f3a7c54196d29875b709c7353e2dd1b7614343fb3a8",
       "license": "MIT",
-      "preprocessing": "RGB bytes; ImageNet normalization; stretch full frame",
-      "decoder": "CULane anchors; 200 bins plus no-lane class; [1,201,18,4]"
+      "decoder": "[1,5,384,512] logits; class 1 lane markings",
+      "status": "device lane and AR validation pending"
     },
     {
-      "name": "SegFormerRoad",
+      "name": "IntelRoad",
       "input": [
         1,
         3,
@@ -25,20 +25,18 @@
         640
       ],
       "output": "road_scores",
-      "source": "https://huggingface.co/nvidia/segformer-b0-finetuned-cityscapes-1024-1024",
-      "revision": "21b3847fae21ddee674abd31129307b6a1235bd9",
-      "license": "NVIDIA Source Code License for SegFormer; non-commercial research/evaluation",
-      "license_url": "https://github.com/NVlabs/SegFormer/blob/master/LICENSE",
-      "preprocessing": "RGB bytes; ImageNet normalization; stretch full frame",
-      "decoder": "[1,2,384,640] softmax probabilities: non-road, road"
+      "source": "https://github.com/openvinotoolkit/open_model_zoo/tree/master/models/intel/road-segmentation-adas-0001",
+      "license": "Apache-2.0",
+      "decoder": "[1,2,384,640] non-road, road+mark probabilities",
+      "status": "device road and AR validation pending"
     }
   ],
   "files": {
-    "SegFormerRoad.mlpackage/Data/com.apple.CoreML/model.mlmodel": "943e8fbfa71663c8218e69e9580248260c17248a869786bbb75f2c370b83f439",
-    "SegFormerRoad.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "477f10bd51a02cfac0db2a819c454ffb09709e2011e23a00d8ee337e6ce6f0a1",
-    "SegFormerRoad.mlpackage/Manifest.json": "02821e7a6f902a2312469dce6e6c4e859ddc728e9f2af13c832ec5ebf7c40717",
-    "UFLDLane.mlpackage/Data/com.apple.CoreML/model.mlmodel": "9eb4a1fdbe9e74ffa32114193af05ed59b1fd0cc534e3a01a3c35c8d04584694",
-    "UFLDLane.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "b1066e24ffb3bee79244eadf73d2eeec0913b3e1e3b377c14f737f7c2e5480f3",
-    "UFLDLane.mlpackage/Manifest.json": "cf8afdd8ce6f9b08c360dab7ff92ef1958a68008e84dc58147f9570f3c49ce9f"
+    "CommaLane.mlpackage/Data/com.apple.CoreML/model.mlmodel": "d352f5cb01aa84c4514af4e24d6121ba4a31b55c83e2c15f5c3d56c907e40cce",
+    "CommaLane.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "58a5a36ae6e55893c9be239ccf814debf9004effe881601006443be5d4573d39",
+    "CommaLane.mlpackage/Manifest.json": "0f68ec18c157c53581c976e9912bca4e899b3cba49be35d57a611b98cbab3fb9",
+    "IntelRoad.mlpackage/Data/com.apple.CoreML/model.mlmodel": "d69f1576a4fc4a0a7eeae0ca21ebfb06abe7e1a1824a1a8fb262319b5c0e3d7a",
+    "IntelRoad.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "b9198b4fac60a3ded1955d642c3b5a921c0840a06e4735473bd746e60fbcc002",
+    "IntelRoad.mlpackage/Manifest.json": "8a14fe998cd92b878a6ff18fda09b754a97387355b7c4e531e59f19e247f6e3a"
   }
 }

@@ -1,4 +1,5 @@
 import BrakeCheckCore
+import StoreKit
 import SwiftUI
 import UIKit
 
@@ -17,18 +18,21 @@ struct ContentView: View {
         }
     }
     private enum HomeDestination: Hashable {
-        case settings, contacts, incidents, tripHistory, diagnostics, replay
+        case settings, contacts, incidents, tripHistory, replay, premium
+        case trip(UUID)
     }
     @State private var destinationPath: [HomeDestination] = []
     @ObservedObject var model: DriveModel
     @ObservedObject private var safety: SafetyService
     @ObservedObject private var navigation: NavigationService
+    @ObservedObject private var premiumStore = PremiumStore.shared
     @AppStorage("display.mph") private var useMPH = true
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     @AppStorage("display.detectionBoxes") private var showDetections = true
-    @AppStorage("display.lanes") private var showLanes = true
+    @AppStorage("display.laneGuides") private var showLanes = false
     @AppStorage("navigation.cameraAR") private var cameraAR = true
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
+    @AppStorage("display.premiumCompactBanner") private var premiumCompactBanner = false
     @State private var selecting = false
     @State private var selection: CGRect?
     @State private var measuredDistance = ""
@@ -37,6 +41,10 @@ struct ContentView: View {
     @State private var showCheckin = false
     @State private var showCameraSetup = false
     @State private var page: Page = .home
+    @State private var showFirstTripRating = false
+    @State private var showFirstTripPremium = false
+    @State private var completedTripID: UUID?
+    @AppStorage("review.firstTripPrompted") private var firstTripPrompted = false
 
     init(model: DriveModel) {
         self.model = model
@@ -82,8 +90,12 @@ struct ContentView: View {
         case .contacts: ContactsView(service: safety)
         case .incidents: IncidentListView(model: model)
         case .tripHistory: TripHistoryView(model: model, useMPH: useMPH)
-        case .diagnostics: MeasurementDiagnosticsView(model: model)
         case .replay: ReplayView(model: model)
+        case .premium: PremiumView()
+        case .trip(let id):
+            if let trip = model.savedTrips.first(where: { $0.id == id }) {
+                TripDetailView(model: model, trip: trip, useMPH: useMPH)
+            }
         }
     }
 
@@ -110,7 +122,7 @@ struct ContentView: View {
                                 .tag(Page.navigation)
                         }
                         .tabViewStyle(.page(indexDisplayMode: .never))
-                        pageNavigation
+                        if portrait { pageNavigation }
                     }
                 }
                 if critical { BrakeEdgeGlow() }
@@ -126,11 +138,25 @@ struct ContentView: View {
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .fullScreenCover(isPresented: $showCheckin) { CrashCheckinView(service: safety) }
+        .fullScreenCover(isPresented: $showFirstTripPremium, onDismiss: openCompletedTrip) {
+            PremiumView(onContinue: { showFirstTripPremium = false })
+        }
         .alert("BrakeCheck", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("OK", role: .cancel) { model.message = nil }
         } message: { Text(model.message ?? "") }
         .confirmationDialog("End this trip? Remaining post-event recording will stop.", isPresented: $stopping, titleVisibility: .visible) {
-            Button("End trip", role: .destructive) { selecting = false; model.endTrip(); page = .home }
+            Button("End trip", role: .destructive) { finishTripAndPresentSummary() }
+        }
+        .alert("How was your first drive?", isPresented: $showFirstTripRating) {
+            Button("Rate BrakeCheck") {
+                if let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+                    SKStoreReviewController.requestReview(in: scene)
+                }
+                presentFirstTripPremium()
+            }
+            Button("Not now", role: .cancel) { presentFirstTripPremium() }
+        } message: {
+            Text("Your trip summary is ready. Would you like to rate BrakeCheck first?")
         }
         .onChange(of: safety.checkinPresented) { _, presented in
             if !presented { showCheckin = false }
@@ -187,8 +213,9 @@ struct ContentView: View {
                  openContacts: { destinationPath.append(.contacts) },
                  openIncidents: { destinationPath.append(.incidents) },
                  openTripHistory: { destinationPath.append(.tripHistory) },
-                 openDiagnostics: { destinationPath.append(.diagnostics) },
-                 openReplay: { destinationPath.append(.replay) }, beginCalibration: beginCalibration)
+                 openReplay: { destinationPath.append(.replay) }, beginCalibration: beginCalibration,
+                 openTrip: { destinationPath.append(.trip($0)) },
+                 openPremium: { destinationPath.append(.premium) })
     }
 
     private func cameraPage(portrait: Bool) -> some View {
@@ -197,6 +224,9 @@ struct ContentView: View {
             if showsPlaceholder { placeholder }
             scrims(portrait: portrait).ignoresSafeArea().allowsHitTesting(false)
             if portrait { portraitHUD } else { landscapeHUD }
+            if cameraAR && model.cameraReady && !model.replaying && !model.demo && !selecting {
+                CameraRoadMaskStatus(presentation: model.arPresentation, portrait: portrait)
+            }
         }
         .clipped()
     }
@@ -210,7 +240,7 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         Circle().fill(page == destination ? BrakeTheme.accent : BrakeTheme.muted.opacity(0.45))
                             .frame(width: 5, height: 5)
-                        Text(destination.title).font(.system(size: 13, weight: .semibold))
+                        Text(destination.title).font(.brake(size: 13, weight: .semibold))
                     }
                     .foregroundStyle(page == destination ? BrakeTheme.accent : BrakeTheme.muted)
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -244,6 +274,34 @@ struct ContentView: View {
         if model.replaying { model.stopReplay() }
         else if model.tripActive { stopping = true }
         else { model.startTrip() }
+    }
+
+    private func finishTripAndPresentSummary() {
+        selecting = false
+        let previousCount = model.savedTrips.count
+        model.endTrip()
+        page = .home
+        guard model.savedTrips.count > previousCount, let trip = model.savedTrips.first else { return }
+        completedTripID = trip.id
+        if previousCount == 0 && !firstTripPrompted {
+            firstTripPrompted = true
+            showFirstTripRating = true
+        } else {
+            openCompletedTrip()
+        }
+    }
+
+    private func openCompletedTrip() {
+        guard let id = completedTripID else { return }
+        completedTripID = nil
+        destinationPath = [.trip(id)]
+    }
+
+    private func presentFirstTripPremium() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            showFirstTripPremium = true
+        }
     }
 
     private func beginCalibration() {
@@ -294,12 +352,14 @@ struct ContentView: View {
                     CameraPreview(session: model.camera.session, orientation: model.captureGeometry.videoOrientation)
                 }
                 if (model.cameraReady || model.replaying) && !model.demo && !model.changingCameraGeometry {
+                    if page == .camera && cameraAR && !model.replaying && !selecting && destinationPath.isEmpty {
+                        CameraRoadMaskOverlay(presentation: model.arPresentation)
+                    }
                     if page == .camera && !model.replaying && !selecting && destinationPath.isEmpty {
                         CameraNavigationOverlay(navigation: navigation, presentation: model.arPresentation, geometry: model.captureGeometry)
                     }
                     if showLanes && !selecting {
                         CameraPerceptionOverlay(presentation: model.arPresentation, lane: model.lanePath,
-                            road: model.roadDisplayRegion,
                             navigationOnCamera: page == .camera && navigation.isNavigating && cameraAR)
                     }
                     if showDetections && !selecting {
@@ -321,14 +381,14 @@ struct ContentView: View {
             BrakeTheme.panel.ignoresSafeArea()
             VStack(spacing: 10) {
                 Image(systemName: model.demo ? "car.side.hill.up.fill" : "car.front.waves.up.fill")
-                    .font(.system(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accent.opacity(0.7))
+                    .font(.brake(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accent.opacity(0.7))
                 Text(model.demo ? "Simulated drive" : "A clearer view ahead.")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.brake(size: 22, weight: .semibold))
                 Text(model.demo ? "Practice numbers · no camera" : "Start a trip to see the road and track vehicles.")
-                    .font(.system(size: 12)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
+                    .font(.brake(size: 12)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
                 if !model.demo {
                     Text("Swipe to Home for trip controls.")
-                        .font(.system(size: 12)).foregroundStyle(BrakeTheme.accent)
+                        .font(.brake(size: 12)).foregroundStyle(BrakeTheme.accent)
                 }
             }
             .padding(.horizontal, 24)
@@ -347,21 +407,30 @@ struct ContentView: View {
 
     // MARK: - Layouts
 
+    /// Text directions stay available when the optional road ribbon is off.
+    private var showsDirections: Bool { page == .camera && navigation.isNavigating && !selecting }
+
+    private func directionsBanner(large: Bool) -> some View {
+        NavigationBanner(navigation: navigation, presentation: model.arPresentation,
+            compact: critical || (premiumStore.isSubscribed && premiumCompactBanner),
+            large: large, onSetup: { showCameraSetup = true })
+    }
+
     private var landscapeHUD: some View {
         VStack(spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                brand(size: 25)
-                Spacer(minLength: 0)
-                if page == .camera && cameraAR && navigation.isNavigating && !selecting {
-                    CameraNavigationStatusView(navigation: navigation, presentation: model.arPresentation,
-                        onSetup: { showCameraSetup = true })
-                        .frame(maxWidth: 280, alignment: .trailing)
-                } else {
+            if showsDirections {
+                HStack(alignment: .top, spacing: 12) {
+                    directionsBanner(large: false).frame(maxWidth: 400, alignment: .leading)
+                    Spacer(minLength: 0)
+                    if critical || running { riskPill(large: false).padding(.top, 4) }
+                }
+            } else {
+                HStack(alignment: .top, spacing: 8) {
+                    brand(size: 25)
+                    Spacer(minLength: 0)
                     cameraSetupShortcut
                 }
-            }
-            if critical || (running && !selecting) {
-                riskPill(large: false)
+                if critical || (running && !selecting) { riskPill(large: false) }
             }
             Spacer(minLength: 0)
             if selecting { calibrationControls.frame(maxWidth: 440) }
@@ -375,16 +444,20 @@ struct ContentView: View {
     /// Vertical: status and the danger meter above an unobstructed road, readouts below.
     private var portraitHUD: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 8) {
-                brand(size: 19)
-                Spacer(minLength: 0)
-                cameraSetupShortcut
-            }
-            if critical || (running && !selecting) {
-                riskPill(large: true)
-            }
-            if page == .camera && cameraAR && navigation.isNavigating && !selecting {
-                CameraNavigationStatusView(navigation: navigation, presentation: model.arPresentation, onSetup: { showCameraSetup = true })
+            if showsDirections {
+                if critical || (running && !selecting) {
+                    riskPill(large: true)
+                }
+                directionsBanner(large: true)
+            } else {
+                HStack(spacing: 8) {
+                    brand(size: 19)
+                    Spacer(minLength: 0)
+                    cameraSetupShortcut
+                }
+                if critical || (running && !selecting) {
+                    riskPill(large: true)
+                }
             }
             Spacer(minLength: 0)
             if selecting { calibrationControls }
@@ -418,7 +491,7 @@ struct ContentView: View {
             : ("STANDBY", BrakeTheme.muted)
         return HStack(spacing: 5) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text("\(text) · \(model.measurementRevision)").font(.system(size: 10, weight: .bold)).tracking(1)
+            Text("\(text) · \(model.measurementRevision)").font(.brake(size: 10, weight: .bold)).tracking(1)
         }
         .padding(.horizontal, 10).frame(height: 26)
         .background(BrakeTheme.cameraSurface, in: Capsule())
@@ -438,20 +511,18 @@ struct ContentView: View {
     private func speedReadout(size: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(model.gpsSpeedEstimated ? "EST. SPEED" : "SPEED")
-                .font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(size: 10, weight: .bold)).tracking(1).foregroundStyle(BrakeTheme.muted)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(model.speed.map { String(format: "%.0f", $0 * factor) } ?? "--")
-                    .font(.system(size: size, weight: .semibold)).monospacedDigit().tracking(-2)
+                    .font(.brake(size: size, weight: .semibold)).monospacedDigit().tracking(-2)
                     .foregroundStyle(model.speed == nil ? BrakeTheme.muted : BrakeTheme.text)
-                Text(unit).font(.system(size: 15, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
+                Text(unit).font(.brake(size: 15, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
             }
             if model.replaying {
                 Text(model.replaySpeedSource.hasPrefix("ASSUMED") ? "ASSUMED SPEED" : "RECORDED SPEED")
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(BrakeTheme.warning)
+                    .font(.brake(size: 9, weight: .semibold)).foregroundStyle(BrakeTheme.warning)
             } else if model.gpsSpeedEstimated {
-                Text("GPS GAP · ESTIMATED").font(.system(size: 9, weight: .semibold)).foregroundStyle(BrakeTheme.warning)
-            } else if model.speed == nil {
-                Text("Waiting for GPS").font(.system(size: 11)).foregroundStyle(BrakeTheme.muted)
+                Text("GPS GAP · ESTIMATED").font(.brake(size: 9, weight: .semibold)).foregroundStyle(BrakeTheme.warning)
             }
         }
         .shadow(color: colorScheme == .dark ? .black.opacity(0.5) : .clear, radius: 6)
@@ -494,12 +565,12 @@ struct ContentView: View {
     private func hudNumber(_ label: String, _ value: String?, _ unit: String, size: CGFloat,
                            alert: Bool = false, unavailable: String? = nil) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
-            Text(value ?? "--").font(.system(size: size, weight: .semibold)).monospacedDigit()
+            Text(label).font(.brake(size: 11, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
+            Text(value ?? "--").font(.brake(size: size, weight: .semibold)).monospacedDigit()
                 .foregroundColor(alert ? BrakeTheme.danger : BrakeTheme.text)
-            + Text(" \(unit)").font(.system(size: 12, weight: .semibold)).foregroundColor(BrakeTheme.muted)
+            + Text(" \(unit)").font(.brake(size: 12, weight: .semibold)).foregroundColor(BrakeTheme.muted)
             if value == nil, let unavailable, !unavailable.isEmpty {
-                Text(unavailable).font(.system(size: 10)).foregroundStyle(BrakeTheme.muted)
+                Text(unavailable).font(.brake(size: 10)).foregroundStyle(BrakeTheme.muted)
             }
         }
     }

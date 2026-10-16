@@ -6,13 +6,16 @@ import CoreVideo
 import CryptoKit
 import Foundation
 
-/// The marking fallback runs on VehicleTracker's queue. Core ML has a separate
-/// queue with at most one retained camera frame, so lane inference cannot build
-/// up a backlog. The shared prediction gate gives vehicle requests priority. The model is bundled; no network/key is required.
+/// The marking fallback runs on VehicleTracker's queue. comma.ai and Intel road model
+/// each retain at most one camera frame on independent queues. Segmentation
+/// decoding cannot hold the lane worker busy after a comma.ai observation is ready.
+/// The shared prediction gate still gives vehicle requests priority.
 final class LaneTracker {
     var onStatus: ((String) -> Void)?
     private let modelQueue = DispatchQueue(label: "BrakeCheck.lane-model", qos: .utility,
                                           autoreleaseFrequency: .workItem)
+    private let roadQueue = DispatchQueue(label: "BrakeCheck.road-model", qos: .utility,
+                                         autoreleaseFrequency: .workItem)
     private let stateLock = NSLock()
     private let inference: VisionInferenceCoordinator
     private var minimumInterval: TimeInterval = 0.20
@@ -45,10 +48,12 @@ final class LaneTracker {
     private var loadingStarted = false
     private var modelReady = false
     private var modelBusy = false
+    private var roadBusy = false
     private var generation = 0
     private var lastSubmission: TimeInterval = -.infinity
     private var neuralMeasurements = LaneMeasurementBuffer()
-    private var roadMeasurements: [(time: TimeInterval, region: RoadRegion?, frame: LaneLumaFrame, lane: LanePath?)] = []
+    private var roadMeasurements: [(time: TimeInterval, region: RoadRegion?, mask: RoadVisibilityMask?,
+                                    frame: LaneLumaFrame, lane: LanePath?)] = []
     private var vehicleBoxes: [CGRect] = []
     private var boxesTime: TimeInterval = -.infinity
 
@@ -82,9 +87,9 @@ final class LaneTracker {
         loadingStarted = true
         stateLock.unlock()
         modelQueue.async {
-            self.onStatus?("UFLD + SegFormer loading…")
+            self.onStatus?("comma.ai lane + Intel road model loading…")
             do {
-                let source = try self.locateModel(named: "UFLDLane")
+                let source = try self.locateModel(named: "CommaLane")
                 let compiled = try self.compiledModel(from: source)
                 let options = MLModelConfiguration()
                 options.computeUnits = .all
@@ -97,16 +102,16 @@ final class LaneTracker {
                     model = try MLModel(contentsOf: self.compiledModel(from: source), configuration: options)
                 }
                 guard let image = model.modelDescription.inputDescriptionsByName["image"]?.imageConstraint,
-                      image.pixelsWide == 800, image.pixelsHigh == 288,
-                      model.modelDescription.outputDescriptionsByName["lane_logits"]?.multiArrayConstraint?.shape.map({ $0.intValue }) == [1, 201, 18, 4] else {
+                      image.pixelsWide == 512, image.pixelsHigh == 384,
+                      model.modelDescription.outputDescriptionsByName["lane_scores"]?.multiArrayConstraint?.shape.map({ $0.intValue }) == [1, 5, 384, 512] else {
                     throw LaneModelError.contract
                 }
                 self.inputWidth = image.pixelsWide; self.inputHeight = image.pixelsHigh
                 self.model = model
                 self.stateLock.lock(); self.modelReady = true; self.stateLock.unlock()
-                self.onStatus?("UFLD lanes ready · road model loading")
+                self.onStatus?("comma.ai lanes ready · road model loading")
                 do {
-                    let roadSource = try self.locateModel(named: "SegFormerRoad")
+                    let roadSource = try self.locateModel(named: "IntelRoad")
                     let compiled = try self.compiledModel(from: roadSource)
                     let road: MLModel
                     do { road = try MLModel(contentsOf: compiled, configuration: options) }
@@ -118,14 +123,14 @@ final class LaneTracker {
                           roadImage.pixelsWide == 640, roadImage.pixelsHigh == 384,
                           road.modelDescription.outputDescriptionsByName["road_scores"]?.multiArrayConstraint?.shape.map({ $0.intValue }) == [1, 2, 384, 640] else { throw LaneModelError.contract }
                     self.roadModel = road
-                    self.onStatus?("UFLD lanes + SegFormer road ready")
+                    self.onStatus?("comma.ai lanes + Intel road ready")
                 } catch {
                     self.roadModel = nil
-                    self.onStatus?("UFLD lanes ready · road segmentation unavailable: \(error.localizedDescription)")
+                    self.onStatus?("comma.ai lanes ready · road segmentation unavailable: \(error.localizedDescription)")
                 }
             } catch {
                 self.stateLock.lock(); self.loadingStarted = false; self.stateLock.unlock()
-                self.onStatus?("UFLD/SegFormer unavailable: \(error.localizedDescription) · paint fallback")
+                self.onStatus?("comma.ai/Intel model unavailable: \(error.localizedDescription) · paint fallback")
             }
         }
     }
@@ -141,8 +146,8 @@ final class LaneTracker {
         vehicleBoxes = []; boxesTime = -.infinity
         lastSubmission = -.infinity
         lastRoadSubmission = -.infinity
-        // Keep modelBusy true until an in-flight old prediction releases its
-        // frame. Its generation prevents it from publishing into a new trip.
+        // Keep each busy flag true until its old prediction releases its frame.
+        // The generation prevents either worker publishing into a new trip.
         stateLock.unlock()
         modelQueue.async { self.neuralEstimator.reset() }
     }
@@ -192,7 +197,8 @@ final class LaneTracker {
             let scene = CameraARScene(lane: arLane ?? lane, road: arRoad,
                 laneObservedAt: lane?.source == .markings ? (lane?.capturedAt ?? -.infinity)
                     : (measurement?.lane.capturedAt ?? lane?.capturedAt ?? -.infinity),
-                roadObservedAt: roadObservation?.time ?? -.infinity, capturedAt: time)
+                roadObservedAt: roadObservation?.time ?? -.infinity, capturedAt: time,
+                diagnosticRoadMask: roadObservation.flatMap { time - $0.time <= 0.5 ? $0.mask : nil })
             arScene = arSceneTracker.update(scene, at: time)
             return lane
         }
@@ -238,7 +244,7 @@ final class LaneTracker {
             let started = ProcessInfo.processInfo.systemUptime
             do {
                 guard let prediction = try self.inference.auxiliary({
-                    let input = try self.makeInput(buffer, width: 800, height: 288, pool: &self.inputPool)
+                    let input = try self.makeInput(buffer, width: 512, height: 384, pool: &self.inputPool)
                     guard let frame = self.lumaFrame(buffer, at: time) else { throw LaneModelError.frame }
                     let provider = try MLDictionaryFeatureProvider(dictionary: ["image": MLFeatureValue(pixelBuffer: input)])
                     return (try model.prediction(from: provider), frame)
@@ -256,13 +262,12 @@ final class LaneTracker {
                 self.stateLock.lock()
                 let laneDuration = ProcessInfo.processInfo.systemUptime - started
                 self.laneLatencyHistory.observe(laneDuration)
-                let roadDue = self.roadInterval.map { time - self.lastRoadSubmission >= $0 } ?? false
                 self.stateLock.unlock()
-                guard let scores = result.featureValue(for: "lane_logits")?.multiArrayValue else {
+                guard let scores = result.featureValue(for: "lane_scores")?.multiArrayValue else {
                     throw LaneModelError.output
                 }
                 // Decode and publish lanes before waiting for segmentation.
-                // Road-model failure/cadence must not suppress UFLD observations.
+                // Road-model failure/cadence must not suppress comma.ai observations.
                 let rows = try self.decode(scores, excluding: boxes)
                 let lane = self.neuralEstimator.update(rows, at: time)
                 self.stateLock.lock()
@@ -273,52 +278,23 @@ final class LaneTracker {
                     self.neuralMeasurements.append(measurement)
                 }
                 self.stateLock.unlock()
-                var roadAttempted = false
-                var roadFailed = false
-                var road: RoadRegion?
-                let roadStarted = ProcessInfo.processInfo.systemUptime
-                do {
-                    let result = try self.inference.auxiliary {
-                        guard roadDue, let roadModel = self.roadModel else { return nil as MLFeatureProvider? }
-                        guard ProcessInfo.processInfo.systemUptime - time <= 0.40 else { return nil as MLFeatureProvider? }
-                        roadAttempted = true
-                        let input = try self.makeInput(buffer, width: 640, height: 384, pool: &self.roadInputPool)
-                        let provider = try MLDictionaryFeatureProvider(dictionary: ["image": MLFeatureValue(pixelBuffer: input)])
-                        return try roadModel.prediction(from: provider)
-                    }
-                    if let result = result.flatMap({ $0 }) {
-                        guard let scores = result.featureValue(for: "road_scores")?.multiArrayValue else { throw LaneModelError.output }
-                        road = try self.decodeRoad(scores, excluding: boxes, at: time, includeVisibility: arRequested)
-                    }
-                } catch {
-                    roadFailed = true
-                    self.onStatus?("UFLD lanes active - SegFormer retrying: \(error.localizedDescription)")
+                if let roadModel = self.roadModel {
+                    self.scheduleRoad(roadModel, buffer: buffer, frame: frame, lane: lane,
+                        excluding: boxes, at: time, generation: submittedGeneration,
+                        includeVisibility: arRequested)
                 }
                 let finished = ProcessInfo.processInfo.systemUptime
                 self.consecutiveErrors = 0
                 self.stateLock.lock()
-                if self.generation == submittedGeneration {
-                    // Keep nil observations too: a failed current mask cannot
-                    // silently revive an older road measurement.
-                    self.roadMeasurements.removeAll { time - $0.time > 1.2 }
-                    if roadAttempted {
-                        self.lastRoadSubmission = roadFailed ? ProcessInfo.processInfo.systemUptime + 2 : time
-                        let duration = ProcessInfo.processInfo.systemUptime - roadStarted
-                        self.roadLatencyHistory.observe(duration)
-                        // A genuine negative prediction invalidates history;
-                        // cadence skips retain only bounded visual support.
-                        self.roadMeasurements.append((time, road, frame, lane))
-                    }
-                    if self.roadMeasurements.count > 6 { self.roadMeasurements.removeFirst() }
-                }
+                let roadRows = self.roadMeasurements.last?.region?.bands.count ?? 0
                 self.stateLock.unlock()
                 if finished - self.lastStatusTime >= 2 {
                     self.lastStatusTime = finished
                     let duration = Int((finished - started) * 1000)
                     let count = rows.filter { !$0.peaks.isEmpty }.count
                     self.onStatus?(finished - time > 1.0
-                        ? "UFLD + SegFormer · \(duration) ms · frame too old to track"
-                        : "UFLD + SegFormer · \(duration) ms · \(count) lane rows · road \(road?.bands.count ?? 0) rows · \(self.neuralEstimator.status)")
+                        ? "comma.ai · \(duration) ms · frame too old to track"
+                        : "comma.ai · \(duration) ms · \(count) lane rows · road \(roadRows) rows · \(self.neuralEstimator.status)")
                 }
             } catch {
                 self.consecutiveErrors += 1
@@ -330,19 +306,83 @@ final class LaneTracker {
                 self.roadMeasurements = []
                 self.stateLock.unlock()
                 self.neuralEstimator.reset()
-                self.onStatus?("UFLD/SegFormer inference error: \(error.localizedDescription) · retrying · paint fallback")
+                self.onStatus?("comma.ai/Intel model inference error: \(error.localizedDescription) · retrying · paint fallback")
             }
         }
     }
 
-    private func decodeRoad(_ roadScores: MLMultiArray, excluding boxes: [CGRect], at time: TimeInterval, includeVisibility: Bool) throws -> RoadRegion? {
+    /// Road inference is optional and never makes comma.ai's one-frame slot wait
+    /// for Intel road model prediction or mask decoding. Both still share the vehicle-
+    /// first accelerator gate, and an old frame cannot publish after reset.
+    private func scheduleRoad(_ roadModel: MLModel, buffer: CVPixelBuffer, frame: LaneLumaFrame,
+                              lane: LanePath?, excluding boxes: [CGRect], at time: TimeInterval,
+                              generation submittedGeneration: Int, includeVisibility: Bool) {
+        stateLock.lock()
+        guard generation == submittedGeneration, !roadBusy,
+              roadInterval.map({ time - lastRoadSubmission >= $0 }) == true else {
+            stateLock.unlock(); return
+        }
+        roadBusy = true
+        stateLock.unlock()
+        roadQueue.async {
+            defer {
+                self.stateLock.lock(); self.roadBusy = false; self.stateLock.unlock()
+            }
+            self.stateLock.lock(); let current = self.generation == submittedGeneration; self.stateLock.unlock()
+            guard current, ProcessInfo.processInfo.systemUptime - time <= 0.40 else { return }
+            let started = ProcessInfo.processInfo.systemUptime
+            var attempted = false
+            var failed = false
+            var road: RoadRegion?
+            var diagnosticMask: RoadVisibilityMask?
+            do {
+                let result = try self.inference.auxiliary {
+                    self.stateLock.lock(); let current = self.generation == submittedGeneration; self.stateLock.unlock()
+                    guard current, ProcessInfo.processInfo.systemUptime - time <= 0.40 else {
+                        return nil as MLFeatureProvider?
+                    }
+                    attempted = true
+                    let input = try self.makeInput(buffer, width: 640, height: 384, pool: &self.roadInputPool)
+                    let provider = try MLDictionaryFeatureProvider(dictionary: ["image": MLFeatureValue(pixelBuffer: input)])
+                    return try roadModel.prediction(from: provider)
+                }
+                if let result = result.flatMap({ $0 }) {
+                    guard let scores = result.featureValue(for: "road_scores")?.multiArrayValue else {
+                        throw LaneModelError.output
+                    }
+                    let decoded = try self.decodeRoad(scores, excluding: boxes, at: time,
+                        includeVisibility: includeVisibility)
+                    road = decoded.region
+                    diagnosticMask = decoded.mask
+                }
+            } catch {
+                failed = true
+                self.onStatus?("comma.ai lanes active - Intel road model retrying: \(error.localizedDescription)")
+            }
+            guard attempted else { return }
+            let finished = ProcessInfo.processInfo.systemUptime
+            self.stateLock.lock()
+            if self.generation == submittedGeneration {
+                self.lastRoadSubmission = failed ? finished + 2 : time
+                self.roadLatencyHistory.observe(finished - started)
+                // A genuine negative mask invalidates prior road support;
+                // skipping this job at the gate does not.
+                self.roadMeasurements.removeAll { time - $0.time > 1.2 }
+                self.roadMeasurements.append((time, road, diagnosticMask, frame, lane))
+                if self.roadMeasurements.count > 6 { self.roadMeasurements.removeFirst() }
+            }
+            self.stateLock.unlock()
+        }
+    }
+
+    private func decodeRoad(_ roadScores: MLMultiArray, excluding boxes: [CGRect], at time: TimeInterval,
+                            includeVisibility: Bool) throws -> (region: RoadRegion?, mask: RoadVisibilityMask?) {
         let transform = LaneImageTransform(width: 640, height: 384, sourceWidth: 640, sourceHeight: 384)!
         return try self.withScores(roadScores) { values in
             let region = RoadSegmentationScanner.scan(transform: transform, excluding: boxes, at: time) { x, y in
                 let value = values(x, y); return (value.background, value.foreground)
             }
-            guard let region else { return nil as RoadRegion? }
-            guard includeVisibility else { return region }
+            guard includeVisibility else { return (region, nil) }
             let width = 160, height = 96
             var pixels = [UInt8](repeating: 0, count: width * height)
             for y in 0..<height {
@@ -353,8 +393,10 @@ final class LaneTracker {
                        score.foreground - score.background >= 0.25 { pixels[y * width + x] = 1 }
                 }
             }
-            return RoadRegion(bands: region.bands, confidence: region.confidence, capturedAt: time,
-                visibility: RoadVisibilityMask(width: width, height: height, pixels: pixels))
+            let mask = RoadVisibilityMask(width: width, height: height, pixels: pixels)
+            let accepted = region.map { RoadRegion(bands: $0.bands, confidence: $0.confidence,
+                capturedAt: time, visibility: mask) }
+            return (accepted, mask)
         }
     }
 
@@ -386,12 +428,17 @@ final class LaneTracker {
     }
 
     private func decode(_ array: MLMultiArray, excluding boxes: [CGRect]) throws -> [LaneMarkingRow] {
-        guard array.shape.map({ $0.intValue }) == [1, 201, 18, 4] else { throw LaneModelError.output }
+        guard array.shape.map({ $0.intValue }) == [1, 5, 384, 512] else { throw LaneModelError.output }
         let strides = array.strides.map { $0.intValue }
         guard strides.count == 4, strides.allSatisfy({ $0 > 0 }) else { throw LaneModelError.output }
         func scan(_ read: (Int) -> Double) -> [LaneMarkingRow] {
-            UFLDLaneDecoder.decode(excluding: boxes) { grid, row, lane in
-                read(grid * strides[1] + row * strides[2] + lane * strides[3])
+            CommaLaneMarkingDecoder.decode(excluding: boxes) { x, y in
+                let offset = y * strides[2] + x * strides[3]
+                let logits = (0..<5).map { read($0 * strides[1] + offset) }
+                guard logits.allSatisfy(\.isFinite), let maximum = logits.max() else { return 0 }
+                let weights = logits.map { exp($0 - maximum) }
+                let total = weights.reduce(0, +)
+                return total > 0 ? weights[1] / total : 0
             }
         }
         // Avoid ~72,000 temporary NSNumber objects per prediction. Honor the
@@ -570,8 +617,8 @@ private enum LaneModelError: LocalizedError {
     case missing, contract, frame, output
     var errorDescription: String? {
         switch self {
-        case .missing: return "UFLDLane or SegFormerRoad model package is missing"
-        case .contract: return "expected UFLD 800×288 lane_logits and SegFormer 640×384 road_scores"
+        case .missing: return "CommaLane or IntelRoad model package is missing"
+        case .contract: return "expected comma.ai 512×384 lane_scores and Intel road 640×384 road_scores"
         case .frame: return "camera frame could not be resized"
         case .output: return "expected floating-point scores [1,2,height,width]"
         }

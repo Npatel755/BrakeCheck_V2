@@ -1,20 +1,19 @@
-# BrakeCheck RTMDet detectors
+# BrakeCheck third-party models
 
-Camera navigation additionally bundles UFLD ResNet18/CULane (MIT) and NVIDIA
-SegFormer B0/Cityscapes (custom NVIDIA SegFormer license: non-commercial
-research/evaluation only). Full upstream notices and SegFormer's checkpoint card
-are included as UFLD-MIT.txt, SegFormer-NVIDIA-License.txt and
-SegFormer-MODEL-CARD.md. The converted FP16 road model remains subject to its
-original use restriction. Hugging Face Transformers' Apache-2.0 implementation
-license does not relicense NVIDIA's pretrained weights. BrakeCheck modifications
-embed RGB ImageNet normalization; expose UFLD lane logits; and expose SegFormer
-softmax road/non-road probabilities restored to 640×384. Checkpoint revisions,
-sources, preprocessing and file hashes accompany the model packages.
+Camera navigation in this test build bundles comma.ai's `comma10k-segnet`
+semantic segmentation checkpoint for lane-marking pixels and Intel Open Model
+Zoo's `road-segmentation-adas-0001` for road pixels. The former is designated
+MIT by its publisher and was trained on comma10k, whose images and masks are
+published under MIT. Intel Open Model Zoo identifies the latter with
+Apache-2.0. Both converted Core ML packages retain source and hash records.
 
-UFLD upstream: https://github.com/cfzd/Ultra-Fast-Lane-Detection
-SegFormer checkpoint: https://huggingface.co/nvidia/segformer-b0-finetuned-cityscapes-1024-1024
-SegFormer license: https://github.com/NVlabs/SegFormer/blob/master/LICENSE
+Neither checkpoint has yet passed on-device lane, road, AR or thermal
+validation. Lane-marking segmentation does not independently identify the
+correct driving corridor. This build is for evaluation, not production driving.
 
+comma.ai checkpoint: https://huggingface.co/commaai/comma10k-segnet
+comma10k dataset: https://github.com/commaai/comma10k
+Intel checkpoint: https://github.com/openvinotoolkit/open_model_zoo/tree/master/models/intel/road-segmentation-adas-0001
 Day: RTMDet-tiny COCO. Low light: RTMDet-small COCO. These are general COCO
 checkpoints; the low-light profile is not a night-trained model.
 

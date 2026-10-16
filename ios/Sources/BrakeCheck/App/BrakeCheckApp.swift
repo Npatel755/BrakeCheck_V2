@@ -11,6 +11,7 @@ struct BrakeCheckApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(model: model)
+                .font(.brake(.body))
                 .preferredColorScheme(appearance == "light" ? .light : .dark)
                 .onChange(of: scenePhase) { _, phase in model.sceneChanged(phase) }
         }

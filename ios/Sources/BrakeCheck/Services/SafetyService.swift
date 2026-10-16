@@ -1,19 +1,23 @@
 import Foundation
 import Combine
 import UIKit
+import BrakeCheckCore
 
 @MainActor
 final class SafetyService: ObservableObject {
     let settings = ConnectionSettings()
     let audio = VoiceAudio()
+    private let replyRecognizer = LocalCheckinSpeechRecognizer()
     /// Safety audio takes ownership before asynchronous playback can begin.
     var beforePriorityAudio: (() -> Void)?
     @Published var connectionStatus = "Connect your backend"
+    @Published private(set) var deliveryServiceStatus = "Automatic alerts need a connected service and confirmed contacts."
     @Published var voiceStatus = "Voice not prepared"
     @Published var contacts: [EmergencyContact] = []
     @Published var error: String?
     @Published var checkinPresented = false
     @Published var resolved = false
+    @Published var resultNeedsAttention = false
     @Published var checkinTitle = "Are you okay?"
     @Published var checkinDetail = ""
     @Published var remaining = 20
@@ -23,6 +27,9 @@ final class SafetyService: ObservableObject {
     @Published var connectionLost = false
     private var brakeAudio: Data?
     private var preparedSignature = ""
+    private var photonConfigured: Bool?
+    private var voiceRefreshQueued = false
+    private var connectionGeneration = UUID()
     private var flow: Task<Void, Never>?
     private var polling: Task<Void, Never>?
     private var crashID: String?
@@ -31,7 +38,7 @@ final class SafetyService: ObservableObject {
     private var sessionGeneration = UUID()
     private var awaitingAlertDelivery = false
 
-    var canRespond: Bool { crashID != nil && !resolved && !sending }
+    var canRespond: Bool { checkinPresented && !resolved && !sending && (isDryRun || crashID != nil) }
 
     func connectIfPaired() async {
         guard settings.isPaired else { return }
@@ -39,12 +46,18 @@ final class SafetyService: ObservableObject {
     }
 
     func connect() async {
+        let generation = UUID()
+        connectionGeneration = generation
         error = nil
+        connectionStatus = "Checking connection…"
+        deliveryServiceStatus = "Checking automatic alert setup…"
         do {
             if !settings.isPaired { try settings.saveKey() }
             var client = settings.client
             if client == nil && settings.isPaired {
-                settings.address = try await BonjourServiceDiscovery().discoverBackend().absoluteString
+                let discovered = try await BonjourServiceDiscovery().discoverBackend()
+                guard connectionGeneration == generation else { return }
+                settings.address = discovered.absoluteString
                 client = settings.client
             }
             guard let currentClient = client else {
@@ -55,44 +68,96 @@ final class SafetyService: ObservableObject {
                 result = try await currentClient.request("health", timeout: 6)
             } catch {
                 guard settings.isPaired, currentClient.baseURL.scheme?.lowercased() == "http" else { throw error }
-                settings.address = try await BonjourServiceDiscovery().discoverBackend().absoluteString
+                let discovered = try await BonjourServiceDiscovery().discoverBackend()
+                guard connectionGeneration == generation else { return }
+                settings.address = discovered.absoluteString
                 guard let refreshedClient = settings.client else { throw error }
                 result = try await refreshedClient.request("health", timeout: 8)
             }
-            connectionStatus = "Connected · \(result.confirmed_contacts) contacts ready"
-            voiceStatus = result.voice_configured ? "ElevenLabs configured" : "Add the ElevenLabs key on the backend"
+            guard connectionGeneration == generation else { return }
+            guard result.ok else { throw APIError.message("The backend health check did not report ready.") }
+            photonConfigured = result.photon_configured
+            connectionStatus = "Backend connected"
+            updateDeliveryServiceStatus(confirmedContacts: result.confirmed_contacts)
+            voiceStatus = !settings.voiceEnabled ? "Spoken alerts off" : SpeechVoicePreferences.usesBackendAlerts
+                ? (result.voice_configured ? "ElevenLabs brake voice configured" : "Device voice ready · ElevenLabs unavailable")
+                : "Device voice ready"
             await refreshContacts()
-        } catch { connectionStatus = "Connection unavailable"; self.error = error.localizedDescription }
+            guard connectionGeneration == generation else { return }
+            if settings.voiceEnabled && SpeechVoicePreferences.usesBackendAlerts {
+                Task { await self.prepareVoice() }
+            }
+        } catch {
+            guard connectionGeneration == generation else { return }
+            photonConfigured = nil
+            connectionStatus = "Connection unavailable"
+            deliveryServiceStatus = "Automatic alert setup cannot be verified until the service connects."
+            brakeAudio = nil; preparedSignature = ""
+            voiceStatus = settings.voiceEnabled ? "Device voice fallback · backend unavailable" : "Spoken alerts off"
+            self.error = error.localizedDescription
+        }
     }
 
     func prepareVoice() async {
-        guard settings.voiceEnabled, !preparing else { return }
+        if preparing { voiceRefreshQueued = true; return }
+        guard settings.voiceEnabled else {
+            brakeAudio = nil; preparedSignature = ""; voiceStatus = "Spoken alerts off"; return
+        }
         guard SpeechVoicePreferences.usesBackendAlerts else {
-            brakeAudio = nil; voiceStatus = "Device voice ready"; return
+            brakeAudio = nil; preparedSignature = ""; voiceStatus = "Device voice ready"; return
         }
         guard let client = settings.client else {
+            brakeAudio = nil; preparedSignature = ""
             voiceStatus = "Device voice fallback · backend unavailable"; return
         }
         let signature = settings.address + settings.language + settings.credentialForSignature
         let language = settings.language
         preparing = true
-        defer { preparing = false }
+        defer {
+            preparing = false
+            if voiceRefreshQueued {
+                voiceRefreshQueued = false
+                Task { await self.prepareVoice() }
+            }
+        }
         do {
             let data = try await client.data("voice/alert", method: "POST", json: ["kind": "brake", "lang": language], timeout: 40)
-            guard SpeechVoicePreferences.usesBackendAlerts,
+            guard settings.voiceEnabled, SpeechVoicePreferences.usesBackendAlerts,
                   signature == settings.address + settings.language + settings.credentialForSignature else { return }
             brakeAudio = data
             preparedSignature = signature
             voiceStatus = "ElevenLabs voice ready"
         } catch {
-            guard signature == settings.address + settings.language + settings.credentialForSignature else { return }
-            brakeAudio = nil; voiceStatus = "Device voice fallback · backend unavailable"
+            guard settings.voiceEnabled,
+                  signature == settings.address + settings.language + settings.credentialForSignature else { return }
+            brakeAudio = nil; preparedSignature = ""
+            voiceStatus = "Device voice fallback · backend unavailable"
+        }
+    }
+
+    private func updateDeliveryServiceStatus(confirmedContacts: Int) {
+        if photonConfigured == nil {
+            deliveryServiceStatus = "Test the service connection to verify automatic alert setup."
+        } else if photonConfigured == false {
+            deliveryServiceStatus = "Automatic alerts unavailable: configure the Photon delivery service."
+        } else if confirmedContacts == 0 {
+            deliveryServiceStatus = "Automatic alerts need at least one confirmed contact."
+        } else {
+            deliveryServiceStatus = "Automatic alerts configured for \(confirmedContacts) confirmed contact(s). Delivery is not guaranteed."
         }
     }
 
     func requestMicrophone() async {
-        let granted = await audio.requestMicrophone()
-        if !granted { error = "Microphone permission is off. Check-ins still offer on-screen buttons." }
+        let microphoneGranted = await audio.requestMicrophone()
+        let speechGranted = await replyRecognizer.requestSpeechPermission()
+        if !microphoneGranted || !speechGranted {
+            error = "Spoken replies need microphone and speech permissions. Check-ins still offer on-screen buttons."
+        } else if !LocalCheckinSpeechRecognizer.supportsOnDeviceRecognition(language: settings.language) {
+            voiceStatus = "Device voice ready · spoken replies unavailable for this language"
+        } else {
+            error = nil
+            voiceStatus = "Device voice and spoken replies ready"
+        }
     }
 
     func brakeWarning() {
@@ -125,8 +190,10 @@ final class SafetyService: ObservableObject {
             let result: [EmergencyContact] = try await client.request("contacts")
             guard signature == settings.address + settings.credentialForSignature else { return }
             contacts = result
+            updateDeliveryServiceStatus(confirmedContacts: result.filter(\.confirmed).count)
         } catch {
             guard signature == settings.address + settings.credentialForSignature else { return }
+            deliveryServiceStatus = "Could not refresh contacts; automatic alert setup is unverified."
             self.error = error.localizedDescription
         }
     }
@@ -183,18 +250,20 @@ final class SafetyService: ObservableObject {
 
     func beginCheckin(location: CrashLocation?, speedMPH: Double?, dryRun: Bool) {
         guard !checkinPresented else { return }
+        if dryRun { beginLocalDemo(); return }
         guard let client = settings.client else { error = "Connect the backend before starting a check-in."; return }
         beforePriorityAudio?()
         sessionGeneration = UUID()
         let generation = sessionGeneration
         awaitingAlertDelivery = false
-        isDryRun = dryRun; resolved = false; sending = false; remaining = 60; connectionLost = false
-        checkinTitle = dryRun ? "Demo check-in" : "Possible impact detected"
+        isDryRun = false; resolved = false; resultNeedsAttention = false
+        sending = false; remaining = 60; connectionLost = false
+        checkinTitle = "Possible impact detected"
         checkinDetail = "Connecting…"
         checkinPresented = true
         activeClient = client
         crashID = nil
-        var payload: [String: Any] = ["lang": settings.language, "dry_run": dryRun, "client_event_id": UUID().uuidString]
+        var payload: [String: Any] = ["lang": settings.language, "dry_run": false, "client_event_id": UUID().uuidString]
         if let location, Date().timeIntervalSince(location.measuredAt) < 15 {
             payload["lat"] = location.latitude; payload["lon"] = location.longitude
         }
@@ -207,12 +276,13 @@ final class SafetyService: ObservableObject {
                 self.crashID = started.crash_id
                 self.startPolling(client: client, id: started.crash_id, generation: generation)
                 self.checkinTitle = "Are you okay?"
-                self.checkinDetail = "Listen to the prompt, then say “I'm okay” or “help”."
+                self.checkinDetail = "Say I am okay or help, or use a button."
+                var promptSpoken = false
                 if self.settings.voiceEnabled {
                     do {
-                        let data = try await client.data("crash/\(started.crash_id)/checkin.mp3", timeout: 10)
-                        try Task.checkCancellation()
-                        try await self.audio.play(data)
+                        // The spoken question finishes before the microphone opens.
+                        try await self.audio.speakCheckinPrompt(language: self.settings.language)
+                        promptSpoken = true
                     } catch is CancellationError { return }
                     catch {
                         guard self.sessionGeneration == generation, self.checkinPresented,
@@ -221,27 +291,55 @@ final class SafetyService: ObservableObject {
                     }
                 }
                 try Task.checkCancellation()
-                let armed: CrashResponse = try await client.request("crash/\(started.crash_id)/arm", method: "POST")
-                guard self.sessionGeneration == generation, self.checkinPresented, !Task.isCancelled else { return }
-                if armed.status != "pending" { self.finish(armed); return }
-                self.remaining = 20
-                if self.settings.voiceEnabled {
+                if promptSpoken && self.replyRecognizer.canRecognizeWithoutPrompt(language: self.settings.language) {
                     do {
-                        // Playback has completely finished before microphone capture starts.
-                        try await Task.sleep(nanoseconds: 350_000_000)
-                        self.checkinDetail = "Listening for 6 seconds… Say “I'm okay” or “help”."
-                        let recording = try await self.audio.recordReply()
+                        self.checkinDetail = "Listening for 6 seconds. Use a button at any time."
+                        let transcript = try await self.replyRecognizer.recognizeReply(
+                            using: self.audio, language: self.settings.language)
                         try Task.checkCancellation()
-                        self.checkinDetail = "Checking your reply… You can still use a button."
-                        let result = try await client.reply(crashID: started.crash_id, audio: recording)
-                        self.finish(result)
+                        guard self.sessionGeneration == generation, self.checkinPresented,
+                              !self.resolved else { return }
+                        let decision = CrashReplyClassifier.classify(transcript ?? "")
+                        if decision != .unrecognized {
+                            self.sending = true
+                            self.checkinDetail = "Confirming your spoken reply."
+                            do {
+                                let result: CrashResponse = try await client.request(
+                                    "crash/\(started.crash_id)/respond", method: "POST",
+                                    json: ["status": decision.rawValue], timeout: 8)
+                                guard self.sessionGeneration == generation, self.checkinPresented,
+                                      !Task.isCancelled else { return }
+                                self.finish(result)
+                                return
+                            } catch is CancellationError { return }
+                            catch {
+                                guard self.sessionGeneration == generation, self.checkinPresented,
+                                      !Task.isCancelled else { return }
+                                self.sending = false
+                                self.checkinDetail = "Spoken reply not confirmed. Use a button before the countdown ends."
+                            }
+                        } else {
+                            self.checkinDetail = "Could not confirm your words. Use a button before the countdown ends."
+                        }
                     } catch is CancellationError { return }
                     catch {
                         guard self.sessionGeneration == generation, self.checkinPresented,
                               !Task.isCancelled, !self.awaitingAlertDelivery, !self.resolved else { return }
-                        self.checkinDetail = error.localizedDescription
+                        self.checkinDetail = "Spoken reply unavailable. Use a button before the countdown ends."
                     }
-                } else { self.checkinDetail = "Choose below before the countdown ends." }
+                } else if promptSpoken {
+                    self.checkinDetail = "Spoken replies need permissions and on-device support. Use a button before the countdown ends."
+                } else if !self.settings.voiceEnabled {
+                    self.checkinDetail = "Choose below before the countdown ends."
+                }
+                // The backend keeps its 60-second fallback while device speech
+                // runs. Arm only afterward so the buttons get a full 20 seconds.
+                let armed: CrashResponse = try await client.request(
+                    "crash/\(started.crash_id)/arm", method: "POST")
+                guard self.sessionGeneration == generation, self.checkinPresented,
+                      !Task.isCancelled else { return }
+                if armed.status != "pending" { self.finish(armed); return }
+                self.remaining = 20
             } catch is CancellationError { return }
             catch {
                 guard self.sessionGeneration == generation, self.checkinPresented, !Task.isCancelled else { return }
@@ -253,6 +351,88 @@ final class SafetyService: ObservableObject {
                     self.crashID = id
                     self.startPolling(client: client, id: id, generation: generation)
                 }
+            }
+        }
+    }
+
+    private func beginLocalDemo() {
+        beforePriorityAudio?()
+        sessionGeneration = UUID()
+        let generation = sessionGeneration
+        awaitingAlertDelivery = false
+        isDryRun = true; resolved = false; resultNeedsAttention = false
+        sending = false; remaining = 20; connectionLost = false
+        checkinTitle = "Demo check-in"
+        checkinDetail = "No messages will be sent. Say I am okay or help, or use a button."
+        activeClient = nil; crashID = nil; checkinPresented = true
+        flow = Task { [weak self] in
+            guard let self else { return }
+            var promptSpoken = false
+            if self.settings.voiceEnabled {
+                do {
+                    try await self.audio.speakCheckinPrompt(language: self.settings.language)
+                    promptSpoken = true
+                } catch is CancellationError { return }
+                catch { self.checkinDetail = "Voice prompt unavailable. Use the check-in buttons." }
+            }
+            guard self.sessionGeneration == generation, self.checkinPresented,
+                  !self.resolved, !Task.isCancelled else { return }
+            self.startLocalDemoCountdown(generation: generation)
+            guard promptSpoken else { return }
+            do {
+                self.checkinDetail = "Listening for 6 seconds. No messages will be sent."
+                let transcript = try await self.replyRecognizer.recognizeReply(
+                    using: self.audio, language: self.settings.language)
+                guard self.sessionGeneration == generation, self.checkinPresented,
+                      !self.resolved, !Task.isCancelled else { return }
+                switch CrashReplyClassifier.classify(transcript ?? "") {
+                case .ok: self.finishLocalDemo(status: "ok")
+                case .help: self.finishLocalDemo(status: "help")
+                case .unrecognized:
+                    self.checkinDetail = "Could not confirm your words. Use a button before the countdown ends."
+                }
+            } catch is CancellationError { return }
+            catch {
+                guard self.sessionGeneration == generation, self.checkinPresented,
+                      !self.resolved, !Task.isCancelled else { return }
+                self.checkinDetail = "Spoken reply unavailable. Use a button before the countdown ends."
+            }
+        }
+    }
+
+    private func startLocalDemoCountdown(generation: UUID) {
+        let deadline = Date().addingTimeInterval(20)
+        polling?.cancel()
+        polling = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.sessionGeneration == generation,
+                      self.checkinPresented, !self.resolved else { return }
+                self.remaining = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
+                if self.remaining == 0 {
+                    self.finishLocalDemo(status: "no_response")
+                    return
+                }
+                do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
+            }
+        }
+    }
+
+    private func finishLocalDemo(status: String, speakAcknowledgement: Bool = true) {
+        guard isDryRun, checkinPresented, !resolved else { return }
+        resolved = true; sending = false; remaining = 0
+        flow?.cancel(); polling?.cancel(); replyRecognizer.cancel(); audio.stop()
+        checkinTitle = "Demo complete"
+        switch status {
+        case "ok": checkinDetail = "I am okay was recorded for this demo. No messages were sent."
+        case "help": checkinDetail = "Help was recorded for this demo. No messages were sent."
+        case "interrupted": checkinDetail = "Demo stopped when the app left the foreground. No messages were sent."
+        default: checkinDetail = "No clear response was received. No messages were sent."
+        }
+        if speakAcknowledgement && settings.voiceEnabled {
+            flow = Task { [weak self] in
+                guard let self else { return }
+                try? await self.audio.speakCheckinAcknowledgement(
+                    status: .demo, language: self.settings.language)
             }
         }
     }
@@ -286,9 +466,11 @@ final class SafetyService: ObservableObject {
     }
 
     func respond(ok: Bool) {
-        guard canRespond, let id = crashID, let client = activeClient else { return }
+        guard canRespond else { return }
+        if isDryRun { finishLocalDemo(status: ok ? "ok" : "help"); return }
+        guard let id = crashID, let client = activeClient else { return }
         let generation = sessionGeneration
-        flow?.cancel(); audio.stop(); sending = true
+        flow?.cancel(); replyRecognizer.cancel(); audio.stop(); sending = true
         flow = Task {
             defer { if sessionGeneration == generation && !awaitingAlertDelivery { sending = false } }
             do {
@@ -312,8 +494,10 @@ final class SafetyService: ObservableObject {
             return
         }
         awaitingAlertDelivery = false
+        resultNeedsAttention = !response.dry_run && response.status != "ok"
+            && (!response.alerted || (response.failed_count ?? 0) > 0)
         resolved = true; sending = false
-        polling?.cancel(); flow?.cancel(); audio.stop()
+        polling?.cancel(); flow?.cancel(); replyRecognizer.cancel(); audio.stop()
         if response.dry_run {
             checkinTitle = "Demo complete"
             checkinDetail = "Result: \(response.status.replacingOccurrences(of: "_", with: " ")). No emergency messages were sent."
@@ -330,31 +514,39 @@ final class SafetyService: ObservableObject {
             checkinTitle = "Alert not confirmed"
             checkinDetail = response.alert_error ?? "No emergency contact was notified."
         }
-        if settings.voiceEnabled, let path = response.ack_audio_url, let client = activeClient {
-            flow = Task {
-                if let data = try? await client.data(path, timeout: 8), !Task.isCancelled {
-                    try? await audio.play(data)
-                }
+        if settings.voiceEnabled {
+            let acknowledgement: LocalCheckinAcknowledgement = response.dry_run ? .demo
+                : response.status == "ok" ? .okay
+                : response.alerted ? (response.status == "no_response" ? .noResponse : .help)
+                : .failed
+            flow = Task { [weak self] in
+                guard let self else { return }
+                try? await self.audio.speakCheckinAcknowledgement(
+                    status: acknowledgement, language: self.settings.language)
             }
         }
     }
 
     func closeUnconfirmed() {
         sessionGeneration = UUID(); awaitingAlertDelivery = false
-        flow?.cancel(); polling?.cancel(); audio.stop(); checkinPresented = false
+        flow?.cancel(); polling?.cancel(); replyRecognizer.cancel(); audio.stop(); checkinPresented = false
         crashID = nil; activeClient = nil
     }
 
     func closeCheckin() {
         guard resolved else { return }
         sessionGeneration = UUID(); awaitingAlertDelivery = false
-        flow?.cancel(); polling?.cancel(); audio.stop(); checkinPresented = false
+        flow?.cancel(); polling?.cancel(); replyRecognizer.cancel(); audio.stop(); checkinPresented = false
         crashID = nil; activeClient = nil
     }
 
     func pauseAudio() {
+        if isDryRun, checkinPresented, !resolved {
+            finishLocalDemo(status: "interrupted", speakAcknowledgement: false)
+            return
+        }
         // The backend owns the timeout even if iOS suspends the app.
-        flow?.cancel(); polling?.cancel(); polling = nil; audio.stop()
+        flow?.cancel(); polling?.cancel(); polling = nil; replyRecognizer.cancel(); audio.stop()
     }
 
     func resumeForegroundPolling() {

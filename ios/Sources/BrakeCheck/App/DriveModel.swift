@@ -48,7 +48,9 @@ final class DriveModel: ObservableObject {
 
     private var estimator = LeadRiskContinuity()
     private var cameraRangeEstimator = CameraRangeEstimator()
-    let measurementRevision = "N40"
+    var measurementRevision: String {
+        "N" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")
+    }
     private var detectorMeasurementGeneration: Int?
 
     private var speedReading: GPSSpeedSample?
@@ -60,7 +62,6 @@ final class DriveModel: ObservableObject {
     private var currentCameraRisk: RiskSnapshot?
     private var dangerContinuity = LeadDangerContinuity()
     private var laneDisplayContinuity = LaneDisplayContinuity(rejectOutliers: true, smoothingSeconds: 0.4)
-    private var roadDisplayContinuity = RoadDisplayContinuity()
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -199,8 +200,6 @@ final class DriveModel: ObservableObject {
 
     @Published var trackingBox: CGRect?
     @Published var lanePath: LanePath?
-    @Published var roadRegion: RoadRegion?
-    @Published var roadDisplayRegion: RoadRegion?
     let arPresentation = CameraARPresentation()
     var arScene: CameraARScene? { arPresentation.scene }
     var cameraCalibrationEstimate: CameraCalibrationEstimate? { arPresentation.calibrationEstimate }
@@ -243,6 +242,8 @@ final class DriveModel: ObservableObject {
     @Published var motionStatus = "Impact sensing off"
 
     @Published var incidents: [IncidentManifest] = []
+    /// Local GPS trail and flagged moments for the trip detail page.
+    let tripRoute = TripRouteRecorder()
 
     @Published var message: String?
 
@@ -288,6 +289,7 @@ final class DriveModel: ObservableObject {
                 let measured = Date().addingTimeInterval(reading.measurementUptime - ProcessInfo.processInfo.systemUptime)
                 self.speedLog.append(speed: reading.metersPerSecond, accuracy: reading.accuracy, at: measured)
                 self.lastLoggedGPSUptime = reading.measurementUptime
+                if let location = self.speedService.latestLocation { self.tripRoute.add(location) }
             }
 
             if reading == nil { self.invalidateRisk("GPS speed unavailable.") }
@@ -415,6 +417,9 @@ final class DriveModel: ObservableObject {
         }
 
         camera.tracker.onLane = { [weak self] lane in
+            // Perception guides are optional diagnostics. Safety and AR use
+            // the tracker's lane directly, so hidden guides need no UI work.
+            guard UserDefaults.standard.bool(forKey: "display.laneGuides") else { return }
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo else { return }
                 guard !self.changingCameraGeometry,
@@ -476,17 +481,6 @@ final class DriveModel: ObservableObject {
 
             }
         }
-        camera.tracker.onRoad = { [weak self] road in
-            DispatchQueue.main.async {
-                guard let self, self.foreground, self.tripActive || self.replaying, !self.demo else { return }
-                guard !self.changingCameraGeometry,
-                      road.map({ $0.capturedAt >= self.latestGeometryChangeUptime }) ?? true else { return }
-                if self.roadRegion?.capturedAt != road?.capturedAt { self.roadRegion = road }
-                let displayed = self.roadDisplayContinuity.update(road, at: ProcessInfo.processInfo.systemUptime)
-                if self.roadDisplayRegion?.capturedAt != displayed?.capturedAt { self.roadDisplayRegion = displayed }
-            }
-        }
-
         camera.tracker.onLost = { [weak self] id, reason in
 
             DispatchQueue.main.async {
@@ -578,6 +572,7 @@ final class DriveModel: ObservableObject {
         lastLoggedGPSUptime = nil
         speedLog.start(at: tripStarted)
         wasHardBrake = false; wasCloseCall = false
+        tripRoute.start(destination: navigation.isNavigating ? navigation.destinationTitle : nil)
         Task { await safety.prepareVoice() }
 
         clearFusionDisplay()
@@ -593,7 +588,7 @@ final class DriveModel: ObservableObject {
     }
 
     func startNavigationDrive() {
-        guard !stopping, !demo, !replaying, navigation.hasFreshLocation, navigation.route != nil else { return }
+        guard !stopping, !demo, !replaying, navigation.mapLocation != nil, navigation.route != nil else { return }
         navigation.startGuidance()
         if navigation.isNavigating && !tripActive { startTrip() }
     }
@@ -636,10 +631,15 @@ final class DriveModel: ObservableObject {
         let endedAt = Date()
         tripMinutes = max(0, endedAt.timeIntervalSince(tripStarted) / 60)
         do {
-            savedTrips = try tripMetricsStore.save(TripMetrics(startedAt: tripStarted, endedAt: endedAt,
+            let trip = TripMetrics(startedAt: tripStarted, endedAt: endedAt,
                 maxSpeedMPH: tripHadGPSSpeed ? maxSpeedMPH : nil,
-                estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls))
-        } catch { message = "Could not save this trip's metrics. Existing trip history has been kept." }
+                estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls)
+            savedTrips = try tripMetricsStore.save(trip)
+            tripRoute.finish(tripID: trip.id)
+        } catch {
+            tripRoute.cancel()
+            message = "Could not save this trip's metrics. Existing trip history has been kept."
+        }
         safety.sendTrip(minutes: tripMinutes,
                         hardBrakes: hardBrakes, closeCalls: closeCalls, maxSpeedMPH: maxSpeedMPH)
 
@@ -684,7 +684,8 @@ final class DriveModel: ObservableObject {
 
         navigation.setForeground(phase == .active)
 
-        if phase == .background {
+        if phase != .active {
+            guard foreground else { return }
 
             foreground = false
             reconcileDisplayTimer()
@@ -814,8 +815,6 @@ final class DriveModel: ObservableObject {
         frameAlignmentStatus = "Waiting for camera and GPS"
         laneDisplayContinuity.reset()
         lanePath = nil
-        roadRegion = nil
-        roadDisplayContinuity.reset(); roadDisplayRegion = nil
         arPresentation.reset(); cameraCalibrationAssistant = CameraCalibrationAssistant()
 
         trackingStatus = reason
@@ -1113,7 +1112,10 @@ final class DriveModel: ObservableObject {
                 speedBlocker = "Range unsettled"
                 leadSelectionStatus = "Lead confirmed · range unsettled"
             }
-            collisionBlocker = risk.score == nil ? speedBlocker : ""
+            collisionBlocker = risk.score == nil
+                ? reading.confidence < 0.65 ? "Low confidence"
+                    : !reading.hasConfirmedRearIdentity ? "Checking lead" : "Sampling motion"
+                : ""
             if risk.timeToCollision != nil { leadSelectionStatus = "Lead \(reading.targetID.uuidString.prefix(4)) · gap closing" }
         }
         refreshEstimatedLeadSpeed(at: now)
@@ -1210,11 +1212,10 @@ final class DriveModel: ObservableObject {
         if !detections.isEmpty, !TrackingFreshness.measurementIsFresh(capturedAt: lastDetectionsUptime, now: now) {
             detections = []
         }
-        let displayedLane = laneDisplayContinuity.current(at: now)
-        if lanePath?.capturedAt != displayedLane?.capturedAt { lanePath = displayedLane }
-        if roadRegion?.isUsable(at: now) == false { roadRegion = nil }
-        let displayedRoad = roadDisplayContinuity.current(at: now)
-        if roadDisplayRegion?.capturedAt != displayedRoad?.capturedAt { roadDisplayRegion = displayedRoad }
+        if UserDefaults.standard.bool(forKey: "display.laneGuides") {
+            let displayedLane = laneDisplayContinuity.current(at: now)
+            if lanePath?.capturedAt != displayedLane?.capturedAt { lanePath = displayedLane }
+        }
         guard targetID != nil else { return }
         if !TrackingFreshness.identityIsFresh(capturedAt: lastTrackingUptime, now: now) {
             clearTarget("Vehicle track expired · reacquiring the lead")
@@ -1346,12 +1347,22 @@ final class DriveModel: ObservableObject {
         if brakeWarningActive != active { brakeWarningActive = active }
         if critical && !alreadyVisible {
             safety.brakeWarning()
+            tripRoute.add(.brakeAlert, at: speedService.latestLocation,
+                speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: risk.timeToCollision)
         }
         let braking = (risk.leadAcceleration ?? 0) < -3
-        if braking && !wasHardBrake { hardBrakes += 1 }
+        if braking && !wasHardBrake {
+            hardBrakes += 1
+            tripRoute.add(.hardBrake, at: speedService.latestLocation,
+                speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: nil)
+        }
         wasHardBrake = braking
         let close = risk.timeToCollision.map { $0 < 2 } ?? false
-        if close && !wasCloseCall { closeCalls += 1 }
+        if close && !wasCloseCall {
+            closeCalls += 1
+            tripRoute.add(.closeCall, at: speedService.latestLocation,
+                speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: risk.timeToCollision)
+        }
         wasCloseCall = close
     }
 

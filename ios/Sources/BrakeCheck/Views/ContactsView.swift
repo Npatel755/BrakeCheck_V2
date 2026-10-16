@@ -22,9 +22,9 @@ struct ContactsView: View {
         Group {
             Form {
                 Section {
-                    Label("Your people, one check-in away.", systemImage: "person.2.fill").font(.headline)
+                    Label("Your people, one check-in away.", systemImage: "person.2.fill").font(.brake(.headline))
                     Text("Adding a contact opens their Messages invitation. Tap Send. They open the link and send YES to the BrakeCheck number to confirm. Only confirmed contacts receive alerts; STOP opts them out.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.brake(.caption)).foregroundStyle(.secondary)
                 }
                 Section("Add a contact") {
                     TextField("First name", text: $name).textContentType(.givenName)
@@ -42,24 +42,24 @@ struct ContactsView: View {
                             busy = false
                         }
                     }.disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty || phone.isEmpty || service.settings.client == nil)
-                    if let error = service.error { Text(error).foregroundStyle(.orange).font(.caption) }
+                    if let error = service.error { Text(error).foregroundStyle(.orange).font(.brake(.caption)) }
                 }
                 Section("Emergency contacts") {
                     if let invitationNotice {
-                        Text(invitationNotice).font(.caption).foregroundStyle(.secondary)
+                        Text(invitationNotice).font(.brake(.caption)).foregroundStyle(.secondary)
                     }
                     Text("Send a clearly marked test to a confirmed contact. Test messages never include your location.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.brake(.caption)).foregroundStyle(.secondary)
                     if service.contacts.isEmpty { Text("No contacts yet").foregroundStyle(.secondary) }
                     ForEach(service.contacts) { contact in
                         VStack(alignment: .leading, spacing: 10) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(contact.first_name).font(.headline)
-                                Text(contact.phone).font(.caption).foregroundStyle(.secondary)
+                                Text(contact.first_name).font(.brake(.headline))
+                                Text(contact.phone).font(.brake(.caption)).foregroundStyle(.secondary)
                                 Label(contact.removalPending ? "Removal pending · retry Remove"
                                       : contact.confirmed ? "Ready for alerts" : "Waiting for YES",
                                       systemImage: contact.confirmed ? "checkmark.seal.fill" : "clock")
-                                    .font(.caption).foregroundStyle(contact.confirmed ? BrakeTheme.accent : Color.orange)
+                                    .font(.brake(.caption)).foregroundStyle(contact.confirmed ? BrakeTheme.accent : Color.orange)
                             }
                             HStack(spacing: 18) {
                                 Button { inviting = contact; invitationNotice = nil } label: {
@@ -188,7 +188,7 @@ private struct ContactInviteFallback: View {
         NavigationStack {
             Form {
                 Section("Invite \(contact.first_name)") {
-                    Text(contact.phone).font(.caption).foregroundStyle(.secondary)
+                    Text(contact.phone).font(.brake(.caption)).foregroundStyle(.secondary)
                     Text("Messages is unavailable on this device. Share this invitation with your contact so they can open the link and send YES to confirm.")
                     ShareLink(item: contactInvitationText(contact)) {
                         Label("Share confirmation invitation", systemImage: "square.and.arrow.up")
