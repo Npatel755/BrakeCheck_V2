@@ -103,7 +103,9 @@ struct ReplayView: View {
                     }
 
                     if speedChoice == .videoOnly {
-                        Text("Replay shows vehicle, lane, and road detections. Camera route AR needs synchronized GPS and route data and is available during live navigation only.")
+                        Text(AppScope.neuralLanes
+                             ? "Replay shows vehicle, lane, and road detections. Camera route AR needs synchronized GPS and route data and is available during live navigation only."
+                             : "Replay shows vehicle and lane detections.")
                             .font(.brake(.caption)).foregroundStyle(.secondary)
                     } else if speedChoice == .assumed {
                         Stepper(String(format: "%.0f mph", assumedMPH), value: $assumedMPH, in: 5...80, step: 5)

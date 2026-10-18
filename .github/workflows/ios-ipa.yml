@@ -22,13 +22,7 @@ jobs:
       - name: Generate the Xcode app project
         run: |
           brew install xcodegen
-          python3 scripts/app_info_plist.py Info.plist AppTarget/Info.plist --release
-          icons=AppTarget/Entry/Assets.xcassets/AppIcon.appiconset
-          mkdir -p "$icons"
-          cp AppIcon.png "$icons/AppIcon.png"
-          echo '{"info":{"author":"xcode","version":1}}' > AppTarget/Entry/Assets.xcassets/Contents.json
-          echo '{"images":[{"filename":"AppIcon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}' > "$icons/Contents.json"
-          cd AppTarget && xcodegen generate
+          bash scripts/generate_app_project.sh
 
       - name: Build (Release, unsigned)
         run: |
