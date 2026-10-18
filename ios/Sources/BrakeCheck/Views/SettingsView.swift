@@ -4,10 +4,11 @@ import SwiftUI
 import UIKit
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
-    case appearance, camera, recordings, connection, voice, safety, permissions, demo, about
+    case plus, appearance, camera, recordings, connection, voice, safety, permissions, demo, about
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .plus: return "BrakeCheck Plus"
         case .appearance: return "Appearance"
         case .camera: return "Camera display"
         case .recordings: return "Recordings & storage"
@@ -21,6 +22,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     }
     var icon: String {
         switch self {
+        case .plus: return "sparkles"
         case .appearance: return "paintbrush"
         case .camera: return "viewfinder"
         case .recordings: return "externaldrive"
@@ -34,6 +36,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     }
     var detail: String {
         switch self {
+        case .plus: return "Full trip history and extras. Safety features are always free."
         case .appearance: return "Choose the look that feels right."
         case .camera: return "Units and overlays for your road view."
         case .recordings: return "Manage video space, speed logs, and optional automatic cleanup."
@@ -81,6 +84,8 @@ struct SettingsView: View {
     @State private var pairing = false
     @State private var showingPairingScanner = false
     @State private var selectedCategory: SettingsCategory = .appearance
+    @EnvironmentObject private var plus: PlusStore
+    @State private var showingPlus = false
     @Binding var requestDemo: Bool
     var openCameraSetup: (() -> Void)? = nil
     @AppStorage("display.appearance") private var appearance = "dark"
@@ -105,7 +110,7 @@ struct SettingsView: View {
     private var groups: [(String, [SettingsCategory])] {
         let services: (String, [SettingsCategory]) = AppScope.connectedServices
             ? ("Connected services", [.connection, .voice]) : ("Sound", [.voice])
-        return [("Your app", [.appearance, .camera, .recordings]), services,
+        return [("BrakeCheck Plus", [.plus]), ("Your app", [.appearance, .camera, .recordings]), services,
                 ("Safety", [.safety, .permissions]), ("Explore", [.demo, .about])]
     }
 
@@ -275,6 +280,17 @@ struct SettingsView: View {
 
     @ViewBuilder private func controls(_ category: SettingsCategory) -> some View {
         switch category {
+        case .plus:
+            if plus.isPlus {
+                Label("Plus is active", systemImage: "checkmark.seal.fill").foregroundStyle(BrakeTheme.accent)
+                Link("Manage subscription", destination: URL(string: "https://apps.apple.com/account/subscriptions")!)
+            } else {
+                Text("Plus keeps your full trip history. Free keeps your last \(PlusPolicy.freeTripHistoryCount) trips, and every safety warning stays free.")
+                    .foregroundStyle(BrakeTheme.muted)
+                Button("See Plus plans") { showingPlus = true }
+                    .sheet(isPresented: $showingPlus) { PlusPaywallView().environmentObject(plus) }
+            }
+            Button("Restore Purchases") { Task { await plus.restore() } }
         case .appearance:
             Picker("Theme", selection: $appearance) {
                 Text("Light").tag("light")
@@ -489,6 +505,9 @@ struct SettingsView: View {
                     }
                 }
             }
+            Link("Terms of Use", destination: LegalLinks.termsOfUse)
+            if let privacy = LegalLinks.privacyPolicy { Link("Privacy Policy", destination: privacy) }
+            if let support = LegalLinks.support { Link("Support", destination: support) }
             Text(Self.versionText).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         }
     }

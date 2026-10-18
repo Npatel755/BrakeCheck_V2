@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 struct BrakeCheckApp: App {
     @StateObject private var model = DriveModel()
+    @StateObject private var plus = PlusStore()
     @AppStorage("display.appearance") private var appearance = "dark"
     @AppStorage("onboarding.driverAidNotice") private var acceptedNotice = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -16,6 +17,7 @@ struct BrakeCheckApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(model: model)
+                .environmentObject(plus)
                 // Red Hat Display for any text without its own font (forms, labels, buttons).
                 .font(.brake(.body))
                 .preferredColorScheme(appearance == "light" ? .light : .dark)

@@ -7,6 +7,14 @@ struct TripHistoryView: View {
     let useMPH: Bool
     @State private var csvURL: URL?
     @State private var exportError: String?
+    @EnvironmentObject private var plus: PlusStore
+    @State private var showingPlus = false
+
+    /// Newest first. Free keeps the most recent trips visible; older ones stay saved for Plus.
+    private var visibleTrips: ArraySlice<TripMetrics> {
+        model.savedTrips.prefix(PlusPolicy.visibleTripCount(total: model.savedTrips.count, isPlus: plus.isPlus))
+    }
+    private var lockedTrips: Int { PlusPolicy.lockedTripCount(total: model.savedTrips.count, isPlus: plus.isPlus) }
 
     var body: some View {
         ScrollView {
@@ -22,7 +30,7 @@ struct TripHistoryView: View {
                             metric("Time driving", tripDuration(model.savedTrips.reduce(0) { $0 + $1.durationSeconds }))
                         }
                     }.brakePanel()
-                    ForEach(model.savedTrips) { trip in
+                    ForEach(visibleTrips) { trip in
                         NavigationLink {
                             TripDetailView(model: model, trip: trip, useMPH: useMPH)
                                 .modifier(DedicatedPageStyle())
@@ -46,6 +54,20 @@ struct TripHistoryView: View {
                             }.brakePanel()
                         }.buttonStyle(.plain)
                     }
+                    if lockedTrips > 0 {
+                        Button { showingPlus = true } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "lock.fill").foregroundStyle(BrakeTheme.accent).accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(lockedTrips == 1 ? "1 older trip" : "\(lockedTrips) older trips").font(.brake(.headline))
+                                    Text("Saved on this iPhone. See your full history with BrakeCheck Plus.")
+                                        .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(BrakeTheme.accent)
+                            }.brakePanel()
+                        }.buttonStyle(.plain)
+                    }
                 }
                 Text("Saved on this iPhone. Camera event counts are estimates, not confirmed collisions or a driving score.")
                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
@@ -63,6 +85,7 @@ struct TripHistoryView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingPlus) { PlusPaywallView().environmentObject(plus) }
         .sheet(isPresented: Binding(get: { csvURL != nil }, set: { if !$0 { csvURL = nil } })) {
             if let csvURL { TripExportSheet(url: csvURL) }
         }
