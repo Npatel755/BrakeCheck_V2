@@ -1,20 +1,16 @@
-# BrakeCheck RTMDet detectors
+# BrakeCheck third-party models
 
-Camera navigation additionally bundles UFLD ResNet18/CULane (MIT) and NVIDIA
-SegFormer B0/Cityscapes (custom NVIDIA SegFormer license: non-commercial
-research/evaluation only). Full upstream notices and SegFormer's checkpoint card
-are included as UFLD-MIT.txt, SegFormer-NVIDIA-License.txt and
-SegFormer-MODEL-CARD.md. The converted FP16 road model remains subject to its
-original use restriction. Hugging Face Transformers' Apache-2.0 implementation
-license does not relicense NVIDIA's pretrained weights. BrakeCheck modifications
-embed RGB ImageNet normalization; expose UFLD lane logits; and expose SegFormer
-softmax road/non-road probabilities restored to 640×384. Checkpoint revisions,
-sources, preprocessing and file hashes accompany the model packages.
+Camera navigation bundles UFLD ResNet18/CULane lane detection and NVIDIA
+SegFormer B0/Cityscapes road segmentation. The SegFormer checkpoint is for
+non-commercial research and evaluation under the bundled NVIDIA license.
+Checkpoint sources, preprocessing and file hashes accompany the model packages.
+
+UFLD code is MIT, but its CULane-trained checkpoint remains subject to CULane's
+non-commercial dataset terms. Neither camera model is cleared for commercial
+release in this restored test configuration.
 
 UFLD upstream: https://github.com/cfzd/Ultra-Fast-Lane-Detection
-SegFormer checkpoint: https://huggingface.co/nvidia/segformer-b0-finetuned-cityscapes-1024-1024
-SegFormer license: https://github.com/NVlabs/SegFormer/blob/master/LICENSE
-
+SegFormer: https://huggingface.co/nvidia/segformer-b0-finetuned-cityscapes-1024-1024
 Day: RTMDet-tiny COCO. Low light: RTMDet-small COCO. These are general COCO
 checkpoints; the low-light profile is not a night-trained model.
 

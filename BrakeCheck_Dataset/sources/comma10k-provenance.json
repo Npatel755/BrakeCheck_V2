@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/commaai/comma10k",
+  "commit": "6c205fe4c43cc53b2b1befafb1060d0606555027",
+  "license": "MIT",
+  "license_notice": "sources\\comma10k-LICENSE.txt",
+  "image_count_planned": 100
+}

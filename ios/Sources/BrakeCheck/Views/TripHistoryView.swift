@@ -16,7 +16,7 @@ struct TripHistoryView: View {
                         description: Text("Your drive summary appears here after you tap End trip."))
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Your driving history").font(.title2.bold())
+                        Text("Your driving history").font(.brake(.title2, weight: .bold))
                         HStack(spacing: 20) {
                             metric("Completed trips", "\(model.savedTrips.count)")
                             metric("Time driving", tripDuration(model.savedTrips.reduce(0) { $0 + $1.durationSeconds }))
@@ -24,15 +24,15 @@ struct TripHistoryView: View {
                     }.brakePanel()
                     ForEach(model.savedTrips) { trip in
                         NavigationLink {
-                            TripSummaryView(model: model, trip: trip, useMPH: useMPH)
+                            TripDetailView(model: model, trip: trip, useMPH: useMPH)
                                 .modifier(DedicatedPageStyle())
                         } label: {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(trip.startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())).font(.headline)
+                                        Text(trip.startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())).font(.brake(.headline))
                                         Text("\(trip.startedAt.formatted(date: .omitted, time: .shortened)) – \(trip.endedAt.formatted(date: .omitted, time: .shortened))")
-                                            .font(.caption).foregroundStyle(BrakeTheme.muted)
+                                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right").foregroundStyle(BrakeTheme.accent)
@@ -42,13 +42,13 @@ struct TripHistoryView: View {
                                     metric("Max. GPS speed", tripSpeed(trip.maxSpeedMPH, useMPH: useMPH))
                                 }
                                 Text("\(trip.estimatedLeadHardBrakes) estimated lead brakes · \(trip.estimatedCloseCalls) estimated closing events")
-                                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+                                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                             }.brakePanel()
                         }.buttonStyle(.plain)
                     }
                 }
                 Text("Saved on this iPhone. Camera event counts are estimates, not confirmed collisions or a driving score.")
-                    .font(.caption).foregroundStyle(BrakeTheme.muted)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             }.padding(20)
         }
         .foregroundStyle(BrakeTheme.text)
@@ -79,60 +79,10 @@ struct TripHistoryView: View {
     }
 }
 
-private struct TripSummaryView: View {
-    @ObservedObject var model: DriveModel
-    let trip: TripMetrics
-    let useMPH: Bool
-    private var incidents: [IncidentManifest] {
-        model.incidents.filter { $0.triggerTime >= trip.startedAt && $0.triggerTime <= trip.endedAt }
-    }
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(trip.startedAt.formatted(date: .complete, time: .shortened)).font(.title2.bold())
-                VStack(spacing: 14) {
-                    LabeledContent("Started", value: trip.startedAt.formatted(date: .omitted, time: .shortened))
-                    LabeledContent("Ended", value: trip.endedAt.formatted(date: .omitted, time: .shortened))
-                    LabeledContent("Duration", value: tripDuration(trip.durationSeconds))
-                    LabeledContent("Maximum GPS speed", value: tripSpeed(trip.maxSpeedMPH, useMPH: useMPH))
-                }.brakePanel()
-                VStack(alignment: .leading, spacing: 14) {
-                    Label("Camera estimates", systemImage: "viewfinder").font(.headline)
-                    LabeledContent("Estimated lead hard brakes", value: "\(trip.estimatedLeadHardBrakes)")
-                    LabeledContent("Estimated closing events", value: "\(trip.estimatedCloseCalls)")
-                    Text("Closing events count estimated closing time below 2 seconds. These counts depend on camera visibility and tracking; they do not prove a collision or fault.")
-                        .font(.caption).foregroundStyle(BrakeTheme.muted)
-                }.brakePanel()
-                VStack(alignment: .leading, spacing: 14) {
-                    Label("Saved incident footage", systemImage: "film.stack").font(.headline)
-                    if incidents.isEmpty {
-                        Text("No incident footage currently saved for this trip.").font(.subheadline).foregroundStyle(BrakeTheme.muted)
-                    }
-                    ForEach(incidents) { incident in
-                        NavigationLink {
-                            IncidentDetailView(model: model, id: incident.id)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(incident.reason).font(.subheadline.weight(.medium))
-                                    Text("\(incident.triggerTime.formatted(date: .omitted, time: .shortened)) · \(incident.segments.count) clips")
-                                        .font(.caption).foregroundStyle(BrakeTheme.muted)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                            }.foregroundStyle(BrakeTheme.accent)
-                        }
-                    }
-                }.brakePanel()
-            }.padding(20)
-        }.foregroundStyle(BrakeTheme.text).navigationTitle("Trip summary")
-    }
-}
-
 private func metric(_ title: String, _ value: String) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-        Text(value).font(.title3.weight(.semibold)).monospacedDigit()
-        Text(title).font(.caption).foregroundStyle(BrakeTheme.muted)
+        Text(value).font(.brake(.title3, weight: .semibold)).monospacedDigit()
+        Text(title).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
     }.frame(maxWidth: .infinity, alignment: .leading)
 }
 private func tripDuration(_ seconds: Double) -> String {

@@ -109,6 +109,9 @@ def test_polling_exposes_pending_delivery_without_holding_global_lock(client, mo
         finally:
             release.set()
         outcome = deciding.result(timeout=1).json()
+    assert outcome['delivery_pending']
+    crash.CRASHES[cid]['_delivery_worker'].join(timeout=2)
+    outcome = client.get(f'/crash/{cid}').json()
     assert outcome['sent'] == 1 and outcome['failed_count'] == 1 and not outcome['delivery_pending']
     assert client.get(f'/crash/{cid}').json()['alerted']
     assert client.get(f'/crash/{cid}/ack.mp3').status_code == 200
@@ -124,6 +127,9 @@ def test_lost_agent_response_retries_the_same_immutable_alert(client, monkeypatc
     monkeypatch.setattr(crash, '_agent', agent)
     cid = start(client)
     result = client.post(f'/crash/{cid}/respond', json={'status': 'help'}).json()
+    assert result['delivery_pending'] or result['alerted']
+    crash.CRASHES[cid]['_delivery_worker'].join(timeout=3)
+    result = client.get(f'/crash/{cid}').json()
     assert result['alerted'] and result['sent'] == 1
     assert len(calls) == 2 and calls[0] == calls[1]
     assert calls[0][1]['crashId'] == cid

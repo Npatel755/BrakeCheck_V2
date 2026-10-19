@@ -12,6 +12,7 @@ cp -a "$project_root/backend" "$project_root/photon-agent" "$project_root/cloud"
 # Koyeb's source archive as well as out of the Docker image.
 find "$staging_root" -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -delete
 find "$staging_root" -type f \( -name 'contacts.json' -o -name 'contacts.tmp' \
+  -o -name 'crashes.json' -o -name 'crashes.json.*.tmp' \
   -o -name 'paired_devices.json' -o -name 'paired_devices.tmp' -o -name '*.ipa' \) -delete
 find "$staging_root" -type d \( -name '.venv' -o -name 'node_modules' -o -name '__pycache__' \
   -o -name '.pytest_cache' -o -name 'voice_cache' -o -name 'voice_samples' \) -prune -exec rm -rf {} +
@@ -30,6 +31,10 @@ fi
 app_service="${KOYEB_APP_SERVICE:-brakecheck/api}"
 volume_name="${KOYEB_VOLUME:-brakecheck-data}"
 region="${KOYEB_REGION:-was}"
+voice_env=()
+if [[ "${KOYEB_ENABLE_ELEVENLABS:-0}" == "1" ]]; then
+  voice_env=(--env 'ELEVENLABS_API_KEY={{secret.elevenlabs-api-key}}')
+fi
 
 koyeb deploy "$staging_root" "$app_service" \
   --archive-builder docker \
@@ -44,13 +49,14 @@ koyeb deploy "$staging_root" "$app_service" \
   --env 'AGENT_SHARED_KEY={{secret.brakecheck-agent-key}}' \
   --env 'SPECTRUM_PROJECT_ID={{secret.spectrum-project-id}}' \
   --env 'SPECTRUM_PROJECT_SECRET={{secret.spectrum-project-secret}}' \
-  --env 'ELEVENLABS_API_KEY={{secret.elevenlabs-api-key}}' \
+  "${voice_env[@]}" \
   --env "DRIVER_NAME=$driver_name" \
   --env BRAKECHECK_DISABLE_MDNS=1 \
   --env PHOTON_AGENT_PORT=8787 \
   --env BACKEND_URL=http://127.0.0.1:8000 \
   --env PHOTON_AGENT_URL=http://127.0.0.1:8787 \
   --env CONTACTS_FILE=/data/contacts.json \
+  --env CRASHES_FILE=/data/crashes.json \
   --env PAIRED_DEVICES_FILE=/data/paired_devices.json \
   --env VOICE_CACHE_DIR=/data/voice_cache \
   --wait

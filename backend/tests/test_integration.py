@@ -28,6 +28,7 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setenv('BRAKECHECK_APP_KEY', APP_KEY)
     monkeypatch.setenv('AGENT_SHARED_KEY', AGENT_KEY)
     monkeypatch.setattr(contacts, 'STORE', tmp_path / 'contacts.json')
+    monkeypatch.setattr(crash, 'STORE', tmp_path / 'crashes.json')
     monkeypatch.setattr(pairing_store, 'STORE', tmp_path / 'paired_devices.json')
     monkeypatch.setenv('BRAKECHECK_DISABLE_MDNS', '1')
     pairing.PAIRING_CODES._pending.clear()
@@ -196,8 +197,17 @@ def test_zero_sent_is_not_alerted(client, monkeypatch):
 
 def test_agent_offline_reports_failure(client, monkeypatch):
     mock_delivery(monkeypatch, error=requests.ConnectionError())
-    result = client.post(f'/crash/{start(client)}/timeout').json()
-    assert not result['alerted'] and 'Photon' in result['alert_error']
+    cid = start(client)
+    result = client.post(f'/crash/{cid}/timeout').json()
+    assert not result['alerted'] and result['delivery_pending']
+    # An agent outage keeps the alert eligible for bounded retry. Expire this
+    # isolated test session instead of leaving a background retry running.
+    with crash.LOCK:
+        crash.CRASHES[cid]['time'] = time.time() - crash.MAX_RECOVERY_AGE - 1
+    crash.CRASHES[cid]['_delivery_worker'].join(timeout=3)
+    final = client.get(f'/crash/{cid}').json()
+    assert not final['delivery_pending'] and not final['alerted']
+    assert 'unknown' in final['alert_error']
 
 
 def test_no_confirmed_contacts_does_not_contact_agent(client):

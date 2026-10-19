@@ -13,6 +13,7 @@ from discovery import BonjourAdvertiser
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    crash.recover()
     advertiser = None
     if os.getenv('BRAKECHECK_DISABLE_MDNS') != '1':
         candidate = BonjourAdvertiser()

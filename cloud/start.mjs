@@ -6,6 +6,7 @@ process.env.BACKEND_URL ||= `http://127.0.0.1:${port}`;
 process.env.PHOTON_AGENT_URL ||= 'http://127.0.0.1:8787';
 process.env.BRAKECHECK_DISABLE_MDNS ||= '1';
 process.env.CONTACTS_FILE ||= '/data/contacts.json';
+process.env.CRASHES_FILE ||= '/data/crashes.json';
 process.env.PAIRED_DEVICES_FILE ||= '/data/paired_devices.json';
 process.env.VOICE_CACHE_DIR ||= '/data/voice_cache';
 

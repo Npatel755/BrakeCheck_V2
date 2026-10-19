@@ -1,0 +1,41 @@
+{
+  "comma10k": {
+    "media": "images",
+    "pool": "commercial",
+    "license_status": "cleared",
+    "license": "MIT",
+    "evidence": [
+      "https://github.com/commaai/comma10k",
+      "https://github.com/commaai/comma10k/blob/master/LICENSE"
+    ],
+    "notes": "The repository README explicitly states the driving images and labels are MIT licensed. Preserve its copyright and license notice."
+  },
+  "comma2k19": {
+    "media": "video",
+    "pool": "quarantine",
+    "license_status": "review_required",
+    "license": "repository MIT; dataset rights to verify separately",
+    "evidence": [
+      "https://github.com/commaai/comma2k19",
+      "https://github.com/commaai/comma2k19/blob/master/LICENSE"
+    ],
+    "notes": "The repository license refers to software; confirm that the externally hosted ~100 GB recordings are covered before commercial training."
+  },
+  "carla": {
+    "media": "synthetic",
+    "pool": "quarantine",
+    "license_status": "review_required",
+    "license": "MIT code; CC BY assets; Unreal Engine terms also apply",
+    "evidence": ["https://github.com/carla-simulator/carla"],
+    "notes": "Inspect the exact simulator package and asset licenses before synthetic data enters the commercial pool."
+  },
+  "zod": {
+    "media": "video",
+    "pool": "quarantine",
+    "license_status": "access_required",
+    "license": "dataset terms require separate review",
+    "evidence": ["https://github.com/zenseact/zod", "https://zod.zenseact.com/"],
+    "notes": "SDK licensing does not grant dataset access. Preserve original labels and review attribution/share-alike obligations before use."
+  }
+}
+

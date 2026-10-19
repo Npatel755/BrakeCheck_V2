@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PHOTON_AGENT_PORT=8787 \
     PHOTON_AGENT_URL=http://127.0.0.1:8787 \
     CONTACTS_FILE=/data/contacts.json \
+    CRASHES_FILE=/data/crashes.json \
     PAIRED_DEVICES_FILE=/data/paired_devices.json \
     VOICE_CACHE_DIR=/data/voice_cache
 

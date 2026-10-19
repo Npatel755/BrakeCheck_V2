@@ -13,8 +13,8 @@ public struct RoadDisplayContinuity {
     public mutating func update(_ road: RoadRegion?, at time: TimeInterval) -> RoadRegion? {
         let lane = road.flatMap { road -> LanePath? in
             guard road.isUsable(at: time), let first = road.bands.first, let last = road.bands.last else { return nil }
-            // Fixed vertical samples keep the dash pattern from being rebuilt
-            // around different row counts on every semantic observation.
+            // Fixed vertical samples keep display bounds stable when each
+            // segmentation result has a different number of rows.
             let rows = (1..<40).compactMap { index -> LaneBand? in
                 let y = Double(index) * 0.025
                 guard y >= first.y, y <= last.y, let bounds = road.bounds(at: y) else { return nil }

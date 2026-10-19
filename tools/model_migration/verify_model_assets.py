@@ -38,7 +38,7 @@ def verify(ipa=None):
         manifest = json.loads((RESOURCES / folder / "Manifest.json").read_text())
         for entry in manifest["itemInfoEntries"].values():
             assert (RESOURCES / folder / "Data" / entry["path"]).exists(), entry["path"]
-    print("ALL models: detector day/night, UFLD, SegFormer, viewpoint weights and SHA256 PASS")
+    print("ALL models: detector day/night, UFLD, SegFormer road, viewpoint weights and SHA256 PASS")
     if ipa:
         with zipfile.ZipFile(ipa) as archive:
             assert archive.testzip() is None, "IPA CRC failure"

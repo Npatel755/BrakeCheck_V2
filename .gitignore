@@ -6,6 +6,8 @@ voice_cache/
 voice_samples/
 contacts.json
 contacts.tmp
+crashes.json
+crashes.json.*.tmp
 paired_devices.json
 paired_devices.tmp
 node_modules/

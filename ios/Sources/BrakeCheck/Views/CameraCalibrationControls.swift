@@ -25,15 +25,15 @@ struct CameraCalibrationControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if completed {
-                Label(presentation.alignmentLocked ? "Alignment locked" : "Mount saved", systemImage: "checkmark.circle.fill")
+                Label(model.cameraAlignmentVerified ? "Alignment locked" : "Mount saved", systemImage: "checkmark.circle.fill")
                     .font(.headline).foregroundStyle(.green)
                 Text("Returning to the camera. Road alignment finishes automatically when stable lanes appear; no further setup taps are needed.")
                     .font(.caption).foregroundStyle(BrakeTheme.muted)
             } else {
                 if liveCameraSetup {
-                    Label(presentation.alignmentLocked ? "Alignment locked" : presentation.mountConfirmed ? "Waiting for road alignment" : "Set up your mount",
-                          systemImage: presentation.alignmentLocked ? "lock.fill" : "viewfinder")
-                        .font(.headline).foregroundStyle(presentation.alignmentLocked ? .green : BrakeTheme.accent)
+                    Label(model.cameraAlignmentVerified ? "Alignment locked" : model.cameraMountConfirmed ? "Waiting for road alignment" : "Set up your mount",
+                          systemImage: model.cameraAlignmentVerified ? "lock.fill" : "viewfinder")
+                        .font(.headline).foregroundStyle(model.cameraAlignmentVerified ? .green : BrakeTheme.accent)
                     Text("While parked, secure the phone facing forward and set the lens height below. Lane markings are not needed here. The app aligns to the road automatically later.")
                         .font(.caption).foregroundStyle(BrakeTheme.muted)
                 } else {
@@ -53,15 +53,21 @@ struct CameraCalibrationControls: View {
                     if aligning {
                         ProgressView("Saving mount...")
                     }
-                    Button(aligning ? "Cancel" : presentation.mountConfirmed ? "Save this mount again" : "I'm parked - save mount") {
+                    Button(aligning ? "Cancel" : model.cameraMountConfirmed ? "Done" : "I'm parked - save mount") {
                         if aligning { aligning = false; return }
+                        // Reopening setup must not erase a verified orientation.
+                        // A changed mount has its own explicit reset below.
+                        if model.cameraMountConfirmed { completed = true; return }
                         guard !model.hasMeasuredMovement(at: ProcessInfo.processInfo.systemUptime) else { return }
+                        // A new mount cannot inherit an orientation estimate
+                        // learned from a different physical phone position.
                         model.requestAutomaticCameraCalibration()
                         aligning = true
                         finishIfReady()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!aligning && (!cameraReady || changingGeometry || moving || model.demo || model.replaying))
+                    .disabled(!aligning && !model.cameraMountConfirmed
+                        && (!cameraReady || changingGeometry || moving || model.demo || model.replaying))
                     if !cameraReady {
                         Text("Start a live trip to align the camera.").font(.caption).foregroundStyle(BrakeTheme.muted)
                     } else if moving {
@@ -71,6 +77,14 @@ struct CameraCalibrationControls: View {
                     } else if aligning {
                         Text("Waiting for camera geometry. No lane markings are needed to save your mount.")
                             .font(.caption).foregroundStyle(BrakeTheme.muted)
+                    }
+                    if model.cameraMountConfirmed {
+                        Button("Phone mount moved? Reset alignment") {
+                            model.requestAutomaticCameraCalibration()
+                            completed = false
+                        }
+                        .font(.caption.weight(.semibold))
+                        .disabled(!cameraReady || changingGeometry || moving || model.demo || model.replaying)
                     }
                 } else if let openCameraSetup {
                     Button("Open live camera setup", action: openCameraSetup).disabled(!cameraReady || model.demo || model.replaying)
@@ -98,9 +112,12 @@ struct CameraCalibrationControls: View {
         .onReceive(model.$captureGeometry) { _ in finishIfReady() }
         .onReceive(model.$changingCameraGeometry.removeDuplicates()) { changingGeometry = $0 }
         .onReceive(model.$speed.map { _ in model.hasMeasuredMovement(at: ProcessInfo.processInfo.systemUptime) }.removeDuplicates()) { moving = $0 }
-        .onAppear { model.setARCalibrationVisible(liveCameraSetup && cameraAR) }
-        .onChange(of: cameraAR) { _, enabled in model.setARCalibrationVisible(liveCameraSetup && enabled) }
-        .onChange(of: automaticCalibration) { _, enabled in if enabled { model.requestAutomaticCameraCalibration() } }
+        // Setup needs perception while it is visible, independent of whether
+        // the driver has enabled the on-road navigation ribbon.
+        .onAppear { model.setARCalibrationVisible(liveCameraSetup) }
+        .onChange(of: automaticCalibration) { _, enabled in
+            if enabled && !model.cameraMountConfirmed { model.requestAutomaticCameraCalibration() }
+        }
         .onChange(of: presentation.scene?.capturedAt) { _, _ in finishIfReady() }
         .onChange(of: presentation.calibrationEstimate) { _, _ in finishIfReady() }
         .onChange(of: moving) { _, knownMoving in if knownMoving { aligning = false } }
@@ -153,7 +170,6 @@ struct CameraCalibrationOverlay: View {
                 .padding(12)
             }
         }
-        .onAppear { cameraAR = true }
     }
 }
 

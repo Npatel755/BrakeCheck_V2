@@ -16,6 +16,8 @@
 **/railway-variables.env
 **/contacts.json
 **/contacts.tmp
+**/crashes.json
+**/crashes.json.*.tmp
 **/paired_devices.json
 **/paired_devices.tmp
 **/voice_cache

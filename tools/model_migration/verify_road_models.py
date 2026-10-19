@@ -43,10 +43,11 @@ def main():
                 matches = [name for name in names if name.endswith("LaneModelData/" + relative)]
                 assert len(matches) == 1, relative
                 assert hashlib.sha256(archive.read(matches[0])).hexdigest() == expected, relative
+            assert any(name.endswith("ModelLicenses/Apache-2.0.txt") for name in names)
             assert any(name.endswith("ModelLicenses/UFLD-MIT.txt") for name in names)
             assert any(name.endswith("ModelLicenses/SegFormer-NVIDIA-License.txt") for name in names)
-            assert any(name.endswith("ModelLicenses/SegFormer-MODEL-CARD.md") for name in names)
-            print("IPA: both model packages, SHA256 contents, both licenses, CRC integrity and no old YOLOP PASS")
+            assert not any("IntelRoad.mlpackage" in name for name in names)
+            print("IPA: UFLD and SegFormer packages, SHA256 contents, licenses and CRC integrity PASS")
 
 
 if __name__ == "__main__":

@@ -81,8 +81,10 @@ final class N36RegressionTests: XCTestCase {
         var history = AuxiliaryLatencyHistory()
         for time in [0.0, 0.2, 0.4] { history.observe(0.25, at: time) }
         XCTAssertEqual(history.seconds(at: 1), 0.25)
-        XCTAssertFalse(ARInferencePolicy(minimumLaneInterval: 0.2, heat: .nominal, vehicleLatency: 0.05,
-            laneLatency: history.seconds(at: 1), roadLatency: 0.02).laneAllowed)
+        let throttled = ARInferencePolicy(minimumLaneInterval: 0.2, heat: .nominal, vehicleLatency: 0.05,
+            laneLatency: history.seconds(at: 1), roadLatency: 0.02)
+        XCTAssertTrue(throttled.laneAllowed)
+        XCTAssertEqual(throttled.laneInterval, 0.5)
         XCTAssertEqual(history.seconds(at: 5.5), 0)
         history.observe(0.04, at: 5.5)
         XCTAssertEqual(history.seconds(at: 5.6), 0.04)

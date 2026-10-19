@@ -21,11 +21,11 @@ struct IncidentListView: View {
                         IncidentDetailView(model: model, id: incident.id)
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(incident.triggerTime, style: .date).font(.headline)
+                            Text(incident.triggerTime, style: .date).font(.brake(.headline))
                             Text(incident.triggerTime, style: .time)
-                            Text(incident.reason).font(.caption)
+                            Text(incident.reason).font(.brake(.caption))
                             Text("\(incident.segments.count) clips · \(incident.state)")
-                                .font(.caption2).foregroundStyle(.secondary)
+                                .font(.brake(.caption2)).foregroundStyle(.secondary)
                         }
                     }
                     .swipeActions {
@@ -63,11 +63,11 @@ struct IncidentDetailView: View {
                     Text("\(incident.requestedStart.formatted()) → \(incident.requestedEnd.formatted())")
                     Text(incident.state).foregroundStyle(.secondary)
                     Text("Only available footage is saved. Individual clips may include up to 10 extra seconds at window boundaries. Gaps are not reconstructed.")
-                        .font(.caption)
+                        .font(.brake(.caption))
                 }
                 if !incident.notes.isEmpty {
                     Section("Recording notes") {
-                        ForEach(Array(incident.notes.enumerated()), id: \.offset) { _, note in Text(note).font(.caption) }
+                        ForEach(Array(incident.notes.enumerated()), id: \.offset) { _, note in Text(note).font(.brake(.caption)) }
                     }
                 }
                 Section("Saved clips") {

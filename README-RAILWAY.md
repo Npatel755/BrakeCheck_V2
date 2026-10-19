@@ -5,6 +5,13 @@ service variables, and a volume in your account. One Docker service runs both
 the FastAPI backend and Photon messaging agent. Vehicle detection, GPS, and
 video recording run on the iPhone; Railway does not need a GPU.
 
+The iPhone also speaks check-in prompts and, when its device and language
+support on-device Speech, recognizes spoken replies locally. The check-in demo
+works offline without this service. Railway remains necessary for automatic
+contact alerts, a countdown that continues after the phone disconnects,
+Photon YES/STOP confirmation, and contact replies. ElevenLabs is optional and
+only supplies an alternate brake-warning voice.
+
 ## 1. Extract and create the service
 
 Extract the ZIP and open the inner `BrakeCheck` folder in VS Code. Open a
@@ -40,7 +47,8 @@ py -c "import secrets; print('BRAKECHECK_APP_KEY=' + secrets.token_urlsafe(32));
 
 In Railway, click the **brakecheck** service, then **Variables → RAW Editor**.
 Paste the contents of `cloud/railway-variables.env.example` and replace every
-`CHANGE_ME` placeholder before saving:
+required `CHANGE_ME` placeholder before saving. Delete the optional
+`ELEVENLABS_API_KEY` line if you will use the iPhone voice:
 
 | Variable | Value |
 | --- | --- |
@@ -48,12 +56,13 @@ Paste the contents of `cloud/railway-variables.env.example` and replace every
 | `AGENT_SHARED_KEY` | Second generated key, different from the app key |
 | `SPECTRUM_PROJECT_ID` | Your Photon project ID |
 | `SPECTRUM_PROJECT_SECRET` | Your Photon project secret |
-| `ELEVENLABS_API_KEY` | Your ElevenLabs API key |
+| `ELEVENLABS_API_KEY` | Optional; only for ElevenLabs brake audio. Omit it for iPhone voice. |
 | `DRIVER_NAME` | The driver's name as it should appear in contact messages |
 | `PORT` | `8000` |
 | `PHOTON_AGENT_PORT` | `8787` |
 | `BRAKECHECK_DISABLE_MDNS` | `1` |
 | `CONTACTS_FILE` | `/data/contacts.json` |
+| `CRASHES_FILE` | `/data/crashes.json` |
 | `PAIRED_DEVICES_FILE` | `/data/paired_devices.json` |
 | `VOICE_CACHE_DIR` | `/data/voice_cache` |
 
@@ -65,9 +74,12 @@ agent URL already defaults to `http://127.0.0.1:8787`. Neither internal URL
 should be set to the public Railway URL. Keep any custom ElevenLabs voice IDs
 or model settings you already use by adding the corresponding variables too.
 
-Review and apply staged variable changes. The Photon project credentials and
-agent key are required: the existing agent exits if they are missing, and the
-launcher then stops the API too.
+Review and apply staged variable changes. The Photon project credentials,
+app key, and agent key are required for automatic contact alerts: the agent
+exits if its credentials are missing, and the launcher then stops the API too.
+An ElevenLabs key is not required for backend health, pairing, contacts, or
+crash decisions. Without it, the optional `/voice/*` audio endpoints return a
+service error if called.
 
 ## 3. Attach persistent storage
 
@@ -78,16 +90,19 @@ Right-click the Railway project canvas and add a **Volume**. Attach it to
 /data
 ```
 
-Use the available 0.5 GB trial/free volume allocation. This preserves paired
-device hashes, contacts, and cached voice files between deployments. Without
-the volume, replacing the container can erase that data. The volume consumes
-usage credit too; watch the Railway Usage page.
+Choose a volume size supported by your Railway plan and check current pricing
+before deployment. The volume preserves paired-device hashes, contacts, active
+check-ins, and cached voice files between deployments. Without it, replacing
+the container can erase that data. Keep a separate backup of data you need.
 
 Keep exactly **one replica** and leave **Serverless/app sleeping disabled** for
-the demo: crash countdowns and recent trip state are currently held in memory.
-A restart still interrupts an active countdown even with persistent storage.
-The first cloud deployment starts with a fresh contact list; local contacts
-are not copied by deployment.
+the demo. An active check-in countdown now resumes from `/data/crashes.json`
+after a restart, and an unfinished agent request is retried using the same
+deduplicated event ID. An outage can still delay an alert; no backend can send
+while it is offline. Check-ins overdue by more than five minutes expire without
+sending a stale emergency alert. Recent trip context remains
+in memory. The first cloud deployment starts with a fresh contact list; local
+contacts are not copied by deployment.
 
 ## 4. Deploy
 
@@ -162,7 +177,8 @@ to keep Uvicorn or the Photon agent running.
 | Pairing returns 401 | Use the cloud app key, and issue a fresh QR if its code expired or was already used |
 | Phone loses pairing after a deployment | Confirm a volume is attached at `/data` |
 | Contact replies do not update status | Check Photon connectivity and ensure `BACKEND_URL` was not manually set to the wrong port |
-| Photon or ElevenLabs cannot connect | Check credentials, provider status, and any outbound restrictions on a limited Railway trial |
+| Photon cannot connect | Check Photon credentials, agent logs, provider status, and outbound restrictions |
+| Optional ElevenLabs audio unavailable | Use device voice, or check the optional ElevenLabs key and provider status |
 | Process exits from memory pressure | Inspect Railway metrics; both Python and Node share the plan's memory allocation |
 
 ## Included deployment changes

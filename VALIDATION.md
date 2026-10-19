@@ -1,6 +1,18 @@
 # BrakeCheck merge validation
 
-Validated in the Linux workspace on 2026-10-10.
+Earlier sections record the 2026-10-10 workspace checks. The current run is
+listed first; older "not performed" notes describe that earlier environment.
+
+## Current checks (2026-10-15)
+
+- Latest UI changes move Diagnostics into Settings, remove the Premium bottom tab, and show the Premium page after the first-trip rating prompt before its saved summary. The camera direction card retains the planned instruction without a live fix but hides stale turn distance. A cached starting position can start route guidance; live progress, reroutes, and turn announcements still require reliable current GPS. The iOS Release compile passed; these flows still need an on-device acceptance test.
+- The navigation appearance control moved into Settings; only Blue and Polar night remain. A first saved trip asks for a rating before its route summary; later trips open that summary directly. Premium uses StoreKit 2 with the configured monthly product ID described in `ios/PREMIUM-SETUP.md`.
+- App inactive/background transitions now stop the foreground driving pipeline promptly. Stale GPS can position a route preview but never drives turn instructions or a camera-aligned route.
+- Backend offline suite: **64 passed**. This includes check-in persistence, restart recovery, stale-alert suppression, and agent retry using the same event ID. No provider messages were sent by these tests.
+- Photon agent: **18 offline tests passed** and strict TypeScript type checking passed. These checks do not verify delivery by the live provider.
+- Bundled day/night detectors, UFLD, SegFormer, and viewpoint weights passed SHA-256 asset verification. This does not verify Core ML execution or frame rate on an iPhone.
+- iOS Core suite: **425 passed** in WSL. The iOS Release compile covers the imported `claude/v1` home, navigation banner, trip, and theme UI alongside the existing safety service. No IPA was packaged.
+- The app and backend still need on-device and live-service acceptance tests. A successful build does not establish warning accuracy, camera frame rate, AR alignment, or actual contact delivery.
 
 ## Completed
 
@@ -42,6 +54,6 @@ Validated in the Linux workspace on 2026-10-10.
 5. Try microphone denied, ElevenLabs unavailable, missing GPS, a locked phone, and a disconnected backend. Confirm no fake location or successful-delivery claim appears.
 6. With the contact's consent, register and invite them. Verify YES, STOP, re-opt-in, and deletion. Tap **Test message**, confirm the warning, and have them verify the location-free message arrives. Check cooldown behavior before a live check-in.
 7. Run a deliberately authorized live check-in and verify one message arrives; check where/status/clip/drive replies. Do not treat `sent` as a read receipt.
-8. Stop or restart the backend and verify the documented loss of in-memory sessions. Keep one Koyeb instance and one Python worker.
+8. With a persistent `/data` volume, restart the backend during an active check-in. Verify the same countdown and event ID resume, and an unfinished alert request does not create a second message. After an outage longer than five minutes, verify the app reports the alert as expired or unconfirmed rather than sending a late emergency alert. Keep one Koyeb instance and one Python worker.
 
 The app remains an experimental prototype; these software checks do not validate collision detection or emergency response performance.

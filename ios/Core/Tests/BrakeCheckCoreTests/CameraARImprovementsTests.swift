@@ -88,8 +88,11 @@ final class CameraARImprovementsTests: XCTestCase {
         XCTAssertEqual(overloaded.laneInterval, 0.5)
         XCTAssertNil(ARInferencePolicy(minimumLaneInterval: 0.2, heat: .critical, vehicleLatency: 0, laneLatency: 0, roadLatency: 0).roadInterval)
         let slow = ARInferencePolicy(minimumLaneInterval: 0.2, heat: .nominal, vehicleLatency: 0.05, laneLatency: 0.16, roadLatency: 0.13)
-        XCTAssertFalse(slow.laneAllowed)
+        XCTAssertTrue(slow.laneAllowed)
+        XCTAssertEqual(slow.laneInterval, 0.5)
         XCTAssertNil(slow.roadInterval)
+        XCTAssertFalse(ARInferencePolicy(minimumLaneInterval: 0.2, heat: .nominal, vehicleLatency: 0.05,
+            laneLatency: 0.31, roadLatency: 0.04).laneAllowed)
         XCTAssertNotNil(ARInferencePolicy(minimumLaneInterval: 0.2, heat: .nominal, vehicleLatency: 0.05,
             laneLatency: 0.16, roadLatency: 0.13, stationary: true).roadInterval)
     }
@@ -164,5 +167,7 @@ final class CameraARImprovementsTests: XCTestCase {
             courseDegrees: 0, courseAccuracy: 5, speed: 10))
         XCTAssertTrue(fix.mapMatchAmbiguous)
         XCTAssertEqual(fix.mapMatchConfidence, 0)
+        XCTAssertFalse(fix.positionReliable)
+        XCTAssertEqual(fix.progressMeters, 0, accuracy: 0.01)
     }
 }

@@ -59,6 +59,9 @@ public enum CameraRouteProjection {
         let scale = cos(origin.latitude * .pi / 180)
         let points = route.map { Vector(east: ($0.longitude - origin.longitude) * 111_320 * scale,
                                        north: ($0.latitude - origin.latitude) * 111_320) }
+        // RoadRegion.bounds(at:) creates and sorts a LanePath on every call.
+        // Projection samples up to 160 points per frame, so build it once.
+        let pavementPath = LanePath(bands: road.bands, confidence: road.confidence, capturedAt: road.capturedAt)
         var distances = [0.0]
         for (a, b) in zip(points, points.dropFirst()) {
             distances.append(distances.last! + Vector(east: b.east - a.east, north: b.north - a.north).length)
@@ -100,7 +103,7 @@ public enum CameraRouteProjection {
             let lateral = east * cos(heading) - north * sin(heading)
             guard forward > 1 else { finish(); continue }
             let y = horizon - fy * calibration.heightMeters / forward
-            guard (0.04...0.85).contains(y), let pavement = road.bounds(at: y) else { finish(); continue }
+            guard (0.04...0.85).contains(y), let pavement = pavementPath.bounds(at: y) else { finish(); continue }
             let rawX = 0.5 + fx * lateral / forward
             if alignment == nil, let bounds = lane.bounds(at: y) {
                 alignment = (bounds.left + bounds.right) / 2 - rawX
@@ -145,13 +148,20 @@ public struct CameraRouteSmoother {
         let dt = lastTime.map { time - $0 } ?? 1
         guard dt > 0, dt <= 0.3 else { previous = groups; lastTime = time; return groups }
         let alpha = 1 - exp(-dt / 0.12)
+        // Cache interpolation paths for this draw instead of sorting the same
+        // previous group and road bands once for every ribbon sample.
+        let previousPaths = previous.compactMap { group -> (first: Double, last: Double, path: LanePath)? in
+            guard let first = group.first, let last = group.last else { return nil }
+            return (first.y, last.y, LanePath(bands: group, confidence: 1, capturedAt: time))
+        }
+        let roadPath = road.map { LanePath(bands: $0.bands, confidence: $0.confidence, capturedAt: $0.capturedAt) }
         let result = groups.map { group in group.map { band -> LaneBand in
-            guard let oldGroup = previous.first(where: { $0.first!.y <= band.y && $0.last!.y >= band.y }),
-                  let old = LanePath(bands: oldGroup, confidence: 1, capturedAt: time).bounds(at: band.y),
+            guard let oldGroup = previousPaths.first(where: { $0.first <= band.y && $0.last >= band.y }),
+                  let old = oldGroup.path.bounds(at: band.y),
                   abs(old.left - band.left) < 0.06, abs(old.right - band.right) < 0.06 else { return band }
             var center = ((old.left + old.right) * (1 - alpha) + (band.left + band.right) * alpha) / 2
             var lower = band.left, upper = band.right
-            if let corridor = lane?.bounds(at: band.y), let pavement = road?.bounds(at: band.y) {
+            if let corridor = lane?.bounds(at: band.y), let pavement = roadPath?.bounds(at: band.y) {
                 lower = max(corridor.left + 0.008, pavement.left + 0.008)
                 upper = min(corridor.right - 0.008, pavement.right - 0.008)
                 let midpoint = (corridor.left + corridor.right) / 2

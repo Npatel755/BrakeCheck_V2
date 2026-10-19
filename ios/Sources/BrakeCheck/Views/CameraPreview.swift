@@ -73,7 +73,7 @@ final class OrientationSurface: UIView {
 }
 
 struct TargetOverlay: View {
-    @AppStorage("display.accent") private var accentChoice = "blue"
+    @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     let trackedBox: CGRect?
     let selecting: Bool
     @Binding var selectedBox: CGRect?
@@ -84,10 +84,12 @@ struct TargetOverlay: View {
         GeometryReader { geometry in
             ZStack {
                 Color.clear
-                if let box = selecting ? selectedBox : trackedBox {
+                // A held visual track is not a fresh detection, so hide its
+                // old rectangle while keeping manual selection visible.
+                if let box = selecting ? selectedBox : trackedBox, selecting || !coasting {
                     Rectangle()
-                        .stroke(selecting || coasting ? BrakeTheme.caution : alert ? BrakeTheme.danger : BrakeTheme.accentColor(named: accentChoice),
-                                style: StrokeStyle(lineWidth: alert ? 3 : 2.5, dash: selecting || coasting ? [6] : []))
+                        .stroke(selecting ? BrakeTheme.caution : alert ? BrakeTheme.danger : BrakeTheme.accentColor(named: accentChoice),
+                                lineWidth: alert ? 3 : 2.5)
                         .frame(width: box.width * geometry.size.width, height: box.height * geometry.size.height)
                         .position(x: box.midX * geometry.size.width, y: (1 - box.midY) * geometry.size.height)
                 }

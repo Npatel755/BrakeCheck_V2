@@ -9,8 +9,12 @@ public struct ARInferencePolicy {
                 laneLatency: TimeInterval, roadLatency: TimeInterval, stationary: Bool = false) {
         func valid(_ value: Double) -> Double { value.isFinite && value >= 0 ? value : 1 }
         laneInterval = min(0.5, max(0.2, valid(minimumLaneInterval), valid(laneLatency) * 4))
+        // A moderately slow UFLD prediction should reduce its cadence, not
+        // switch lanes off for the latency history's five-second lifetime.
+        // Keep the hard stop for genuinely overloaded accelerator work; the
+        // vehicle detector always retains the first turn at the shared gate.
         laneAllowed = heat != .critical && valid(vehicleLatency) <= 0.25
-            && (stationary || valid(laneLatency) <= 0.15)
+            && (stationary || valid(laneLatency) <= 0.30)
         let base: Double
         switch heat {
         case .nominal: base = 0.60

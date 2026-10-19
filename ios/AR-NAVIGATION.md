@@ -27,19 +27,17 @@ The device's actual camera horizontal FOV supplies the projection's focal scale.
   ImageNet normalization, `lane_logits` output `[1,201,18,4]`. The decoder uses
   the official CULane row anchors and a stabilized softmax over 200 grid bins;
   the final bin suppresses absent lanes. Vehicle-overlapping peaks are excluded.
-- SegFormer B0/Cityscapes: full-frame RGB stretch to 640×384, embedded ImageNet
-  normalization, `road_scores` output `[1,2,384,640]`. Road is Cityscapes class 0;
-  non-road aggregates all other softmax classes, including sidewalks and cars.
-  Probabilities are bilinearly restored to input resolution before scanning.
+- NVIDIA SegFormer B0/Cityscapes: full-frame RGB stretch to 640×384,
+  `road_scores` output `[1,2,384,640]` for non-road and road probabilities.
 - Both trained FP16 `.mlpackage` resources are bundled and compiled/cache-hashed
   on the iPhone. No inference server or runtime model download is needed.
 - Vehicle inference retains accelerator priority. Lane and road predictions
   release the shared gate between requests. No queue of old camera frames builds
-  up. UFLD and SegFormer have independent cadences. Segmentation defaults to
+  up. UFLD and SegFormer road segmentation have independent cadences. Segmentation defaults to
   0.30 s, increasing to 0.50 s in fair heat and 0.80 s in serious heat; measured
   latency can increase this further. Critical heat disables auxiliary neural
   work. Vehicle latency above 0.20 s stops segmentation; above 0.25 s also
-  suspends UFLD. While moving, UFLD latency above 0.15 s or SegFormer latency
+  suspends UFLD. While moving, UFLD latency above 0.15 s or road-model latency
   above 0.12 s suspends that model. Stationary observations can probe again.
   Vehicle/viewpoint budgets are not relaxed for AR. These admission heuristics
   do not guarantee hard real-time deadlines: active Core ML calls cannot be
@@ -50,15 +48,12 @@ The device's actual camera horizontal FOV supplies the projection's focal scale.
 
 The original UFLD ResNet18 version was selected as the initial mobile model;
 UFLD v2's default CULane configuration uses a much wider 1600-pixel input and a
-larger classification head. SegFormer B0 is the small encoder variant. Actual
+larger classification head. Actual
 latency and model quality must be measured on the target phone before choosing
 a larger model. This change does not claim benchmarked iPhone performance.
 
-The NVIDIA pretrained SegFormer checkpoint declares a custom license (`other`
-on its model card). Its upstream SegFormer license limits use to non-commercial
-research/evaluation. The full license is bundled; Transformers' Apache license
-does not change the checkpoint's license. This integration is an evaluation
-build; commercial distribution requires suitable rights or replacement weights.
+This restored test build uses non-commercial UFLD/CULane and SegFormer weights.
+Both require replacement or appropriate licensing before commercial release.
 
 ## Road alignment
 

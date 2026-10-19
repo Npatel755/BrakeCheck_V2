@@ -1,0 +1,21 @@
+{
+  "comma10k-segnet": {
+    "license_status": "cleared",
+    "license": "MIT",
+    "model_card": "https://huggingface.co/commaai/comma10k-segnet",
+    "checkpoint_revision": "b642c614eb0737fe7befa229f47fbd0245033038",
+    "checkpoint_sha256": "8208672861ad1b111dc98f3a7c54196d29875b709c7353e2dd1b7614343fb3a8",
+    "local_notice": "models/comma10k-segnet/LICENSE-MIT.txt",
+    "note": "Semantic road and marking candidates only; trained on comma10k, so same-source scores are not independent validation."
+  },
+  "sam3": {
+    "license_status": "review_required",
+    "license": "Meta-specific terms to verify for checkpoint and annotation output",
+    "model_card": "https://github.com/facebookresearch/sam3"
+  },
+  "dinov3": {
+    "license_status": "review_required",
+    "license": "Meta-specific terms to verify for checkpoint and annotation output",
+    "model_card": "https://github.com/facebookresearch/dinov3"
+  }
+}

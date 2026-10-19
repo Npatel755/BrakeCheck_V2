@@ -16,14 +16,37 @@ struct ReplayView: View {
     @State private var importKind: ImportKind = .video
     @State private var showImporter = false
     @State private var error: String?
+    @State private var importJob: Task<ImportedFile, Error>?
+    @State private var importID: UUID?
+    @State private var replayPreparationJob: Task<SpeedTrack, Error>?
+    @State private var replayPreparationID: UUID?
 
     enum VideoChoice: Equatable { case incident(UUID), file(URL) }
     enum SpeedChoice: Hashable { case videoOnly, automatic, saved(URL), imported, assumed }
-    enum ImportKind { case video, speedLog }
+    enum ImportKind: Sendable { case video, speedLog }
+
+    private struct ImportedFile {
+        let url: URL
+        let track: SpeedTrack?
+    }
+
+    private enum ReplayPreparationError: LocalizedError {
+        case missingRecordingTime, noMatchingLog
+
+        var errorDescription: String? {
+            switch self {
+            case .missingRecordingTime:
+                return "This video has no BrakeCheck clock time. Choose Video only, a matching speed log, or assumed speed."
+            case .noMatchingLog:
+                return "No saved trip log covers this recording. Import the logger file or assume a speed."
+            }
+        }
+    }
 
     private var replayable: [IncidentManifest] { model.incidents.filter { !$0.segments.isEmpty } }
     private var savedLogs: [URL] { SpeedLogReader.savedLogs() }
     private var isImportedVideo: Bool { if case .file = video { return true }; return false }
+    private var isBusy: Bool { importJob != nil || replayPreparationJob != nil }
 
     var body: some View {
         Group {
@@ -38,6 +61,24 @@ struct ReplayView: View {
                     Section {
                         Label(model.replayStatus, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
+                    }
+                }
+
+                if importJob != nil {
+                    Section {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text(importKind == .video ? "Importing video…" : "Reading speed log…")
+                        }
+                        Button("Cancel import") { cancelImport() }
+                    }
+                } else if replayPreparationJob != nil {
+                    Section {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Matching speed log…")
+                        }
+                        Button("Cancel replay preparation") { cancelReplayPreparation() }
                     }
                 }
 
@@ -78,6 +119,7 @@ struct ReplayView: View {
                     Text("Save a video to Files on this iPhone before importing it. A video still on your computer will not appear here.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                .disabled(isBusy)
 
                 Section("2 · Speed during that drive") {
                     Picker("Speed source", selection: $speedChoice) {
@@ -115,10 +157,11 @@ struct ReplayView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                .disabled(isBusy)
 
                 Section {
                     Button("Start replay") { start() }
-                        .disabled(video == nil || model.replaying || model.tripActive || model.demo)
+                        .disabled(video == nil || model.replaying || model.tripActive || model.demo || isBusy)
                     if let error {
                         Text(error).font(.caption).foregroundStyle(.orange)
                     }
@@ -134,6 +177,10 @@ struct ReplayView: View {
         .fileImporter(isPresented: $showImporter, allowedContentTypes: allowedTypes) { result in
             handleImport(result, kind: importKind)
         }
+        .onDisappear {
+            cancelImport()
+            cancelReplayPreparation()
+        }
         .tint(BrakeTheme.accent)
     }
 
@@ -146,30 +193,83 @@ struct ReplayView: View {
     }
 
     private func handleImport(_ result: Result<URL, Error>, kind: ImportKind) {
-        do {
-            let local = try copyIn(try result.get())
-            switch kind {
-            case .video:
-                video = .file(local)
-                if speedChoice == .automatic { speedChoice = .videoOnly }
-            case .speedLog:
-                importedTrack = try SpeedLogReader.load(local)
-                speedChoice = .imported
+        guard !isBusy else { return }
+        let source: URL
+        switch result {
+        case .success(let url): source = url
+        case .failure(let failure):
+            let cocoa = failure as NSError
+            if cocoa.domain != NSCocoaErrorDomain || cocoa.code != NSUserCancelledError {
+                error = failure.localizedDescription
             }
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
+            return
+        }
+        error = nil
+        let id = UUID()
+        importID = id
+        let job = Task.detached(priority: .userInitiated) {
+            try Self.importFile(source, kind: kind)
+        }
+        importJob = job
+        Task { @MainActor in
+            do {
+                let imported = try await job.value
+                guard importID == id else {
+                    try? FileManager.default.removeItem(at: imported.url.deletingLastPathComponent())
+                    return
+                }
+                importID = nil
+                importJob = nil
+                switch kind {
+                case .video:
+                    video = .file(imported.url)
+                    if speedChoice == .automatic { speedChoice = .videoOnly }
+                case .speedLog:
+                    importedTrack = imported.track
+                    speedChoice = .imported
+                }
+            } catch {
+                guard importID == id else { return }
+                importID = nil
+                importJob = nil
+                if !(error is CancellationError) { self.error = error.localizedDescription }
+            }
         }
     }
 
-    private func copyIn(_ url: URL) throws -> URL {
+    private func cancelImport() {
+        importID = nil
+        importJob?.cancel()
+        importJob = nil
+    }
+
+    private static func importFile(_ url: URL, kind: ImportKind) throws -> ImportedFile {
+        let local = try copyIn(url)
+        do {
+            try Task.checkCancellation()
+            let track = kind == .speedLog ? try SpeedLogReader.load(local) : nil
+            try Task.checkCancellation()
+            return ImportedFile(url: local, track: track)
+        } catch {
+            try? FileManager.default.removeItem(at: local.deletingLastPathComponent())
+            throw error
+        }
+    }
+
+    private static func copyIn(_ url: URL) throws -> URL {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ReplayImports", isDirectory: true)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReplayImports", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appendingPathComponent(url.lastPathComponent)
-        try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.copyItem(at: url, to: destination)
+        do {
+            try FileManager.default.copyItem(at: url, to: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
         return destination
     }
 
@@ -191,36 +291,80 @@ struct ReplayView: View {
     }
 
     private func start() {
+        guard !isBusy else { return }
         let selected = clips()
         guard !selected.isEmpty else { error = "That recording has no clips in the chosen window."; return }
-        do {
-            var track: SpeedTrack?
-            var assumed: Double?
-            switch speedChoice {
-            case .videoOnly:
-                break
-            case .automatic:
-                guard let recordedAt = selected.first?.start else {
-                    error = "This video has no BrakeCheck clock time. Choose Video only, a matching speed log, or assumed speed."
-                    return
-                }
-                track = savedLogs.lazy.compactMap { try? SpeedLogReader.load($0) }.first(where: { $0.covers(recordedAt) })
-                guard track != nil else {
-                    error = "No saved trip log covers this recording. Import the logger file or assume a speed."
-                    return
-                }
-            case .saved(let url):
-                track = try SpeedLogReader.load(url)
-            case .imported:
-                track = importedTrack
-            case .assumed:
-                assumed = assumedMPH * 0.44704
-            }
+        switch speedChoice {
+        case .videoOnly:
+            beginReplay(selected, track: nil, assumedSpeed: nil)
+        case .imported:
+            guard let importedTrack else { error = "Import a speed log before starting replay."; return }
+            beginReplay(selected, track: importedTrack, assumedSpeed: nil)
+        case .assumed:
+            beginReplay(selected, track: nil, assumedSpeed: assumedMPH * 0.44704)
+        case .automatic, .saved:
+            let choice = speedChoice
+            let logs = choice == .automatic ? savedLogs : []
+            let recordedAt = selected.first?.start
+            let id = UUID()
             error = nil
-            model.startReplay(selected, track: track, assumedSpeed: assumed, offset: offset)
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
+            replayPreparationID = id
+            let job = Task.detached(priority: .userInitiated) {
+                try Self.loadReplayTrack(choice: choice, savedLogs: logs, recordedAt: recordedAt)
+            }
+            replayPreparationJob = job
+            Task { @MainActor in
+                do {
+                    let track = try await job.value
+                    guard replayPreparationID == id else { return }
+                    replayPreparationID = nil
+                    replayPreparationJob = nil
+                    beginReplay(selected, track: track, assumedSpeed: nil)
+                } catch {
+                    guard replayPreparationID == id else { return }
+                    replayPreparationID = nil
+                    replayPreparationJob = nil
+                    if !(error is CancellationError) { self.error = error.localizedDescription }
+                }
+            }
         }
+    }
+
+    private func cancelReplayPreparation() {
+        replayPreparationID = nil
+        replayPreparationJob?.cancel()
+        replayPreparationJob = nil
+    }
+
+    private static func loadReplayTrack(choice: SpeedChoice, savedLogs: [URL], recordedAt: Date?) throws -> SpeedTrack {
+        switch choice {
+        case .automatic:
+            guard let recordedAt else { throw ReplayPreparationError.missingRecordingTime }
+            for url in savedLogs {
+                try Task.checkCancellation()
+                if let track = try? SpeedLogReader.load(url), track.covers(recordedAt) { return track }
+            }
+            throw ReplayPreparationError.noMatchingLog
+        case .saved(let url):
+            let track = try SpeedLogReader.load(url)
+            try Task.checkCancellation()
+            return track
+        default:
+            throw ReplayPreparationError.noMatchingLog
+        }
+    }
+
+    private func beginReplay(_ clips: [ReplayService.Clip], track: SpeedTrack?, assumedSpeed: Double?) {
+        guard !model.tripActive, !model.demo, !model.replaying else {
+            error = "End the trip and turn off simulated metrics first."
+            return
+        }
+        model.startReplay(clips, track: track, assumedSpeed: assumedSpeed, offset: offset)
+        guard model.replaying else {
+            error = "Replay could not start. Try again after the current drive ends."
+            return
+        }
+        error = nil
+        dismiss()
     }
 }

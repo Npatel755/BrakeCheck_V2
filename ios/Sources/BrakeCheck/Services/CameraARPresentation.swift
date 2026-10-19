@@ -15,6 +15,8 @@ final class CameraARPresentation: ObservableObject {
     @Published private(set) var guidanceDetail = "Waiting for road tracking"
     private var maskTime: TimeInterval?
     private var maskPath = Path()
+    private var diagnosticMaskTime: TimeInterval?
+    private var diagnosticMaskPath = Path()
     private var statusPresentation = ARStatusPresentation()
     func update(scene: CameraARScene?, estimate: CameraCalibrationEstimate?, calibrationProgress: Int = 0, alignmentLocked: Bool = false, mountConfirmed: Bool = false) {
         if let scene {
@@ -36,6 +38,7 @@ final class CameraARPresentation: ObservableObject {
     }
     func reset() {
         update(scene: nil, estimate: nil); setLevel(.lost); maskTime = nil; maskPath = Path()
+        diagnosticMaskTime = nil; diagnosticMaskPath = Path()
         statusPresentation = ARStatusPresentation(); guidanceDetail = "Waiting for road tracking"
     }
     func visibilityPath() -> Path {
@@ -56,6 +59,28 @@ final class CameraARPresentation: ObservableObject {
             }
         }
         maskTime = scene.capturedAt; maskPath = path
+        return path
+    }
+    /// Raw model output, independent of the scanner's accepted road region.
+    func diagnosticRoadPath() -> Path {
+        guard let scene, let mask = scene.diagnosticRoadMask else { return Path() }
+        if diagnosticMaskTime == scene.roadObservedAt { return diagnosticMaskPath }
+        var path = Path()
+        for row in 0..<mask.height {
+            var start: Int?
+            for column in 0...mask.width {
+                let road = column < mask.width && mask.pixels[row * mask.width + column] != 0
+                if road, start == nil { start = column }
+                if !road, let first = start {
+                    path.addRect(CGRect(x: Double(first) / Double(mask.width),
+                        y: Double(row) / Double(mask.height),
+                        width: Double(column - first) / Double(mask.width),
+                        height: 1.0 / Double(mask.height)))
+                    start = nil
+                }
+            }
+        }
+        diagnosticMaskTime = scene.roadObservedAt; diagnosticMaskPath = path
         return path
     }
 }

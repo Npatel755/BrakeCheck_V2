@@ -86,7 +86,6 @@ final class VehicleTracker {
     private var automaticRequest: VNTrackObjectRequest?
     private var automaticSequence = VNSequenceRequestHandler()
     var onLane: ((LanePath?) -> Void)?
-    var onRoad: ((RoadRegion?) -> Void)?
     var onARScene: ((CameraARScene?) -> Void)?
     private var arProcessingEnabled = false
     private var lastARPublication: TimeInterval = -.infinity
@@ -107,7 +106,8 @@ final class VehicleTracker {
         let fresh = scene.capturedAt >= lastObstacleTime && scene.capturedAt - lastObstacleTime <= 0.4
         onARScene?(CameraARScene(lane: scene.lane, road: scene.road, laneObservedAt: scene.laneObservedAt,
             roadObservedAt: scene.roadObservedAt, capturedAt: scene.capturedAt,
-            obstacles: fresh ? lastObstacleBoxes : [], obstaclesFresh: fresh, isPredicted: scene.isPredicted))
+            obstacles: fresh ? lastObstacleBoxes : [], obstaclesFresh: fresh, isPredicted: scene.isPredicted,
+            diagnosticRoadMask: scene.diagnosticRoadMask))
     }
     private var referenceDistance = 0.0
     private var referenceWidth = 0.0
@@ -424,7 +424,6 @@ final class VehicleTracker {
         automaticRequest = nil
         automaticSequence = VNSequenceRequestHandler()
         onLane?(nil)
-        onRoad?(nil)
         onARScene?(nil); lastObstacleBoxes = []; lastObstacleTime = -.infinity
         targetID = nil
         previousBox = nil
@@ -469,7 +468,7 @@ final class VehicleTracker {
                     let lane = self.laneTracker.update(buffer, excluding: boxes, at: uptime)
                     guard self.isCurrentFrame(submittedGeneration) else { return }
                     self.lastLane = lane
-                    self.onLane?(lane); self.onRoad?(self.laneTracker.roadRegion)
+                    self.onLane?(lane)
                     self.publishARScene()
                     return
                 }
@@ -546,7 +545,7 @@ final class VehicleTracker {
                     self.onDetections?(vehicles, uptime)
                     self.laneTracker.submit(buffer, at: uptime)
                     let lane = self.laneTracker.update(buffer, excluding: vehicles.map { $0.box }, at: uptime)
-                    self.lastLane = lane; self.onLane?(lane); self.onRoad?(self.laneTracker.roadRegion)
+                    self.lastLane = lane; self.onLane?(lane)
                     self.publishARScene()
                     try self.sequence.perform([request], on: buffer, orientation: .up)
                     guard
@@ -584,7 +583,7 @@ final class VehicleTracker {
                 let classified = self.headingTracker.update(vehicles, buffer: buffer, lane: guidance,
                     at: uptime,
                     preferredID: self.targetID, trackedBox: trackedBox,
-                    allowNightClassAliases: false)
+                    allowNightClassAliases: self.activeProfile == .night)
                 self.onDetections?(self.detectionPresentation.update(classified, at: uptime,
                     preferredID: self.targetID, trackedBox: trackedBox).map {
                     VehicleDetection(id: $0.vehicle.trackID ?? UUID(), box: $0.vehicle.box,
@@ -617,7 +616,7 @@ final class VehicleTracker {
                 self.laneTracker.submit(buffer, at: uptime)
                 let lane = self.laneTracker.update(buffer, excluding: vehicles.map { $0.box }, at: uptime)
                 guard self.isCurrentFrame(submittedGeneration) else { return }
-                self.lastLane = lane; self.onLane?(lane); self.onRoad?(self.laneTracker.roadRegion)
+                self.lastLane = lane; self.onLane?(lane)
                 self.publishARScene()
             } catch {
                 if let id = self.targetID { self.lose(id, "Vision error: \(error.localizedDescription)") }
