@@ -1,0 +1,88 @@
+# Compile check for the iPhone app on a GitHub-hosted Mac (no signing, no device).
+# Runs only on claude/* branches or manually, so it never affects main or teammate branches.
+name: iOS build check
+
+on:
+  push:
+    branches: ['claude/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+
+      - name: Core unit tests (BrakeCheckCore)
+        run: |
+          set -o pipefail
+          swift test --package-path Core 2>&1 | tee core.log || {
+            grep -E "error:|failed" core.log | sort -u | head -40 | while IFS= read -r line; do echo "::error title=Core tests::$line"; done
+            exit 1
+          }
+          grep -E "Executed [0-9]+ tests" core.log | tail -1 | while IFS= read -r line; do echo "::notice title=Core tests::$line"; done
+
+      - name: Compile app for iOS
+        if: always()
+        run: |
+          set +e
+          xcodebuild -scheme BrakeCheck \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO build > build.log 2>&1
+          status=$?
+          # Surface compiler errors as annotations (readable without logging in).
+          grep -E "^/.*: error: " build.log | sed "s|$GITHUB_WORKSPACE/||" | sort -u | head -50 | while IFS= read -r line; do
+            file=$(echo "$line" | cut -d: -f1); lineno=$(echo "$line" | cut -d: -f2)
+            msg=$(echo "$line" | cut -d: -f4- | sed 's/^ error: //')
+            echo "::error file=$file,line=$lineno::$msg"
+          done
+          grep -E "error:" build.log | grep -vE "^/.*: error: " | sort -u | head -20 | while IFS= read -r line; do echo "::error title=xcodebuild::$line"; done
+          if [ $status -ne 0 ]; then
+            xcodebuild -list 2>&1 | head -30 | while IFS= read -r line; do echo "::notice title=xcodebuild -list::$line"; done
+            tail -25 build.log | while IFS= read -r line; do echo "::notice title=build.log tail::$line"; done
+          fi
+          exit $status
+
+      - name: Detector packages are complete
+        # The app compiles without the Core ML weight files but can't load the detectors,
+        # so every file listed in the provenance JSON must be in the repo with the same hash.
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import hashlib, json, pathlib, sys
+          res = pathlib.Path("Sources/BrakeCheck/Resources")
+          pairs = {"DetectorModelData/Day": "RTMDetTiny", "DetectorModelData/Night": "RTMDetSmall"}
+          bad = 0
+          for package, card in pairs.items():
+              prov = json.loads((res / "ModelLicenses" / f"{card}-provenance.json").read_text())
+              for rel, want in prov["files"].items():
+                  f = res / package / rel
+                  if not f.is_file():
+                      print(f"::error title=Missing model file::{package}/{rel} is not in the repo (listed in {card}-provenance.json)")
+                      bad += 1
+                  elif hashlib.sha256(f.read_bytes()).hexdigest() != want:
+                      print(f"::error title=Model hash mismatch::{package}/{rel} doesn't match {card}-provenance.json")
+                      bad += 1
+                  else:
+                      print(f"ok  {package}/{rel}")
+          sys.exit(1 if bad else 0)
+          EOF
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            ios/build.log
+            ios/core.log
+          if-no-files-found: ignore

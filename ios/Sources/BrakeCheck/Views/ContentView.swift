@@ -99,7 +99,9 @@ struct ContentView: View {
         }
     }
 
-    private var drivingPages: some View {
+    // Xcode 26 times out type-checking one 35-modifier chain, so the page modifiers are split:
+    // pageStack -> presentedPages -> observing helpers -> drivingPages. Same modifiers, same order.
+    private var pageStack: some View {
         GeometryReader { geometry in
             let portrait = geometry.size.height > geometry.size.width
             ZStack {
@@ -128,6 +130,10 @@ struct ContentView: View {
                 if critical { BrakeEdgeGlow() }
             }
         }
+    }
+
+    private var presentedPages: some View {
+        pageStack
         .background {
             InterfaceOrientationObserver { model.interfaceOrientationChanged($0) }
                 .allowsHitTesting(false)
@@ -141,7 +147,7 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showFirstTripPremium, onDismiss: openCompletedTrip) {
             PremiumView(onContinue: { showFirstTripPremium = false })
         }
-        .alert("BrakeCheck", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+        .alert("BrakeCheck", isPresented: messageShown) {
             Button("OK", role: .cancel) { model.message = nil }
         } message: { Text(model.message ?? "") }
         .confirmationDialog("End this trip? Remaining post-event recording will stop.", isPresented: $stopping, titleVisibility: .visible) {
@@ -158,6 +164,26 @@ struct ContentView: View {
         } message: {
             Text("Your trip summary is ready. Would you like to rate BrakeCheck first?")
         }
+    }
+
+    private var messageShown: Binding<Bool> {
+        Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })
+    }
+
+    private var drivingPages: some View {
+        arSynced(observingNavigation(observingCamera(observingCheckin(presentedPages))))
+        .overlay {
+            if showCameraSetup {
+                CameraCalibrationOverlay(model: model, presentation: model.arPresentation, cameraAR: $cameraAR,
+                    onClose: { showCameraSetup = false })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: showCameraSetup)
+    }
+
+    private func observingCheckin<Content: View>(_ content: Content) -> some View {
+        content
         .onChange(of: safety.checkinPresented) { _, presented in
             if !presented { showCheckin = false }
             else { destinationPath = []; showCheckin = true }
@@ -170,6 +196,10 @@ struct ContentView: View {
             navigation.setPageVisible(destinations.isEmpty && page == .navigation && !selecting)
             if destinations.isEmpty { presentPendingCheckin() }
         }
+    }
+
+    private func observingCamera<Content: View>(_ content: Content) -> some View {
+        content
         .onChange(of: model.cameraReady) { _, ready in if !ready { selecting = false; selection = nil } }
         .onChange(of: model.captureGeometry) { _, _ in selecting = false; selection = nil }
         .onChange(of: model.changingCameraGeometry) { _, changing in
@@ -178,12 +208,20 @@ struct ContentView: View {
         .onChange(of: model.tripActive) { _, active in
             if active { page = navigation.isNavigating ? .navigation : .camera }
         }
+    }
+
+    private func observingNavigation<Content: View>(_ content: Content) -> some View {
+        content
         .onChange(of: navigation.isNavigating) { _, active in if active { page = .navigation } }
         .onChange(of: page) { _, destination in navigation.setPageVisible(destinationPath.isEmpty && destination == .navigation && !selecting) }
         .onChange(of: selecting) { _, active in navigation.setPageVisible(destinationPath.isEmpty && page == .navigation && !active) }
         .onChange(of: useMPH) { _, miles in navigation.useMPH = miles }
         .onChange(of: model.replaying) { _, active in if active { page = .camera } }
         .onChange(of: model.demo) { _, active in if active { page = .camera } }
+    }
+
+    private func arSynced<Content: View>(_ content: Content) -> some View {
+        content
         .task { await safety.connectIfPaired() }
         .onAppear { updateARDemand() }
         .onChange(of: page) { _, _ in updateARDemand() }
@@ -191,14 +229,6 @@ struct ContentView: View {
         .onChange(of: cameraAR) { _, _ in updateARDemand() }
         .onChange(of: selecting) { _, _ in updateARDemand() }
         .onDisappear { model.setARCameraVisible(false) }
-        .overlay {
-            if showCameraSetup {
-                CameraCalibrationOverlay(model: model, presentation: model.arPresentation, cameraAR: $cameraAR,
-                    onClose: { showCameraSetup = false })
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.easeOut(duration: 0.2), value: showCameraSetup)
     }
     private func updateARDemand() {
         model.setARCameraVisible(page == .camera && cameraAR && !selecting && destinationPath.isEmpty)

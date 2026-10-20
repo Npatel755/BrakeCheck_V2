@@ -53,6 +53,13 @@ let package = Package(
 
             path: "Sources/BrakeCheck",
 
+            // The old YOLO packages stay in the repo only for comparison. Xcode's SwiftPM treats any
+            // unlisted .mlmodel as a resource ("multiple resources named model.mlmodel") and would
+            // ship these AGPL models; xtool skips them, so this changes nothing for Linux builds.
+            exclude: [
+                "Resources/YOLOModelData"
+            ],
+
             resources: [
                 // Copy permissive RTMDet packages as ordinary resource data.
                 // Avoid triggering Apple's coremlc during
