@@ -5,7 +5,7 @@ import UIKit
 /// Setup uses the existing camera behind this panel, never another preview layer.
 struct CameraCalibrationControls: View {
     let model: DriveModel
-    @ObservedObject var presentation: CameraARPresentation
+    let presentation: CameraARPresentation
     @Binding var cameraAR: Bool
     var liveCameraSetup = false
     var openCameraSetup: (() -> Void)? = nil
@@ -108,10 +108,10 @@ struct CameraCalibrationControls: View {
                 }.disabled(aligning)
             }
         }
-        .onReceive(model.$cameraReady.removeDuplicates()) { cameraReady = $0; finishIfReady() }
-        .onReceive(model.$captureGeometry) { _ in finishIfReady() }
-        .onReceive(model.$changingCameraGeometry.removeDuplicates()) { changingGeometry = $0 }
-        .onReceive(model.$speed.map { _ in model.hasMeasuredMovement(at: ProcessInfo.processInfo.systemUptime) }.removeDuplicates()) { moving = $0 }
+        .onChange(of: model.cameraReady, initial: true) { _, value in cameraReady = value; finishIfReady() }
+        .onChange(of: model.captureGeometry, initial: true) { _, _ in finishIfReady() }
+        .onChange(of: model.changingCameraGeometry, initial: true) { _, value in changingGeometry = value }
+        .onChange(of: model.speed, initial: true) { _, _ in moving = model.hasMeasuredMovement(at: ProcessInfo.processInfo.systemUptime) }
         // Setup needs perception while it is visible, independent of whether
         // the driver has enabled the on-road navigation ribbon.
         .onAppear { model.setARCalibrationVisible(liveCameraSetup) }
@@ -146,7 +146,7 @@ struct CameraCalibrationControls: View {
 /// An in-place card keeps the original capture preview attached and visible.
 struct CameraCalibrationOverlay: View {
     let model: DriveModel
-    @ObservedObject var presentation: CameraARPresentation
+    let presentation: CameraARPresentation
     @Binding var cameraAR: Bool
     var onClose: () -> Void
     var body: some View {
@@ -174,7 +174,7 @@ struct CameraCalibrationOverlay: View {
 }
 
 struct CameraAlignmentShortcut: View {
-    @ObservedObject var presentation: CameraARPresentation
+    let presentation: CameraARPresentation
     var onOpen: () -> Void
     var body: some View {
         Button(action: onOpen) {

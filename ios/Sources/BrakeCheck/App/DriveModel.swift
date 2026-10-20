@@ -3,13 +3,14 @@ import BrakeCheckCore
 import SwiftUI
 
 import Combine
+import Observation
 
 import UIKit
 import AVFoundation
 
 @MainActor
-
-final class DriveModel: ObservableObject {
+@Observable
+final class DriveModel {
 
     let camera = CameraService()
     let safety = SafetyService()
@@ -18,36 +19,36 @@ final class DriveModel: ObservableObject {
     private let speedLog = SpeedLogWriter()
     private let tripMetricsStore = TripMetricsStore(url: FileManager.default.urls(for: .documentDirectory,
         in: .userDomainMask)[0].appendingPathComponent("TripMetrics/trip-history.json"))
-    @Published private(set) var savedTrips: [TripMetrics] = []
+    private(set) var savedTrips: [TripMetrics] = []
     var tripHistoryURL: URL { tripMetricsStore.url }
     private var tripHadGPSSpeed = false
     // Replay mode: a recorded drive runs through the live tracker and risk estimator.
-    @Published var replaying = false
-    @Published var replayFrame: UIImage?
-    @Published var replayStatus = ""
-    @Published var replaySpeedSource = ""
+    var replaying = false
+    var replayFrame: UIImage?
+    var replayStatus = ""
+    var replaySpeedSource = ""
     private var replayTrack: SpeedTrack?
     private var replayAssumedSpeed: Double?
     private var replayOffset: TimeInterval = 0
     private var replayGeneration: Int?
     private var replayAnchor: (uptime: TimeInterval, recorded: Date?, elapsed: TimeInterval)?
-    @Published var tripMinutes: Double = 0
-    @Published var hardBrakes = 0
-    @Published var closeCalls = 0
-    @Published var maxSpeedMPH: Double = 0
+    var tripMinutes: Double = 0
+    var hardBrakes = 0
+    var closeCalls = 0
+    var maxSpeedMPH: Double = 0
     private var tripStarted = Date()
     private var lastTripPublishedSecond = -1
-    private var brakeWarningLatch = BrakeWarningLatch()
-    @Published private(set) var brakeWarningActive = false
-    private var wasHardBrake = false
-    private var wasCloseCall = false
+    @ObservationIgnored private var brakeWarningLatch = BrakeWarningLatch()
+    private(set) var brakeWarningActive = false
+    @ObservationIgnored private var wasHardBrake = false
+    @ObservationIgnored private var wasCloseCall = false
 
     private let speedService = SpeedService()
 
     private let impactService = ImpactService()
 
-    private var estimator = LeadRiskContinuity()
-    private var cameraRangeEstimator = CameraRangeEstimator()
+    @ObservationIgnored private var estimator = LeadRiskContinuity()
+    @ObservationIgnored private var cameraRangeEstimator = CameraRangeEstimator()
     var measurementRevision: String {
         "N" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")
     }
@@ -60,13 +61,13 @@ final class DriveModel: ObservableObject {
 
     private var targetID: UUID?
     private var currentCameraRisk: RiskSnapshot?
-    private var dangerContinuity = LeadDangerContinuity()
-    private var laneDisplayContinuity = LaneDisplayContinuity(rejectOutliers: true, smoothingSeconds: 0.4)
-    private var drivingAssist = DrivingAssistEngine()
+    @ObservationIgnored private var dangerContinuity = LeadDangerContinuity()
+    @ObservationIgnored private var laneDisplayContinuity = LaneDisplayContinuity(rejectOutliers: true, smoothingSeconds: 0.4)
+    @ObservationIgnored private var drivingAssist = DrivingAssistEngine()
     private var assistFeatures: Set<DrivingAssistFeature> = []
     private var assistLane: LanePath?
-    private var assistSubscriptions = Set<AnyCancellable>()
-    @Published private(set) var drivingAssistAlert: DrivingAssistAlert?
+    @ObservationIgnored private var assistSubscriptions = Set<AnyCancellable>()
+    private(set) var drivingAssistAlert: DrivingAssistAlert?
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -80,23 +81,23 @@ final class DriveModel: ObservableObject {
 
     private var permissionPending = false
 
-    @Published var tripActive = false
+    var tripActive = false
 
-    @Published var stopping = false
+    var stopping = false
 
-    @Published var demo = false
+    var demo = false
 
-    @Published var cameraReady = false
-    @Published var captureGeometry = CaptureFrameGeometry.standby
-    @Published var changingCameraGeometry = false
+    var cameraReady = false
+    var captureGeometry = CaptureFrameGeometry.standby
+    var changingCameraGeometry = false
     private var desiredCaptureOrientation: AVCaptureVideoOrientation = .portrait
     private var latestGeometryChangeUptime: TimeInterval = 0
     private var latestTrackingResetUptime: TimeInterval = 0
     private var lastDetectionsUptime: TimeInterval = 0
 
-    @Published var speed: Double?
-    @Published private(set) var gpsSpeedEstimated = false
-    @Published private(set) var stationaryGPSConfirmed = false
+    var speed: Double?
+    private(set) var gpsSpeedEstimated = false
+    private(set) var stationaryGPSConfirmed = false
     func hasStationaryGPS(at time: TimeInterval) -> Bool {
         foreground && tripActive && !demo && !replaying && speedReading?.isFreshStationary(at: time) == true
     }
@@ -157,54 +158,54 @@ final class DriveModel: ObservableObject {
         arPresentation.setAlignmentLocked(true)
         return true
     }
-    @Published private(set) var estimatedLeadSpeed: Double?
+    private(set) var estimatedLeadSpeed: Double?
 
-    @Published var gpsSimulated = false
+    var gpsSimulated = false
 
-    @Published var gpsAccuracy: Double?
+    var gpsAccuracy: Double?
 
     // Experimental speed estimate for UI only; never fed to RiskEstimator.
-    @Published var fusedSpeed: Double?
-    @Published var fusedSpeedUncertainty: Double?
-    @Published var fusedSpeedSource = "GPS fusion unavailable"
-    @Published var fusedGPSAge: TimeInterval?
-    @Published var fusionStatus = "Fusion stopped"
+    var fusedSpeed: Double?
+    var fusedSpeedUncertainty: Double?
+    var fusedSpeedSource = "GPS fusion unavailable"
+    var fusedGPSAge: TimeInterval?
+    var fusionStatus = "Fusion stopped"
     private var fusedReceivedUptime: TimeInterval = 0
 
-    @Published var detections: [VehicleDetection] = []
+    var detections: [VehicleDetection] = []
 
-    @Published var detectorStatus = "Vehicle models are loading…"
-    @Published var detectorLightingStatus = "Automatic lighting · detectors loading"
-    @Published var detectorLightingMode = DetectorLightingMode(rawValue:
+    var detectorStatus = "Vehicle models are loading…"
+    var detectorLightingStatus = "Automatic lighting · detectors loading"
+    var detectorLightingMode = DetectorLightingMode(rawValue:
         UserDefaults.standard.string(forKey: "BrakeCheck.detectorLightingMode") ?? "automatic") ?? .automatic {
         didSet {
             UserDefaults.standard.set(detectorLightingMode.rawValue, forKey: "BrakeCheck.detectorLightingMode")
             camera.tracker.setLightingMode(detectorLightingMode)
         }
     }
-    @Published var leadSelectionStatus = "Looking for a car ahead"
+    var leadSelectionStatus = "Looking for a car ahead"
     /// Fresh camera range can be displayed for a rear-confirmed candidate
     /// while driving-path evidence is insufficient for speed or risk.
-    @Published var trackedDistance: Double?
-    @Published var cameraRange = CameraRangeSnapshot()
-    @Published var speedBlocker = "Needs target"
-    @Published var collisionBlocker = "Needs target"
-    @Published var frameAlignmentStatus = "Waiting for camera and GPS"
-    @Published var collisionHazardID: UUID?
-    @Published var leadTargetID: UUID?
-    @Published var leadRearEvidenceStatus = "No confirmed lead identity"
+    var trackedDistance: Double?
+    var cameraRange = CameraRangeSnapshot()
+    var speedBlocker = "Needs target"
+    var collisionBlocker = "Needs target"
+    var frameAlignmentStatus = "Waiting for camera and GPS"
+    var collisionHazardID: UUID?
+    var leadTargetID: UUID?
+    var leadRearEvidenceStatus = "No confirmed lead identity"
 
-    @Published var rangeSource = "Camera range is an estimate"
+    var rangeSource = "Camera range is an estimate"
 
-    @Published var egoAcceleration: Double?
+    var egoAcceleration: Double?
 
-    @Published var risk = RiskSnapshot() {
+    var risk = RiskSnapshot() {
         didSet { refreshDangerMeter(at: ProcessInfo.processInfo.systemUptime) }
     }
-    @Published private(set) var dangerMeter = DangerMeterSnapshot()
+    private(set) var dangerMeter = DangerMeterSnapshot()
 
-    @Published var trackingBox: CGRect?
-    @Published var lanePath: LanePath?
+    var trackingBox: CGRect?
+    var lanePath: LanePath?
     let arPresentation = CameraARPresentation()
     var arScene: CameraARScene? { arPresentation.scene }
     var cameraCalibrationEstimate: CameraCalibrationEstimate? { arPresentation.calibrationEstimate }
@@ -232,27 +233,27 @@ final class DriveModel: ObservableObject {
         return CameraOrientationLock(restored: restored)
     }()
     private var lastAppliedOrientation: CameraOrientationRecord?
-    @Published var trackingCoasting = false
+    var trackingCoasting = false
 
-    @Published var trackingStatus = "Automatic lead candidate selection starts with the camera."
-    @Published private(set) var detectorReady = false
+    var trackingStatus = "Automatic lead candidate selection starts with the camera."
+    private(set) var detectorReady = false
 
-    @Published var cameraStatus = "Camera stopped"
+    var cameraStatus = "Camera stopped"
 
-    @Published var gpsStatus = "GPS stopped"
+    var gpsStatus = "GPS stopped"
 
-    @Published var recorderStatus = "Recorder stopped"
-    @Published var recordingStorageBytes: Int64?
+    var recorderStatus = "Recorder stopped"
+    var recordingStorageBytes: Int64?
 
-    @Published var motionStatus = "Impact sensing off"
+    var motionStatus = "Impact sensing off"
 
-    @Published var incidents: [IncidentManifest] = []
+    var incidents: [IncidentManifest] = []
     /// Local GPS trail and flagged moments for the trip detail page.
     let tripRoute = TripRouteRecorder()
 
-    @Published var message: String?
+    var message: String?
 
-    @Published var impactEnabled = false {
+    var impactEnabled = false {
 
         didSet { updateImpactService() }
 

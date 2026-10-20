@@ -183,11 +183,11 @@ struct SettingsView: View {
         .background(BrakeTheme.background)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .onReceive(model.$tripActive.removeDuplicates()) { tripActive = $0 }
-        .onReceive(model.$stopping.removeDuplicates()) { stopping = $0 }
-        .onReceive(model.$demo.removeDuplicates()) { demoMode = $0 }
-        .onReceive(model.$impactEnabled.removeDuplicates()) { impactEnabled = $0 }
-        .onReceive(model.$recordingStorageBytes.removeDuplicates()) { storageBytes = $0 }
+        .onChange(of: model.tripActive, initial: true) { _, value in tripActive = value }
+        .onChange(of: model.stopping, initial: true) { _, value in stopping = value }
+        .onChange(of: model.demo, initial: true) { _, value in demoMode = value }
+        .onChange(of: model.impactEnabled, initial: true) { _, value in impactEnabled = value }
+        .onChange(of: model.recordingStorageBytes, initial: true) { _, value in storageBytes = value }
         .onAppear {
             if AccentChoice(rawValue: accentChoice) == nil { accentChoice = BrakeTheme.defaultAccent }
         }

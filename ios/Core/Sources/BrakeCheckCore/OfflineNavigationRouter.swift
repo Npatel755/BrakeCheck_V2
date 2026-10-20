@@ -152,6 +152,7 @@ public struct OfflineNavigationRouter {
         }
     }
     public let graph: OfflineRoadGraph
+    private let spatialIndex: NavigationSpatialIndex
     private let outgoing: [String: [Int]]
     private let restrictions: [String: [OfflineTurnRestriction]]
     private let lengths: [Double]
@@ -163,6 +164,7 @@ public struct OfflineNavigationRouter {
 
     public init(graph: OfflineRoadGraph) throws {
         try graph.validate(); self.graph = graph
+        spatialIndex = NavigationSpatialIndex(bounds: graph.edges.map { .init(coordinates: $0.coordinates) })
         outgoing = Dictionary(grouping: graph.edges.indices, by: { graph.edges[$0].from })
         restrictions = Dictionary(grouping: graph.turnRestrictions, by: \.fromEdgeID)
         lengths = graph.edges.map(\.distance)
@@ -374,7 +376,9 @@ public struct OfflineNavigationRouter {
               coordinate.longitude <= maxLongitude + longitudeMargin else { throw OfflineNavigationError.outsideCoverage }
         let heading = bearing.flatMap { $0.isFinite && (0..<360).contains($0) ? $0 : nil }
         var candidates: [Projection] = []
-        for (index, edge) in graph.edges.enumerated() where permitted(edge, preferences: preferences) {
+        for index in spatialIndex.candidates(near: coordinate, radius: maximumDistance) {
+            let edge = graph.edges[index]
+            guard permitted(edge, preferences: preferences) else { continue }
             var along = 0.0
             var closest: Projection?
             for segment in 0..<(edge.coordinates.count - 1) {

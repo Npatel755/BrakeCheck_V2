@@ -5,7 +5,7 @@ import AVFoundation
 import UIKit
 
 struct IncidentListView: View {
-    @ObservedObject var model: DriveModel
+    let model: DriveModel
     @Environment(\.dismiss) private var dismiss
     @State private var deleting: IncidentManifest?
 
@@ -46,7 +46,7 @@ struct IncidentListView: View {
 }
 
 struct IncidentDetailView: View {
-    @ObservedObject var model: DriveModel
+    let model: DriveModel
     let id: UUID
     @State private var playing: VideoSegment?
 

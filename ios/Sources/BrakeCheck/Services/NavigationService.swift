@@ -59,6 +59,8 @@ final class NavigationService: NSObject, ObservableObject {
     @Published private(set) var destinationTitle: String?
     @Published private(set) var route: MKRoute?
     private(set) var cameraRouteCoordinates: [NavigationCoordinate] = []
+    private(set) var cameraRouteGeometry = CameraRouteGeometry(route: [])
+    @Published private(set) var routeGeometryReady = false
     @Published private(set) var cameraMapMatchConfidence = 0.0
     @Published private(set) var cameraMapMatchAmbiguous = true
     var cameraRouteProgress: Double? {
@@ -93,7 +95,7 @@ final class NavigationService: NSObject, ObservableObject {
     @Published private(set) var displayedLocation: CLLocation?
     var hasPlannedRoute: Bool { activeRoute != nil }
     // A cached measured origin permits preview/start; turns remain paused until fresh GPS.
-    var canStartGuidance: Bool { hasPlannedRoute && routingLocation != nil && !isCalculating && !requiresNewPlan }
+    var canStartGuidance: Bool { hasPlannedRoute && routeGeometryReady && routingLocation != nil && !isCalculating && !requiresNewPlan }
     private var routingLocation: CLLocation? { hasFreshLocation ? location : lastKnownLocation }
     var destinationCoordinate: CLLocationCoordinate2D? { destination?.placemark.coordinate }
     var shareURL: URL? {
@@ -160,6 +162,14 @@ final class NavigationService: NSObject, ObservableObject {
     private var graphImportID = UUID()
     private var routeRevision = UUID()
     private var routeProgress: NavigationProgressTracker?
+    private var preparedProgress: NavigationProgressTracker?
+    private var routePreparationTask: Task<Void, Never>?
+    private var activeHistoryKey: String?
+    private var historicalPatternHour: Date?
+    private var historicalMultiplier = 1.0
+    private var lastLocationPersistedAt = Date.distantPast
+    private var libraryTask: Task<Void, Never>?
+    private let libraryStore = NavigationLibraryStore()
     private var steps: [NavigationRouteStep] = []
     private var plannedAlternatives: [SavedNavigationRoute] = []
     private var offlineRouter: OfflineNavigationRouter?
@@ -339,6 +349,9 @@ final class NavigationService: NSObject, ObservableObject {
         destinationID = UUID()
         route = nil
         activeRoute = nil
+        routeGeometryReady = false; cameraRouteGeometry = CameraRouteGeometry(route: [])
+        preparedProgress = nil; activeHistoryKey = nil
+        routePreparationTask?.cancel()
         routePath = nil
         alternatives = []
         plannedAlternatives = []
@@ -429,6 +442,9 @@ final class NavigationService: NSObject, ObservableObject {
         destinationTitle = nil
         route = nil
         activeRoute = nil
+        routeGeometryReady = false; cameraRouteGeometry = CameraRouteGeometry(route: [])
+        preparedProgress = nil; activeHistoryKey = nil
+        routePreparationTask?.cancel()
         routePath = nil
         alternatives = []
         plannedAlternatives = []
@@ -457,7 +473,7 @@ final class NavigationService: NSObject, ObservableObject {
         tripDeparture = Date()
         tripBaseline = activeRoute?.expectedTravelTime ?? 0
         tripDistance = activeRoute?.distance ?? 0
-        tripHistoryKey = activeRoute?.historyKey
+        tripHistoryKey = activeHistoryKey
         tripPausedSeconds = 0
         tripReplanned = false
         tripInitialProgress = nil
@@ -728,12 +744,13 @@ final class NavigationService: NSObject, ObservableObject {
         lastSpokenPrompt = nil; spokenStages = [:]
         etaEstimator.reset()
         trafficTimeMultiplier = 1
-        resetProgress()
+        routeGeometryReady = false; preparedProgress = nil; routeProgress = nil
+        activeHistoryKey = nil; historicalPatternHour = nil
+        cameraRouteCoordinates = saved.coordinates
+        cameraRouteGeometry = CameraRouteGeometry(route: [])
+        cameraMapMatchConfidence = 0; cameraMapMatchAmbiguous = true; routeConfidence = 0
+        prepareRoute(saved, revision: routeRevision)
         remainingDistance = saved.distance; remainingTime = saved.expectedTravelTime
-        if saved.source != "Apple Maps", let pattern = NavigationTrafficHistory.pattern(for: saved.historyKey,
-            departure: departureDate ?? Date(), observations: trafficHistory) {
-            remainingTime = saved.expectedTravelTime * pattern.multiplier
-        }
         instruction = "Route preview"
         lastRouteInstruction = steps.first(where: { !$0.instruction.isEmpty })?.instruction ?? "Continue on your route"
         routeNotice = saved.steps.compactMap(\.notice).first
@@ -744,8 +761,36 @@ final class NavigationService: NSObject, ObservableObject {
     }
     private func resetProgress() {
         cameraMapMatchConfidence = 0; cameraMapMatchAmbiguous = true; routeConfidence = 0
-        cameraRouteCoordinates = activeRoute?.coordinates ?? []
-        routeProgress = activeRoute?.progressTracker()
+        routeProgress = preparedProgress
+    }
+    private func prepareRoute(_ saved: SavedNavigationRoute, revision: UUID) {
+        let previous = routePreparationTask
+        previous?.cancel()
+        routePreparationTask = Task { @MainActor [weak self] in
+            // Serialize preparation so rapid route selection cannot build several
+            // large geometry indexes concurrently. Superseded queued routes skip.
+            await previous?.value
+            guard !Task.isCancelled else { return }
+            let prepared = await Task.detached(priority: .userInitiated) {
+                (CameraRouteGeometry(route: saved.coordinates), saved.progressTracker(), saved.historyKey)
+            }.value
+            guard let self, !Task.isCancelled, self.routeRevision == revision, self.activeRoute?.id == saved.id else { return }
+            self.cameraRouteGeometry = prepared.0; self.preparedProgress = prepared.1
+            self.activeHistoryKey = prepared.2; self.historicalPatternHour = nil
+            self.resetProgress()
+            if !self.isNavigating { self.remainingTime = saved.expectedTravelTime * self.routeHistoricalMultiplier(at: self.departureDate ?? Date()) }
+            self.routeGeometryReady = true
+            if self.isNavigating, self.hasFreshLocation, let fix = self.location { self.updateProgress(fix) }
+        }
+    }
+    private func routeHistoricalMultiplier(at date: Date) -> Double {
+        guard activeRoute?.source != "Apple Maps", let key = activeHistoryKey else { return 1 }
+        let hour = Calendar.current.dateInterval(of: .hour, for: date)?.start ?? date
+        if historicalPatternHour != hour {
+            historicalPatternHour = hour
+            historicalMultiplier = NavigationTrafficHistory.pattern(for: key, departure: date, observations: trafficHistory)?.multiplier ?? 1
+        }
+        return historicalMultiplier
     }
     private func routeFailed(_ message: String? = nil) {
         isCalculating = false
@@ -825,11 +870,18 @@ final class NavigationService: NSObject, ObservableObject {
               fix.horizontalAccuracy.isFinite, (0...65).contains(fix.horizontalAccuracy),
               lastKnownLocation.map({ fix.timestamp > $0.timestamp }) ?? true else { return }
         lastKnownLocation = fix
-        UserDefaults.standard.set([fix.coordinate.latitude, fix.coordinate.longitude,
-            fix.horizontalAccuracy, fix.timestamp.timeIntervalSince1970], forKey: "navigation.lastGPS")
+        // Keep every measured fix in memory; persist the fallback origin at most
+        // once per 15 seconds instead of scheduling preferences I/O for each GPS fix.
+        if fix.timestamp.timeIntervalSince(lastLocationPersistedAt) >= 15 {
+            lastLocationPersistedAt = fix.timestamp
+            UserDefaults.standard.set([fix.coordinate.latitude, fix.coordinate.longitude,
+                fix.horizontalAccuracy, fix.timestamp.timeIntervalSince1970], forKey: "navigation.lastGPS")
+        }
     }
 
     private func updateProgress(_ fix: CLLocation) {
+        let trace = PerformanceTrace.begin(.gpsProgress)
+        defer { PerformanceTrace.end(trace) }
         guard isNavigating, !userPaused, !hasArrived, !isCalculating, var progress = routeProgress else { return }
         guard !requiresNewPlan else {
             pauseMeasurements("Waiting for an updated route for your stops and preferences.")
@@ -881,11 +933,10 @@ final class NavigationService: NSObject, ObservableObject {
             errorMessage = nil
         }
         if let saved = activeRoute {
-            let pattern = NavigationTrafficHistory.pattern(for: saved.historyKey, departure: Date(), observations: trafficHistory)
             remainingTime = etaEstimator.update(remainingDistance: snapshot.remainingMeters,
                 routeDistance: saved.distance, expectedTravelTime: saved.expectedTravelTime * trafficTimeMultiplier,
                 timestamp: fix.timestamp.timeIntervalSinceReferenceDate,
-                historicalMultiplier: saved.source == "Apple Maps" ? 1 : (pattern?.multiplier ?? 1))?.remainingTime
+                historicalMultiplier: routeHistoricalMultiplier(at: Date()))?.remainingTime
         }
         markReachedStop(fix, progress: snapshot.progressMeters)
         updateTrafficMovement(fix)
@@ -1077,53 +1128,51 @@ final class NavigationService: NSObject, ObservableObject {
         if let data = try? JSONEncoder().encode(favorites) { UserDefaults.standard.set(data, forKey: "navigation.favorites") }
     }
 
-    private static var libraryFolder: URL {
-        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Navigation", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder
-    }
     private func loadNavigationLibrary() {
         if let data = UserDefaults.standard.data(forKey: "navigation.favorites"),
            let places = try? JSONDecoder().decode([RecentDestination].self, from: data) {
             favorites = Array(places.filter(\.valid).prefix(100))
         }
-        if let data = try? Data(contentsOf: Self.libraryFolder.appendingPathComponent("routes.json")),
-           let routes = try? NavigationRouteArchive.decode(data) { savedRoutes = routes }
         if let data = UserDefaults.standard.data(forKey: "navigation.trafficHistory"),
            let observations = try? JSONDecoder().decode([NavigationTrafficObservation].self, from: data) {
             trafficHistory = NavigationTrafficHistory.normalized(observations)
         }
-        let graphURL = Self.libraryFolder.appendingPathComponent("roads.json")
-        guard FileManager.default.fileExists(atPath: graphURL.path) else { return }
-        importOfflineGraph(from: graphURL)
+        let store = libraryStore
+        let initialImportID = graphImportID
+        libraryTask = Task { @MainActor [weak self] in
+            let library = await store.load()
+            guard let self else { return }
+            self.savedRoutes = library.routes
+            if let url = library.graphURL, self.graphImportID == initialImportID { self.importOfflineGraph(from: url) }
+        }
     }
     func saveCurrentRoute() {
         guard let activeRoute else { return }
-        if persistCurrentRoute(activeRoute) {
-            status = "Route saved. Instructions and progress work offline; map tiles need their own cache."
-        }
+        persistCurrentRoute(activeRoute, reportsStatus: true)
     }
-    @discardableResult private func persistCurrentRoute(_ route: SavedNavigationRoute) -> Bool {
-        var routes = [route] + savedRoutes.filter { $0.id != route.id }
-        routes = Array(routes.prefix(20))
-        var data = try? NavigationRouteArchive.encode(routes)
-        while data == nil && routes.count > 1 {
-            routes.removeLast(); data = try? NavigationRouteArchive.encode(routes)
+    private func persistCurrentRoute(_ route: SavedNavigationRoute, reportsStatus: Bool = false) {
+        let previous = libraryTask
+        let store = libraryStore
+        libraryTask = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self else { return }
+            let routes = Array(([route] + self.savedRoutes.filter { $0.id != route.id }).prefix(20))
+            do {
+                self.savedRoutes = try await store.save(routes, trimToFit: true)
+                if reportsStatus { self.status = "Route saved. Instructions and progress work offline; map tiles need their own cache." }
+            } catch {
+                self.errorMessage = "Could not save the route: " + error.localizedDescription
+            }
         }
-        guard let data else {
-            errorMessage = "This route is too large to save offline. Choose a shorter trip."
-            return false
-        }
-        do { try data.write(to: Self.libraryFolder.appendingPathComponent("routes.json"), options: .atomic) }
-        catch { errorMessage = "Could not save the route: " + error.localizedDescription; return false }
-        savedRoutes = routes
-        return true
     }
     func removeSavedRoute(id: UUID) {
-        savedRoutes.removeAll { $0.id == id }
-        if let data = try? NavigationRouteArchive.encode(savedRoutes) {
-            try? data.write(to: Self.libraryFolder.appendingPathComponent("routes.json"), options: .atomic)
+        let previous = libraryTask
+        let store = libraryStore
+        libraryTask = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self else { return }
+            do { self.savedRoutes = try await store.save(self.savedRoutes.filter { $0.id != id }, trimToFit: false) }
+            catch { self.errorMessage = "Could not remove the saved route: " + error.localizedDescription }
         }
     }
     func loadSavedRoute(_ saved: SavedNavigationRoute) {
@@ -1164,7 +1213,8 @@ final class NavigationService: NSObject, ObservableObject {
                     return (graph, try OfflineNavigationRouter(graph: graph), encoded, warning)
                 }.value
                 guard let self, self.graphImportID == importID else { return }
-                try result.2.write(to: Self.libraryFolder.appendingPathComponent("roads.json"), options: .atomic)
+                try await self.libraryStore.saveGraph(result.2)
+                guard self.graphImportID == importID else { return }
                 self.offlineRouter = result.1
                 self.offlineGraphName = result.0.name; self.offlineAttribution = result.0.attribution
                 self.offlineGraphReady = true
@@ -1305,6 +1355,7 @@ final class NavigationService: NSObject, ObservableObject {
             baselineDuration: tripBaseline, distance: tripDistance)
         if record.isValid {
             trafficHistory = NavigationTrafficHistory.normalized([record] + trafficHistory)
+            historicalPatternHour = nil
             if let data = try? JSONEncoder().encode(trafficHistory) { UserDefaults.standard.set(data, forKey: "navigation.trafficHistory") }
         }
         tripDeparture = nil

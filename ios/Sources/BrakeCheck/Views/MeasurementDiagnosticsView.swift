@@ -2,12 +2,13 @@ import SwiftUI
 import BrakeCheckCore
 
 struct MeasurementDiagnosticsView: View {
-    @ObservedObject var model: DriveModel
+    @Bindable var model: DriveModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Group {
             List {
+                Section("Performance") { PerformanceDiagnosticsPanel() }
                 Section("Vehicle measurements · \(model.measurementRevision)") {
                     Text(model.leadSelectionStatus)
                     LabeledContent("Lead vehicle ID", value: model.leadTargetID?.uuidString ?? "None")

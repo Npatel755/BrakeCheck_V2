@@ -10,7 +10,7 @@ public struct NavigationMapSmoother {
     public init() {}
 
     @discardableResult public mutating func ingest(_ fix: NavigationCoordinate, accuracy: Double,
-        speed: Double, timestamp: Double, now: Double, isCurrent: Bool) -> Bool {
+        speed: Double, timestamp: Double, now: Double, isCurrent: Bool, isEstimated: Bool = false) -> Bool {
         guard fix.latitude.isFinite, fix.longitude.isFinite,
               (-90...90).contains(fix.latitude), (-180...180).contains(fix.longitude),
               accuracy.isFinite, (0...100).contains(accuracy), timestamp.isFinite, now.isFinite,
@@ -32,6 +32,10 @@ public struct NavigationMapSmoother {
         if dt > 15 {
             target = fix; coordinate = fix; return true
         }
+        // Service estimates already include motion prediction and uncertainty.
+        // Interpolate toward the supplied point without filtering it as stationary
+        // GPS or projecting beyond it. Expiration is still owned by the service.
+        if isEstimated { target = fix; return true }
         if velocity < 2 && displacement <= max(3, min(10, accuracy * 0.5)) { return true }
         let response = velocity >= 2 ? 0.7 + accuracy / 50 : 2.0 + accuracy / 25
         target = Self.interpolate(previous, fix, fraction: 1 - exp(-dt / response))

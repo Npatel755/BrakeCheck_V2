@@ -4,7 +4,7 @@ import SwiftUI
 @main
 @MainActor
 struct BrakeCheckApp: App {
-    @StateObject private var model = DriveModel()
+    @State private var model = DriveModel()
     @AppStorage("display.appearance") private var appearance = "dark"
     /// Version of the driver-aid notice the driver accepted; raise it when the notice changes.
     @AppStorage("onboarding.driverAidNotice") private var acceptedNotice = 0

@@ -30,7 +30,7 @@ struct LeadCorridorOverlay: View {
 
 /// Optional diagnostic guides stay out of the way of an aligned AR ribbon.
 struct CameraPerceptionOverlay: View {
-    @ObservedObject var presentation: CameraARPresentation
+    let presentation: CameraARPresentation
     let lane: LanePath?
     let navigationOnCamera: Bool
     var body: some View {
@@ -43,7 +43,7 @@ struct CameraPerceptionOverlay: View {
 /// Temporary road-model diagnostic for the Intel test build. Draws raw pixels
 /// even when the alignment scanner declines to use them for navigation.
 struct CameraRoadMaskOverlay: View {
-    @ObservedObject var presentation: CameraARPresentation
+    let presentation: CameraARPresentation
 
     var body: some View {
         GeometryReader { _ in
@@ -59,14 +59,14 @@ struct CameraRoadMaskOverlay: View {
 
 /// Screen-anchored status, outside the aspect-filled camera content.
 struct CameraRoadMaskStatus: View {
-    @ObservedObject var presentation: CameraARPresentation
+    let presentation: CameraARPresentation
     let portrait: Bool
 
     private var status: String {
         guard let scene = presentation.scene, let mask = scene.diagnosticRoadMask else {
             return "ROAD MASK · waiting"
         }
-        let count = mask.pixels.reduce(0) { $0 + ($1 == 0 ? 0 : 1) }
+        let count = mask.occupiedPixelCount
         let percent = Int((Double(count) / Double(mask.pixels.count) * 100).rounded())
         return scene.road == nil ? "ROAD MASK · \(percent)% · alignment rejected"
             : "ROAD MASK · \(percent)%"

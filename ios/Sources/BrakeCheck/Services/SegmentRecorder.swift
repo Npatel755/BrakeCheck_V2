@@ -2,7 +2,52 @@ import BrakeCheckCore
 import AVFoundation
 import Foundation
 
-/// All methods and state belong to the capture queue. Finalization callbacks return to it.
+/// Keeps encoder startup and incident filesystem work off capture delivery.
+/// All callers submit from the serial capture queue, preserving command/frame
+/// ordering through start, orientation changes, incidents, pause and stop.
+final class QueuedSegmentRecorder {
+    private let work = BoundedRecordingQueue(maximumFrames: 2)
+    private let onStatus: (String) -> Void
+    private let onIncidents: ([IncidentManifest]) -> Void
+    private let onStorage: (Int64?) -> Void
+    // Created and accessed only on the recorder queue.
+    private lazy var recorder: SegmentRecorder = {
+        let result = SegmentRecorder(queue: work.queue)
+        result.onStatus = onStatus
+        result.onIncidents = onIncidents
+        result.onStorage = onStorage
+        return result
+    }()
+
+    init(onStatus: @escaping (String) -> Void,
+         onIncidents: @escaping ([IncidentManifest]) -> Void,
+         onStorage: @escaping (Int64?) -> Void) {
+        self.onStatus = onStatus
+        self.onIncidents = onIncidents
+        self.onStorage = onStorage
+    }
+
+    func append(_ sample: CMSampleBuffer) {
+        // Capturing the sample retains its camera buffer through the write.
+        work.submitFrame { self.recorder.append(sample) }
+    }
+    func start(completion: @escaping () -> Void) {
+        work.submitCommand { self.recorder.start(); completion() }
+    }
+    func refresh() { work.submitCommand { self.recorder.refresh() } }
+    func applyStoragePreferences() { work.submitCommand { self.recorder.applyStoragePreferences() } }
+    func beginOrientationSegment() { work.submitCommand { self.recorder.beginOrientationSegment() } }
+    func markIncident(reason: String) { work.submitCommand { self.recorder.markIncident(reason: reason) } }
+    func deleteIncident(_ id: UUID) { work.submitCommand { self.recorder.deleteIncident(id) } }
+    func pause(reason: String, completion: (() -> Void)? = nil) {
+        work.submitCommand { self.recorder.pause(reason: reason, completion: completion) }
+    }
+    func stop(completion: (() -> Void)? = nil) {
+        work.submitCommand { self.recorder.stop(completion: completion) }
+    }
+}
+
+/// All methods and state belong to the recorder queue. Finalization callbacks return to it.
 final class SegmentRecorder {
     private let queue: DispatchQueue
     private let files = FileManager.default
@@ -172,6 +217,8 @@ final class SegmentRecorder {
     }
 
     func append(_ sample: CMSampleBuffer) {
+        let trace = PerformanceTrace.begin(.recordingWrite)
+        defer { PerformanceTrace.end(trace) }
         guard enabled, CMSampleBufferDataIsReady(sample),
               let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         if writer != nil, (CVPixelBufferGetWidth(buffer) != encoderWidth || CVPixelBufferGetHeight(buffer) != encoderHeight) {

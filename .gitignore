@@ -33,3 +33,7 @@ ios/AppTarget/Entry/Assets.xcassets/
 ios/build/
 # Local snapshot folders made before risky edits (keep them out of the repo)
 *-backup-*/
+
+# Local performance reports and scratch scripts
+.perf/
+test-results/performance-n61/

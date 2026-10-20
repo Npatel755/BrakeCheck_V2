@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 /// Chooses a recorded drive and its speed source, then runs it through the live pipeline.
 /// This is the judging-table demo: GPS does not work indoors, so speed comes from the drive's log.
 struct ReplayView: View {
-    @ObservedObject var model: DriveModel
+    let model: DriveModel
     @Environment(\.dismiss) private var dismiss
     @AppStorage("replay.assumedMPH") private var assumedMPH = 30.0
     @AppStorage("replay.offset") private var offset = 0.0

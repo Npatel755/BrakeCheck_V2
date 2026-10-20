@@ -62,6 +62,8 @@ struct NavigationMapView: UIViewRepresentable {
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
+        let trace = PerformanceTrace.begin(.mapUpdate)
+        defer { PerformanceTrace.end(trace) }
         let style: UIUserInterfaceStyle = nightMode == "dark" ? .dark
             : nightMode == "light" ? .light : colorScheme == .dark ? .dark : .light
         let styleChanged = map.overrideUserInterfaceStyle != style
@@ -69,9 +71,19 @@ struct NavigationMapView: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.displayLink?.isPaused = !isVisible
         coordinator.locationIsCurrent = locationIsCurrent
+        // Navigation used to be capped at 30 Hz even on a healthy 60/120 Hz display.
+        // Keep the fluid 60 Hz target while respecting system power/thermal pressure.
+        let constrained = ProcessInfo.processInfo.isLowPowerModeEnabled
+            || ProcessInfo.processInfo.thermalState == .serious
+            || ProcessInfo.processInfo.thermalState == .critical
+        let preferredRate: Float = constrained ? 30 : 60
+        if coordinator.displayLink?.preferredFrameRateRange.preferred != preferredRate {
+            coordinator.displayLink?.preferredFrameRateRange = CAFrameRateRange(
+                minimum: constrained ? 15 : 30, maximum: preferredRate, preferred: preferredRate)
+        }
         // Service estimates have their own four-second horizon. Never carry one
         // forward through interpolation after the service returns to a cached fix.
-        if positionIsEstimated || coordinator.positionIsEstimated != positionIsEstimated {
+        if coordinator.positionIsEstimated != positionIsEstimated {
             coordinator.smoother = NavigationMapSmoother()
             coordinator.lastLocationTimestamp = nil
         }
@@ -160,7 +172,7 @@ struct NavigationMapView: UIViewRepresentable {
                 let accepted = coordinator.smoother.ingest(NavigationCoordinate(latitude: location.coordinate.latitude,
                     longitude: location.coordinate.longitude), accuracy: positionIsEstimated ? min(100, max(0, location.horizontalAccuracy)) : location.horizontalAccuracy,
                     speed: location.speed, timestamp: location.timestamp.timeIntervalSince1970,
-                    now: Date().timeIntervalSince1970, isCurrent: locationIsCurrent)
+                    now: Date().timeIntervalSince1970, isCurrent: locationIsCurrent, isEstimated: positionIsEstimated)
                 if accepted, locationIsCurrent, location.speed >= 2, location.course >= 0,
                    location.course.isFinite, location.courseAccuracy >= 0, location.courseAccuracy <= 35 {
                     coordinator.targetHeading = location.course
@@ -267,12 +279,14 @@ struct NavigationMapView: UIViewRepresentable {
         func attach(_ map: MKMapView) {
             self.map = map
             let link = CADisplayLink(target: LinkTarget(self), selector: #selector(LinkTarget.step(_:)))
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
             link.add(to: .main, forMode: .common)
             displayLink = link
         }
         private func render(at time: Double) {
             guard let map, map.window != nil else { lastRender = 0; return }
+            let trace = PerformanceTrace.begin(.mapRender)
+            defer { PerformanceTrace.end(trace) }
             let dt = lastRender == 0 ? 1 / 30.0 : min(0.1, time - lastRender)
             lastRender = time
             if map.bounds.size != lastBounds {

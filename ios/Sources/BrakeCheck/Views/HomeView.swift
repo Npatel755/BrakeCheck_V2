@@ -7,7 +7,7 @@ import SwiftUI
 struct HomeView: View {
     @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     @AppStorage("checklist.skip") private var skipChecklist = false
-    @ObservedObject var model: DriveModel
+    let model: DriveModel
     @ObservedObject var service: SafetyService
     @Binding var useMPH: Bool
     @Binding var showDetections: Bool

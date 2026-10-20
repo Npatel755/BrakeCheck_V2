@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 /// than layered, so no inset is guessed. It shares the driving model without owning its camera session.
 struct NavigationView: View {
     @ObservedObject var navigation: NavigationService
-    @ObservedObject var model: DriveModel
+    let model: DriveModel
     var useMPH: Bool
     var startDrive: () -> Void
     var openCamera: () -> Void
@@ -109,8 +109,7 @@ struct NavigationView: View {
             }
             .overlay(alignment: .top) {
                 if displaysRisk {
-                    RiskPill(risk: model.risk, critical: model.brakeWarningActive, meter: model.dangerMeter,
-                             large: false, unavailableTitle: riskUnavailableTitle)
+                    NavigationRiskStatus(model: model)
                         .padding(.top, 12)
                 }
             }
@@ -126,25 +125,6 @@ struct NavigationView: View {
                 }
                 .padding(14)
             }
-    }
-
-    /// While the camera isn't tracking, the risk pill says why instead of "No reading".
-    private var riskUnavailableTitle: String? {
-        guard model.tripActive, !model.demo, !model.replaying else { return nil }
-        if model.stopping { return "Saving recording" }
-        if !model.cameraReady || model.changingCameraGeometry {
-            let status = model.cameraStatus.lowercased()
-            if status.contains("denied") { return "Camera not allowed" }
-            if model.changingCameraGeometry || status.contains("paused") || status.contains("interrupted") { return "Camera paused" }
-            if status.contains("required") || status.contains("could not") || status.contains("unavailable") {
-                return "Camera unavailable"
-            }
-            return "Camera starting"
-        }
-        if !model.detectorReady {
-            return model.detectorStatus.contains("could not load") ? "Detection unavailable" : "Preparing detection"
-        }
-        return nil
     }
 
     private func banner(large: Bool) -> some View {

@@ -7,7 +7,7 @@ import SwiftUI
 /// totals, a "What happened" list and any saved clips. Trips from before route saving existed show
 /// their totals without a map.
 struct TripDetailView: View {
-    @ObservedObject var model: DriveModel
+    let model: DriveModel
     let trip: TripMetrics
     let useMPH: Bool
     @State private var route: TripRoute?

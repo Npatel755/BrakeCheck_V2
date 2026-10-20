@@ -14,25 +14,55 @@ public struct CameraRouteCalibration {
     }
 }
 
+/// Immutable route geometry prepared once when a route is installed. Scene updates
+/// only sample the visible 80 meters; they never walk or allocate the full route.
+public struct CameraRouteGeometry: Sendable {
+    fileprivate struct Vector: Sendable {
+        var east: Double
+        var north: Double
+        var length: Double { hypot(east, north) }
+    }
+    fileprivate let points: [Vector]
+    fileprivate let distances: [Double]
+    fileprivate let total: Double
+
+    public init(route: [NavigationCoordinate]) {
+        guard route.count >= 2, route.allSatisfy(\.isValid), let origin = route.first else {
+            points = []; distances = []; total = 0; return
+        }
+        let scale = cos(origin.latitude * .pi / 180)
+        let prepared = route.map { Vector(east: ($0.longitude - origin.longitude) * 111_320 * scale,
+                                         north: ($0.latitude - origin.latitude) * 111_320) }
+        var cumulative = [Double](); cumulative.reserveCapacity(prepared.count)
+        cumulative.append(0)
+        for (a, b) in zip(prepared, prepared.dropFirst()) {
+            cumulative.append(cumulative.last! + Vector(east: b.east - a.east, north: b.north - a.north).length)
+        }
+        points = prepared; distances = cumulative; total = cumulative.last ?? 0
+    }
+}
+
 /// Ground-plane approximation for a fixed, forward-facing camera mount.
 /// Lane width convergence estimates the horizon (pitch); FOV and mount height
 /// supply scale. Route progress selects the correct branch at crossings.
 /// Only current road-supported portions are returned; missing observations
 /// never generate a generic centered navigation trapezoid.
 public enum CameraRouteProjection {
-    private struct Vector {
-        var east: Double
-        var north: Double
-        var length: Double { hypot(east, north) }
-    }
+    private typealias Vector = CameraRouteGeometry.Vector
     public static func project(route: [NavigationCoordinate], progressFraction: Double,
                                courseDegrees: Double, horizontalFOV: Double, aspect: Double,
                                calibration: CameraRouteCalibration, lane: LanePath?, road: RoadRegion?,
                                excluding boxes: [CGRect] = [], at time: TimeInterval) -> [[LaneBand]] {
-        guard route.count >= 2, route.allSatisfy({
-            $0.latitude.isFinite && $0.longitude.isFinite && (-90...90).contains($0.latitude)
-                && (-180...180).contains($0.longitude)
-        }), progressFraction.isFinite, (0...1).contains(progressFraction),
+        project(geometry: CameraRouteGeometry(route: route), progressFraction: progressFraction,
+            courseDegrees: courseDegrees, horizontalFOV: horizontalFOV, aspect: aspect,
+            calibration: calibration, lane: lane, road: road, excluding: boxes, at: time)
+    }
+    public static func project(geometry: CameraRouteGeometry, progressFraction: Double,
+                               courseDegrees: Double, horizontalFOV: Double, aspect: Double,
+                               calibration: CameraRouteCalibration, lane: LanePath?, road: RoadRegion?,
+                               excluding boxes: [CGRect] = [], at time: TimeInterval) -> [[LaneBand]] {
+        guard geometry.points.count >= 2, geometry.total > 1, geometry.total.isFinite,
+              progressFraction.isFinite, (0...1).contains(progressFraction),
               courseDegrees.isFinite, (0..<360).contains(courseDegrees),
               horizontalFOV.isFinite, (20...150).contains(horizontalFOV),
               aspect.isFinite, (0.3...3).contains(aspect),
@@ -55,18 +85,8 @@ public enum CameraRouteProjection {
         let fx = 0.5 / tan(horizontalFOV * .pi / 360)
         let fy = fx * aspect
         let heading = (courseDegrees + calibration.yawDegrees) * .pi / 180
-        let origin = route[0]
-        let scale = cos(origin.latitude * .pi / 180)
-        let points = route.map { Vector(east: ($0.longitude - origin.longitude) * 111_320 * scale,
-                                       north: ($0.latitude - origin.latitude) * 111_320) }
-        // RoadRegion.bounds(at:) creates and sorts a LanePath on every call.
-        // Projection samples up to 160 points per frame, so build it once.
+        let points = geometry.points, distances = geometry.distances, total = geometry.total
         let pavementPath = LanePath(bands: road.bands, confidence: road.confidence, capturedAt: road.capturedAt)
-        var distances = [0.0]
-        for (a, b) in zip(points, points.dropFirst()) {
-            distances.append(distances.last! + Vector(east: b.east - a.east, north: b.north - a.north).length)
-        }
-        guard let total = distances.last, total > 1, total.isFinite else { return [] }
         let progress = total * progressFraction
         func point(at distance: Double) -> Vector? {
             guard distance <= total else { return nil }
