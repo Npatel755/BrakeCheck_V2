@@ -6,7 +6,7 @@ private enum BonjourDiscoveryError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unavailable:
-            return "BrakeCheck could not find the backend. Put both devices on the same Wi-Fi and allow Local Network access."
+            return "BrakeSense could not find the backend. Put both devices on the same Wi-Fi and allow Local Network access."
         }
     }
 }

@@ -567,7 +567,7 @@ final class NavigationService: NSObject, ObservableObject {
                 hasFreshLocation = false
                 clearPresentationPosition()
                 pauseMeasurements("Enable Precise Location for route guidance.")
-                errorMessage = "Enable Precise Location for BrakeCheck in iPhone Settings."
+                errorMessage = "Enable Precise Location for BrakeSense in iPhone Settings."
                 return
             }
             if !locationRunning {
@@ -585,7 +585,7 @@ final class NavigationService: NSObject, ObservableObject {
             hasFreshLocation = false
             clearPresentationPosition()
             pauseMeasurements("Location permission is needed for navigation.")
-            errorMessage = "Allow Location and Precise Location for BrakeCheck in iPhone Settings."
+            errorMessage = "Allow Location and Precise Location for BrakeSense in iPhone Settings."
         @unknown default:
             errorMessage = "Location permission could not be determined."
         }

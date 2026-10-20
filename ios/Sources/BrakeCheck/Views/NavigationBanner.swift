@@ -1,9 +1,10 @@
 import BrakeCheckCore
 import SwiftUI
 
-/// Turn-by-turn card over the camera, like the Apple Maps / Google Maps top banner: the maneuver arrow,
-/// a large distance, the street, and a "Then" strip for the following step. Landscape keeps it top-right
-/// beside the risk pill; portrait spans the width above it. The road ribbon stays in CameraNavigationOverlay.
+/// Turn-by-turn card, like the Apple Maps / Google Maps top banner: the maneuver arrow, a large
+/// distance, the street, and a "Then" strip for the following step. On the camera, landscape keeps it
+/// top-left with the risk pill top-right, and portrait spans the width below the pill; the Navigate page
+/// shows the same card above its map. The road ribbon stays in CameraNavigationOverlay.
 struct NavigationBanner: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
@@ -13,6 +14,8 @@ struct NavigationBanner: View {
     var compact = false
     var large = false
     var onSetup: (() -> Void)? = nil
+    /// Debug builds show the camera's road-alignment reason under the card; off on the map page.
+    var alignmentDetail = true
 
     /// Dark accents are light, so they take dark ink; light-mode accents are deep enough for white.
     private var ink: Color { colorScheme == .dark ? Color(red: 0.03, green: 0.06, blue: 0.13) : .white }
@@ -40,7 +43,7 @@ struct NavigationBanner: View {
             card
             #if DEBUG
             // Developer builds keep the road-alignment reason that the old status box showed.
-            if presentation.level != .aligned && !compact {
+            if alignmentDetail && presentation.level != .aligned && !compact {
                 Text(presentation.guidanceDetail).font(.brake(.caption)).lineLimit(2)
                     .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 4)
                     .background(.black.opacity(0.65), in: Capsule())
@@ -65,6 +68,8 @@ struct NavigationBanner: View {
                                     .monospacedDigit().contentTransition(.numericText())
                                 Text(distance.unit).font(.brake(size: large ? 22 : 20, weight: .bold))
                             }
+                            // A paused route keeps its last verified distance; dim it so it doesn't read as live.
+                            .opacity(pauseNote == nil ? 1 : 0.55)
                             .animation(.easeOut(duration: 0.2), value: distance.value)
                         }
                         Text(primary).font(.brake(size: distance == nil ? (large ? 24 : 22) : (large ? 19 : 18), weight: .semibold))
@@ -88,9 +93,9 @@ struct NavigationBanner: View {
     /// The following step, or the trip's remaining time and distance when there is none.
     private var strip: some View {
         HStack(spacing: 10) {
-            if navigation.isPaused && !navigation.hasArrived {
-                Text(navigation.userPaused ? "Trip paused" : navigation.status)
-                    .lineLimit(2).minimumScaleFactor(0.8)
+            if let pauseNote {
+                Image(systemName: "location.slash").font(.brake(size: 15, weight: .bold))
+                Text(pauseNote).lineLimit(1).minimumScaleFactor(0.8)
             } else if let next = navigation.upcomingInstruction, !navigation.hasArrived {
                 Text("Then").font(.brake(size: 15, weight: .semibold)).opacity(0.75)
                 Image(systemName: NavigationManeuver.symbol(for: next)).font(.brake(size: 15, weight: .bold))
@@ -115,6 +120,14 @@ struct NavigationBanner: View {
         .font(.brake(size: 16, weight: .semibold))
         .padding(.horizontal, large ? 18 : 16).frame(minHeight: 42)
         .background(Color.black.opacity(colorScheme == .dark ? 0.14 : 0.18))
+    }
+
+    /// Why guidance is paused (stale GPS, off route, permissions), from NavigationService's status.
+    private var pauseNote: String? {
+        guard navigation.isNavigating, navigation.isPaused, !navigation.hasArrived, !navigation.isCalculating else { return nil }
+        if navigation.userPaused { return "Trip paused" }
+        let status = navigation.status
+        return status.isEmpty || status == "Last known route" ? "Waiting for GPS · showing the last step" : status
     }
 
     private var compactLine: String {

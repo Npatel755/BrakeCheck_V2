@@ -295,7 +295,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 0) {
             navigationRow("Trip history", detail: model.savedTrips.isEmpty ? "Completed trips save automatically" : "\(model.savedTrips.count) saved trips", icon: "chart.xyaxis.line", action: openTripHistory)
             rowDivider
-            navigationRow("Emergency contacts", detail: service.contacts.isEmpty ? "Choose who can receive a check-in" : "\(service.contacts.count) saved contact\(service.contacts.count == 1 ? "" : "s")", icon: "person.2", action: openContacts)
+            navigationRow("Emergency contacts", detail: contactsDetail, icon: "person.2", action: openContacts)
             rowDivider
             navigationRow("Replay a drive", detail: "Review a recorded journey", icon: "play.rectangle", action: openReplay)
             rowDivider
@@ -305,6 +305,13 @@ struct HomeView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 4)
         .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    private var contactsDetail: String {
+        if !service.contacts.isEmpty {
+            return "\(service.contacts.count) saved contact\(service.contacts.count == 1 ? "" : "s")"
+        }
+        return service.settings.client == nil ? "Needs your BrakeSense service" : "Choose who can receive a check-in"
     }
 
     private var rowDivider: some View {

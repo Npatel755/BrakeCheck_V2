@@ -26,3 +26,10 @@ weights/
 !ios/Sources/BrakeCheck/Resources/**/weights/**
 yolo11n.pt
 tools/model_migration/artifacts/
+# Generated on CI by .github/workflows/ios-screens.yml (ios/scripts/generate_app_project.sh)
+ios/AppTarget/*.xcodeproj/
+ios/AppTarget/Info.plist
+ios/AppTarget/Entry/Assets.xcassets/
+ios/build/
+# Local snapshot folders made before risky edits (keep them out of the repo)
+*-backup-*/

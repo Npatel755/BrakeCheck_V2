@@ -23,10 +23,16 @@ struct ContactsView: View {
             Form {
                 Section {
                     Label("Your people, one check-in away.", systemImage: "person.2.fill").font(.brake(.headline))
-                    Text("Adding a contact opens their Messages invitation. Tap Send. They open the link and send YES to the BrakeCheck number to confirm. Only confirmed contacts receive alerts; STOP opts them out.")
+                    Text("Adding a contact opens their Messages invitation. Tap Send. They open the link and send YES to the BrakeSense number to confirm. Only confirmed contacts receive alerts; STOP opts them out.")
                         .font(.brake(.caption)).foregroundStyle(.secondary)
                 }
                 Section("Add a contact") {
+                    if service.settings.client == nil {
+                        // Contacts live on the paired service, so without one the form can't save.
+                        Label("Emergency contacts are kept by your BrakeSense service. Connect it in Settings › Connection, then add contacts here.",
+                              systemImage: "network.slash")
+                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+                    }
                     TextField("First name", text: $name).textContentType(.givenName)
                     TextField("Phone with country code, +1…", text: $phone).keyboardType(.phonePad)
                     Button(busy ? "Adding…" : "Add contact") {
@@ -59,7 +65,7 @@ struct ContactsView: View {
                                 Label(contact.removalPending ? "Removal pending · retry Remove"
                                       : contact.confirmed ? "Ready for alerts" : "Waiting for YES",
                                       systemImage: contact.confirmed ? "checkmark.seal.fill" : "clock")
-                                    .font(.brake(.caption)).foregroundStyle(contact.confirmed ? BrakeTheme.accent : Color.orange)
+                                    .font(.brake(.caption)).foregroundStyle(contact.confirmed ? BrakeTheme.accentText : Color.orange)
                             }
                             HStack(spacing: 18) {
                                 Button { inviting = contact; invitationNotice = nil } label: {
@@ -139,7 +145,7 @@ struct ContactsView: View {
                 }
                 Button("Cancel", role: .cancel) { testTarget = nil }
             } message: {
-                Text("\(testTarget?.first_name ?? "This contact") will receive a message labeled BRAKECHECK TEST ONLY. It says there is no emergency and no location is shared. Ask them to confirm it arrived.")
+                Text("\(testTarget?.first_name ?? "This contact") will receive a message labeled BRAKESENSE TEST ONLY. It says there is no emergency and no location is shared. Ask them to confirm it arrived.")
             }
             .alert("Emergency contact test", isPresented: Binding(get: { testOutcome != nil }, set: { if !$0 { testOutcome = nil } })) {
                 Button("OK", role: .cancel) { testOutcome = nil }
@@ -151,7 +157,7 @@ struct ContactsView: View {
 }
 
 private func contactInvitationText(_ contact: EmergencyContact) -> String {
-    contact.invite_text + "\n\nOpen the link, then send YES to the BrakeCheck number to confirm. Reply STOP to that number to opt out."
+    contact.invite_text + "\n\nOpen the link, then send YES to the BrakeSense number to confirm. Reply STOP to that number to opt out."
 }
 
 /// The system composer opens with the server-created invitation and recipient.

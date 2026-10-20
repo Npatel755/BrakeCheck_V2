@@ -16,7 +16,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .safety: return "Safety"
         case .permissions: return "Permissions"
         case .diagnostics: return "Diagnostics"
-        case .demo: return "Try BrakeCheck"
+        case .demo: return "Try BrakeSense"
         case .about: return "About & licences"
         }
     }
@@ -39,13 +39,13 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "Choose the look that feels right."
         case .camera: return "Units and overlays for your road view."
         case .recordings: return "Manage video space and optional automatic cleanup."
-        case .connection: return "Connect your private BrakeCheck service."
+        case .connection: return "Connect your private BrakeSense service."
         case .voice: return "Spoken alerts, language, and check-in replies."
         case .safety: return "Impact detection and emergency check-ins."
         case .permissions: return "Manage access to your iPhone's sensors."
         case .diagnostics: return "Camera, GPS, and measurement details."
         case .demo: return "Explore sample driving and check-in features."
-        case .about: return "How BrakeCheck works, its limits, and model notices."
+        case .about: return "How BrakeSense works, its limits, and model notices."
         }
     }
 }
@@ -101,6 +101,7 @@ struct SettingsView: View {
     @AppStorage("recording.limitGB") private var recordingLimitGB = 0
     @AppStorage("recording.retentionDays") private var recordingRetentionDays = 0
     @AppStorage("checklist.skip") private var skipChecklist = false
+    @AppStorage("diagnostics.developerOverlays") private var developerOverlays = false
     @State private var pendingRetentionDays = 0
     @State private var confirmRecordingCleanup = false
     @State private var confirmRouteDelete = false
@@ -123,10 +124,10 @@ struct SettingsView: View {
                                     ForEach(group.1) { category in
                                         Button { selectedCategory = category } label: {
                                             Label(category.title, systemImage: category.icon)
-                                                .font(.subheadline.weight(selectedCategory == category ? .semibold : .regular))
+                                                .font(.brake(.subheadline, weight: selectedCategory == category ? .semibold : .regular))
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                                 .padding(.horizontal, 14).frame(minHeight: 48)
-                                                .foregroundStyle(selectedCategory == category ? BrakeTheme.accent : BrakeTheme.text)
+                                                .foregroundStyle(selectedCategory == category ? BrakeTheme.accentText : BrakeTheme.text)
                                                 .background(selectedCategory == category ? BrakeTheme.accent.opacity(0.12) : .clear,
                                                             in: RoundedRectangle(cornerRadius: 10))
                                                 .overlay(alignment: .leading) {
@@ -202,33 +203,33 @@ struct SettingsView: View {
 
     private var hubIdentity: some View {
         HStack(spacing: 14) {
-            Image(systemName: "gearshape.fill").font(.system(size: 25))
-                .foregroundStyle(BrakeTheme.accent).frame(width: 52, height: 52)
+            Image(systemName: "gearshape.fill").font(.brake(size: 25))
+                .foregroundStyle(BrakeTheme.accentText).frame(width: 52, height: 52)
                 .background(BrakeTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
             VStack(alignment: .leading, spacing: 5) {
-                Text("Make BrakeCheck yours.").font(.system(size: 23, weight: .semibold))
-                Text("Your preferences, in one place.").font(.subheadline).foregroundStyle(BrakeTheme.muted)
+                Text("Make BrakeSense yours.").font(.brake(size: 23, weight: .semibold))
+                Text("Your preferences, in one place.").font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
             }
         }
         .accessibilityElement(children: .combine)
     }
 
     private func groupLabel(_ title: String) -> some View {
-        Text(title).font(.caption.weight(.semibold)).foregroundStyle(BrakeTheme.muted)
+        Text(title).font(.brake(.caption, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
             .padding(.horizontal, 4)
     }
 
     private func categoryRow(_ category: SettingsCategory) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: category.icon).font(.system(size: 19)).foregroundStyle(BrakeTheme.accent)
+            Image(systemName: category.icon).font(.brake(size: 19)).foregroundStyle(BrakeTheme.accentText)
                 .frame(width: 26).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text(category.title).font(.subheadline.weight(.semibold)).foregroundStyle(BrakeTheme.text)
-                Text(category.detail).font(.caption).foregroundStyle(BrakeTheme.muted)
+                Text(category.title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
+                Text(category.detail).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 4)
-            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(BrakeTheme.muted)
+            Image(systemName: "chevron.right").font(.brake(.caption, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
         }
         .padding(.vertical, 16).frame(minHeight: 64)
         .contentShape(Rectangle())
@@ -238,14 +239,14 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(category.title).font(.system(size: 28, weight: .semibold))
-                    Text(category.detail).font(.subheadline).foregroundStyle(BrakeTheme.muted)
+                    Text(category.title).font(.brake(size: 28, weight: .semibold))
+                    Text(category.detail).font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 20) {
                     controls(category)
                 }
-                .font(.subheadline)
+                .font(.brake(.subheadline))
                 .textFieldStyle(.roundedBorder)
                 .buttonStyle(.bordered)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -334,9 +335,9 @@ struct SettingsView: View {
             }
             .onChange(of: recordingLimitGB) { _, _ in model.applyRecordingPreferences() }
             Text("At the limit, recording pauses and saved incident footage is preserved. Camera detection can continue. Recording also stops if the iPhone has less than 500 MB free.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Text("Free space or increase the limit, then restart the trip to resume recording.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Picker("Automatically delete saved incidents", selection: Binding(
                 get: { recordingRetentionDays },
                 set: { value in
@@ -352,11 +353,11 @@ struct SettingsView: View {
                 ForEach([7, 30, 90], id: \.self) { days in Text("After \(days) days").tag(days) }
             }
             Text("Cleanup runs between trips. Active incident footage is protected. Exported copies and trip metrics are not deleted.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Button("Refresh storage usage") { model.camera.refreshIncidents() }
             Divider()
             Text("Trip maps and flagged moments stay on this iPhone. You can remove their GPS trail while keeping the trip totals.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Button("Delete saved trip routes", role: .destructive) { confirmRouteDelete = true }
                 .disabled(tripActive)
                 .alert("Delete saved trip routes?", isPresented: $confirmRouteDelete) {
@@ -372,7 +373,7 @@ struct SettingsView: View {
                 Label("Paired · \(settings.address)", systemImage: "checkmark.shield.fill")
                     .foregroundStyle(BrakeTheme.muted)
             } else {
-                Text("Scan the pairing code from your BrakeCheck service, or enter its address below.")
+                Text("Scan the pairing code from your BrakeSense service, or enter its address below.")
                     .foregroundStyle(BrakeTheme.muted)
             }
             Button(busy ? "Connecting…" : "Test saved connection") {
@@ -385,7 +386,7 @@ struct SettingsView: View {
             }.disabled(busy || pairing)
             Label(service.connectionStatus, systemImage: "network")
             Text(service.deliveryServiceStatus)
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             if let error = service.error { Text(error).foregroundStyle(BrakeTheme.warning) }
             DisclosureGroup("Manual connection") {
                 VStack(alignment: .leading, spacing: 16) {
@@ -393,12 +394,12 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                     if settings.isPaired {
                         Text("This phone uses its paired credential. Change the address only if your service moved, or scan a new pairing code to switch services.")
-                            .font(.caption).foregroundStyle(BrakeTheme.muted)
+                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     } else {
                         SecureField("Backend app key", text: $backendKeyDraft)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                         Text("Leave the key blank to keep the saved key.")
-                            .font(.caption).foregroundStyle(BrakeTheme.muted)
+                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     }
                     Button(busy ? "Connecting…" : settings.isPaired ? "Save address and test" : "Save and test connection") {
                         busy = true
@@ -424,14 +425,14 @@ struct SettingsView: View {
                     }.disabled(busy || pairing)
                     if !settings.isPaired {
                         Text("Keep your private app key out of screenshots and messages.")
-                            .font(.caption).foregroundStyle(BrakeTheme.muted)
+                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     }
                 }.padding(.top, 14)
             }
         case .voice:
             Toggle("Spoken alerts and crash check-in", isOn: $settings.voiceEnabled)
             Picker("Device voice", selection: $selectedVoice) {
-                Text("Original BrakeCheck voice").tag("")
+                Text("Original BrakeSense voice").tag("")
                 ForEach(voiceOptions, id: \.identifier) { voice in
                     Text(SpeechVoicePreferences.label(voice)).tag(voice.identifier)
                 }
@@ -448,10 +449,10 @@ struct SettingsView: View {
             Button("Preview voice") { service.previewVoice() }
                 .disabled(tripActive || service.checkinPresented)
             Text("Device voice handles directions, brake warnings, and check-in prompts. Preview while parked. Brake warnings remain clear and at full volume.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Toggle("Optional ElevenLabs brake alerts", isOn: $backendAlerts)
-            Text("ElevenLabs brake audio requires a connected service. If it is unavailable, BrakeCheck uses the device voice.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+            Text("ElevenLabs brake audio requires a connected service. If it is unavailable, BrakeSense uses the device voice.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Picker("Language", selection: $settings.language) {
                 Text("English").tag("en")
                 Text("Español").tag("es")
@@ -464,7 +465,7 @@ struct SettingsView: View {
             }
             Text(service.voiceStatus).foregroundStyle(BrakeTheme.muted)
             Text("Check-in replies are recognized on this iPhone when on-device speech is supported. The I'm okay and Send help buttons remain available. Automatic contact alerts require a connected service.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .safety:
             DrivingAssistControls()
             Divider()
@@ -474,14 +475,14 @@ struct SettingsView: View {
             Toggle("Start an emergency check-in on impact", isOn: $settings.autoCheckin)
                 .disabled(!impactEnabled || settings.client == nil)
             Text(service.deliveryServiceStatus)
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Text("An enabled check-in can message confirmed contacts if you ask for help or do not respond. A phone drop can trigger it. No emergency services are called automatically.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .permissions:
             Button("Open iPhone settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
             }
-            Text("Keep BrakeCheck visible for camera recording. Video pauses when the phone locks or the app goes into the background.")
+            Text("Keep BrakeSense visible for camera recording. Video pauses when the phone locks or the app goes into the background.")
                 .foregroundStyle(BrakeTheme.muted)
         case .diagnostics:
             NavigationLink {
@@ -491,15 +492,18 @@ struct SettingsView: View {
             }
             Text("Detailed detector, camera, GPS, and warning measurements are available here while testing.")
                 .foregroundStyle(BrakeTheme.muted)
+            Toggle("Developer overlays on the camera", isOn: $developerOverlays)
+            Text("Shows the road-model mask and the build number on the camera page, for test recordings.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .demo:
             Toggle("Simulated driving metrics", isOn: Binding(get: { demoMode }, set: { model.setDemo($0) }))
                 .disabled(tripActive || stopping)
             Button("Run crash check-in demo") { requestDemo = true }
             Text("Try the on-device check-in. The demo never sends emergency messages.")
-                .font(.caption).foregroundStyle(BrakeTheme.muted)
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .about:
             Text("A driver aid, not a safety system").font(.brake(.headline))
-            Text("BrakeCheck estimates the gap and closing speed to vehicles ahead. Warnings and camera directions can be late, missed, or wrong, especially with poor visibility or a loose mount. Set up the phone while parked and keep your eyes on the road.")
+            Text("BrakeSense estimates the gap and closing speed to vehicles ahead. Warnings and camera directions can be late, missed, or wrong, especially with poor visibility or a loose mount. Set up the phone while parked and keep your eyes on the road.")
                 .foregroundStyle(BrakeTheme.muted)
             Text("Model and font notices").font(.brake(.headline))
             ForEach(Self.noticeFiles, id: \.name) { notice in
@@ -509,6 +513,10 @@ struct SettingsView: View {
                             .textSelection(.enabled).padding(.top, 8)
                     }
                 }
+            }
+            Link("Terms of Use", destination: LegalLinks.termsOfUse)
+            if let privacy = LegalLinks.privacyPolicy {
+                Link("Privacy Policy", destination: privacy)
             }
             Text(Self.versionText).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         }
@@ -542,7 +550,7 @@ struct SettingsView: View {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "BrakeCheck \(version) (\(build))"
+        return "BrakeSense \(version) (\(build))"
     }
 
     private func beginPairing(_ qrText: String) {
@@ -562,53 +570,5 @@ struct SettingsView: View {
         guard voicePageVisible, voiceLanguage != settings.language else { return }
         voiceLanguage = settings.language
         voiceOptions = SpeechVoicePreferences.availableVoices(language: settings.language)
-    }
-}
-
-struct DiagnosticsView: View {
-    @ObservedObject var model: DriveModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Sensors") {
-                    Label(model.gpsStatus, systemImage: "location")
-                    Label(model.cameraStatus, systemImage: "video")
-                    Label(model.recorderStatus, systemImage: "record.circle")
-                    Label(model.detectorStatus, systemImage: "viewfinder")
-                    Label(model.motionStatus, systemImage: "waveform.path")
-                    Text(model.trackingStatus)
-                }
-
-                Section("Experimental fusion · display only") {
-                    Text(model.fusedSpeed.map { String(format: "%.1f mph", $0 * 2.2369362921) } ?? "Unavailable")
-                    Text(model.fusedSpeedUncertainty.map { String(format: "Estimated uncertainty ±%.1f mph", $0 * 2.2369362921) } ?? "No fresh estimate")
-                    Text(model.fusedSpeedSource)
-                    Text(model.fusionStatus)
-                    Text("Collision estimates use GPS, not this experimental fused speed.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("This trip") {
-                    LabeledContent("Duration", value: String(format: "%.1f min", model.tripMinutes))
-                    LabeledContent("Estimated lead hard brakes", value: "\(model.hardBrakes)")
-                    LabeledContent("Estimated TTC below 2 seconds", value: "\(model.closeCalls)")
-                    LabeledContent("Maximum GPS speed", value: String(format: "%.0f mph", model.maxSpeedMPH))
-                    LabeledContent("Your acceleration", value: model.egoAcceleration.map { String(format: "%.1f m/s²", $0) } ?? "—")
-                    LabeledContent("Estimated lead acceleration", value: model.risk.leadAcceleration.map { String(format: "%.1f m/s²", $0) } ?? "—")
-                }
-            }
-            .font(.subheadline)
-            .navigationTitle("Diagnostics")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .tint(BrakeTheme.accent)
     }
 }

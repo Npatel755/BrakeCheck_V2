@@ -31,7 +31,7 @@ export function statusLine(c: Crash, driver: string): string {
   return c.status === 'help' ? `${driver} requested help${c.transcript ? `: "${c.transcript}"` : '.'}` : `${driver} did not respond to the check-in.`;
 }
 export function alertText(c: Crash, driver: string): string {
-  return [`BrakeCheck: possible impact at ${new Date(c.time * 1000).toISOString()}.`,
+  return [`BrakeSense: possible impact at ${new Date(c.time * 1000).toISOString()}.`,
     statusLine(c, driver), c.speedMph == null ? '' : `Last GPS speed: about ${Math.round(c.speedMph)} mph.`,
     `Location: ${mapLink(c)}`, 'Available dashcam footage stays on the driver’s phone.',
     'Reply where, clip, status or drive. Reply STOP to opt out.'].filter(Boolean).join('\n');
@@ -39,7 +39,7 @@ export function alertText(c: Crash, driver: string): string {
 export function testMessage(firstName: string, driver: string): string {
   const contact = firstName.trim().replace(/\s+/g, ' ').slice(0, 60) || 'there';
   const name = driver.trim().replace(/\s+/g, ' ').slice(0, 60) || 'the driver';
-  return `BRAKECHECK TEST ONLY: Hi ${contact}, this is a test of ${name}'s emergency contact setup. ` +
+  return `BRAKESENSE TEST ONLY: Hi ${contact}, this is a test of ${name}'s emergency contact setup. ` +
     'This is not an emergency and no help is needed. No location was shared. ' +
     'Please tell the driver if you received this. Reply STOP to opt out.';
 }
@@ -51,7 +51,7 @@ export function answer(text: string, crash: Crash | null, trip: Trip | null, dri
   }
   if (!crash) return 'No incident details are currently available. Text drive for the last trip summary.';
   if (/\b(where|location|address)\b/i.test(text)) return mapLink(crash);
-  if (/\b(clip|video|footage)\b/i.test(text)) return 'Available footage is on the driver’s phone. BrakeCheck does not upload clips automatically.';
+  if (/\b(clip|video|footage)\b/i.test(text)) return 'Available footage is on the driver’s phone. BrakeSense does not upload clips automatically.';
   if (/\b(status|ok|okay|safe|how)\b/i.test(text)) return statusLine(crash, driver);
   return 'I can answer where, clip, status or drive. Reply STOP to opt out.';
 }

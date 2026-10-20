@@ -1,5 +1,6 @@
 import CoreText
 import SwiftUI
+import UIKit
 
 /// The app's typeface: Red Hat Display (SIL Open Font License 1.1, Resources/Fonts/OFL.txt),
 /// bundled as static weights and registered for this process the first time a font is asked for.
@@ -22,6 +23,20 @@ enum BrakeFont {
         case .black: return "RedHatDisplay-Black"
         default: return "RedHatDisplay-Regular"
         }
+    }
+
+    /// Navigation bar titles, back buttons and segmented pickers are drawn by UIKit, which SwiftUI's
+    /// `.font` doesn't reach. Call once at launch so they use the same typeface as everything else.
+    @MainActor static func applyToSystemControls() {
+        func font(_ weight: Font.Weight, _ size: CGFloat) -> UIFont {
+            UIFont(name: name(weight), size: size) ?? .systemFont(ofSize: size)
+        }
+        let bar = UINavigationBar.appearance()
+        bar.titleTextAttributes = [.font: font(.semibold, 17)]
+        bar.largeTitleTextAttributes = [.font: font(.bold, 34)]
+        UIBarButtonItem.appearance().setTitleTextAttributes([.font: font(.medium, 17)], for: .normal)
+        UISegmentedControl.appearance().setTitleTextAttributes([.font: font(.medium, 13)], for: .normal)
+        UISegmentedControl.appearance().setTitleTextAttributes([.font: font(.semibold, 13)], for: .selected)
     }
 
     /// Apple's default point size and weight for each text style, so swapping fonts keeps the layout.

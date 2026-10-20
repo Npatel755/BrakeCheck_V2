@@ -57,7 +57,7 @@ def _photon(method, path, **kwargs):
 
 def _invite(c):
     url = f"{API}/users/{quote(c['photon_user_id'], safe='')}/redirect?msg=YES"
-    text = (f"Hi {c['first_name']}, I added you as an emergency contact on BrakeCheck. "
+    text = (f"Hi {c['first_name']}, I added you as an emergency contact on BrakeSense. "
             f"If I may have been in a crash, it can text you my location. Tap to accept: {url}")
     return {**c, 'invite_url': url, 'invite_text': text, 'sms_url': f"sms:{c['phone']}&body={quote(text)}"}
 

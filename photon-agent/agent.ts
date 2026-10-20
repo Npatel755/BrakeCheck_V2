@@ -138,7 +138,7 @@ for await (const [space, message] of app.messages) {
         const result = yes ? await backend('/contacts/confirm', { phone: sender, confirmed: true })
           : (await revoke(sender), { known: true });
         if (!result.known || (yes && result.confirmed !== true)) {
-          await sendTo(sender, 'Ask the driver to add you as a BrakeCheck emergency contact first.'); continue;
+          await sendTo(sender, 'Ask the driver to add you as a BrakeSense emergency contact first.'); continue;
         }
         if (yes) optedOut.delete(sender);
         await sendTo(sender, yes ? `You're set, ${result.first_name}. Reply STOP to opt out of ${DRIVER}'s alerts.`

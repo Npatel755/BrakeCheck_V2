@@ -1,0 +1,130 @@
+# Screenshots of the main screens from the iOS Simulator, for reviewing UI changes without a Mac.
+# A UI test (ios/AppTarget/UITests/ScreenTour.swift) walks Home, Navigate and Camera in portrait
+# and landscape. The PNGs are uploaded as the "screens" artifact; read them without a GitHub login
+# at nightly.link/<owner>/<repo>/actions/runs/<run id>/screens.zip.
+# Runs on Claude branches and the integrated main_v3 branch, or manually.
+name: iOS screens
+
+on:
+  push:
+    branches: ['claude/**', 'main_v3']
+  workflow_dispatch:
+
+jobs:
+  screens:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: ios
+    env:
+      BUNDLE_ID: com.brakecheck.prototype
+      # Midtown Atlanta (Peachtree St at 10th St). Navigation needs a fix younger than 2 s, and the
+      # Simulator doesn't redeliver an unchanged position, so the tour alternates two points 1 m apart.
+      START_FIX: 33.7816,-84.3838
+      START_FIX_ALT: 33.78161,-84.3838
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate the Xcode app project
+        run: |
+          brew install xcodegen
+          bash scripts/generate_app_project.sh
+
+      - name: Boot a Simulator
+        run: |
+          udid=$(python3 scripts/pick_simulator.py)
+          echo "SIM=$udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl status_bar "$udid" override --time 9:41 --batteryState charged --batteryLevel 100 \
+            --wifiBars 3 --cellularBars 4 || true
+          xcrun simctl location "$udid" set "$START_FIX"
+          xcrun simctl privacy "$udid" grant location "$BUNDLE_ID" || true
+          xcrun simctl privacy "$udid" grant camera "$BUNDLE_ID" || true
+
+      - name: Build for testing (Release, what users get)
+        run: |
+          set +e
+          xcodebuild build-for-testing -project AppTarget/BrakeCheckApp.xcodeproj -scheme BrakeCheckApp \
+            -configuration Release -destination "id=$SIM" -derivedDataPath build/dd \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO > screens-build.log 2>&1
+          status=$?
+          grep -E "^/.*: error: " screens-build.log | sed "s|$GITHUB_WORKSPACE/||" | sort -u | head -50 | while IFS= read -r line; do
+            file=$(echo "$line" | cut -d: -f1); lineno=$(echo "$line" | cut -d: -f2)
+            msg=$(echo "$line" | cut -d: -f4- | sed 's/^ error: //')
+            echo "::error file=$file,line=$lineno::$msg"
+          done
+          grep -E "error:" screens-build.log | grep -vE "^/.*: error: " | sort -u | head -20 | while IFS= read -r line; do echo "::error title=xcodebuild::$line"; done
+          [ $status -ne 0 ] && tail -30 screens-build.log | while IFS= read -r line; do echo "::notice title=screens-build.log tail::$line"; done
+          exit $status
+
+      - name: Run the screen tour
+        run: |
+          (while true; do
+            xcrun simctl location "$SIM" set "$START_FIX" >/dev/null 2>&1; sleep 1
+            xcrun simctl location "$SIM" set "$START_FIX_ALT" >/dev/null 2>&1; sleep 1
+          done) &
+          keeper=$!
+          set +e
+          xcodebuild test-without-building -project AppTarget/BrakeCheckApp.xcodeproj -scheme BrakeCheckApp \
+            -configuration Release -destination "id=$SIM" -derivedDataPath build/dd \
+            -resultBundlePath build/screens.xcresult > screens-test.log 2>&1
+          status=$?
+          kill $keeper || true
+          grep -E "error:|Test Case .*(passed|failed)|Executed" screens-test.log | tail -20 | while IFS= read -r line; do
+            echo "::notice title=Screen tour::$line"
+          done
+          # A missed step still leaves the screenshots taken before it, so don't fail the job here.
+          exit 0
+
+      - name: Export screenshots
+        if: always()
+        run: |
+          mkdir -p screens raw
+          xcrun xcresulttool export attachments --path build/screens.xcresult --output-path raw || true
+          python3 - <<'EOF'
+          # Give each exported PNG the name the tour gave it ("01-home.png" etc.).
+          import json, pathlib, shutil
+          raw, out = pathlib.Path("raw"), pathlib.Path("screens")
+          manifest = raw / "manifest.json"
+          entries = json.loads(manifest.read_text()) if manifest.exists() else []
+          def walk(node):
+              if isinstance(node, dict):
+                  if "exportedFileName" in node:
+                      yield node
+                  for value in node.values():
+                      yield from walk(value)
+              elif isinstance(node, list):
+                  for value in node:
+                      yield from walk(value)
+          count = 0
+          for item in walk(entries):
+              source = raw / item["exportedFileName"]
+              name = item.get("suggestedHumanReadableName", source.name).split("_")[0]
+              if source.exists():
+                  shutil.copy(source, out / f"{name}{source.suffix}")
+                  count += 1
+          print(f"{count} screenshots")
+          EOF
+          ls -la screens
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens
+          path: ios/screens
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens-logs
+          path: |
+            ios/screens-build.log
+            ios/screens-test.log
+          if-no-files-found: ignore

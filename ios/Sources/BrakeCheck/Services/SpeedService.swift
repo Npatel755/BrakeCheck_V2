@@ -122,7 +122,7 @@ final class SpeedService: NSObject, CLLocationManagerDelegate {
             clearGPS()
             onFusedSpeed?(nil)
 
-            status("Enable Precise Location for BrakeCheck.")
+            status("Enable Precise Location for BrakeSense.")
             return
         }
 

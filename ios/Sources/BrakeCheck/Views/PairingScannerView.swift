@@ -175,8 +175,8 @@ struct PairingScannerSheet: View {
             ZStack(alignment: .bottom) {
                 QRCodeScanner(onCode: handleScan, onError: { scanError = $0 })
                     .ignoresSafeArea(edges: .bottom)
-                Text("Scan the one-time QR code from your BrakeCheck backend.")
-                    .font(.callout.weight(.medium))
+                Text("Scan the one-time QR code from your BrakeSense backend.")
+                    .font(.brake(.callout, weight: .medium))
                     .multilineTextAlignment(.center)
                     .padding(14)
                     .frame(maxWidth: .infinity)
@@ -214,7 +214,7 @@ struct PairingScannerSheet: View {
               url.user == nil, url.password == nil,
               url.query == nil, url.fragment == nil,
               url.path.isEmpty || url.path == "/" else {
-            scanError = "Invalid BrakeCheck pairing QR code. Generate a fresh QR code with `python pair.py`; for a hosted backend, include its HTTPS URL with `--backend-url`."
+            scanError = "Invalid BrakeSense pairing QR code. Generate a fresh QR code with `python pair.py`; for a hosted backend, include its HTTPS URL with `--backend-url`."
             return
         }
 

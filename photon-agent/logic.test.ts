@@ -20,7 +20,7 @@ test('alerts describe an unconfirmed impact, not a proven crash', () => {
 });
 test('test contact message is explicit and contains no location', () => {
   const message = testMessage('Alex', 'Jordan');
-  assert.match(message, /BRAKECHECK TEST ONLY/);
+  assert.match(message, /BRAKESENSE TEST ONLY/);
   assert.match(message, /not an emergency/);
   assert.match(message, /No location was shared/);
   assert.match(message, /Reply STOP/);

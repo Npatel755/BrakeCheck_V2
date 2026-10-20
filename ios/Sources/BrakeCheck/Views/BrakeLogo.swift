@@ -8,12 +8,12 @@ struct BrakeLogo: View {
     var body: some View {
         HStack(spacing: size * 0.3) {
             BrakeLamp().frame(width: size * 1.2, height: size * 1.2)
-            (Text("Brake").foregroundColor(BrakeTheme.text) + Text("Check").foregroundColor(BrakeTheme.accentText))
+            (Text("Brake").foregroundColor(BrakeTheme.text) + Text("Sense").foregroundColor(BrakeTheme.accentText))
                 .font(.brake(size: size, weight: .bold)).tracking(-size * 0.025)
                 .lineLimit(1).fixedSize()
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("BrakeCheck")
+        .accessibilityLabel("BrakeSense")
         .tint(BrakeTheme.accentColor(named: accentChoice))
     }
 }
