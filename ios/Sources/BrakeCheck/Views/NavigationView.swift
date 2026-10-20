@@ -440,16 +440,15 @@ struct NavigationView: View {
                         Text(navigation.destinationTitle ?? "Destination reached")
                             .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted).lineLimit(1)
                     } else {
-                        (Text(navigation.remainingTime.map(arrivalText) ?? "—").font(.brake(size: 24, weight: .bold))
-                            + Text(" arrival").font(.brake(size: 14, weight: .semibold)).foregroundColor(BrakeTheme.muted))
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                        // "4:43 AM arrival", or just the time where the column is too narrow (landscape).
+                        ViewThatFits(in: .horizontal) {
+                            arrivalLine(labelled: true)
+                            arrivalLine(labelled: false)
+                        }
                         Text(remainingLine).font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
                             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
                     }
                 }
-                // The landscape column is narrow: the arrival time shrinks a little rather than truncating.
                 .layoutPriority(1)
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 0)
@@ -464,6 +463,14 @@ struct NavigationView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func arrivalLine(labelled: Bool) -> some View {
+        let time = Text(navigation.remainingTime.map(arrivalText) ?? "—").font(.brake(size: 24, weight: .bold))
+        let line = labelled
+            ? time + Text(" arrival").font(.brake(size: 14, weight: .semibold)).foregroundColor(BrakeTheme.muted)
+            : time
+        return line.monospacedDigit().lineLimit(1).minimumScaleFactor(labelled ? 1 : 0.7)
     }
 
     private var remainingLine: String {
