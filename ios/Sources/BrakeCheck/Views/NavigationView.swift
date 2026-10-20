@@ -444,10 +444,13 @@ struct NavigationView: View {
                             + Text(" arrival").font(.brake(size: 14, weight: .semibold)).foregroundColor(BrakeTheme.muted))
                             .monospacedDigit()
                             .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                         Text(remainingLine).font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
-                            .monospacedDigit().lineLimit(1)
+                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
                     }
                 }
+                // The landscape column is narrow: the arrival time shrinks a little rather than truncating.
+                .layoutPriority(1)
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 0)
                 muteButton

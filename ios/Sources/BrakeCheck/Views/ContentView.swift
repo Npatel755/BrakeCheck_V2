@@ -53,6 +53,8 @@ struct ContentView: View {
     @State private var showCheckin = false
     @State private var showCameraSetup = false
     @State private var page: Page = .home
+    /// While typing (a destination search), the tab bar steps aside so suggestions get the room.
+    @State private var keyboardShown = false
     /// Set after the first trip; the system review prompt is requested once its summary closes.
     @State private var reviewAfterSummary = false
     @State private var showFirstTripPremium = false
@@ -134,7 +136,7 @@ struct ContentView: View {
                         layout {
                             if !portrait { pageRail }
                             pages(portrait: portrait)
-                            if portrait { pageBar }
+                            if portrait && !keyboardShown { pageBar }
                         }
                     }
                 }
@@ -184,7 +186,7 @@ struct ContentView: View {
     }
 
     private var drivingPages: some View {
-        arSynced(observingNavigation(observingCamera(observingCheckin(presentedPages))))
+        observingKeyboard(arSynced(observingNavigation(observingCamera(observingCheckin(presentedPages)))))
         .overlay {
             if showCameraSetup {
                 CameraCalibrationOverlay(model: model, presentation: model.arPresentation, cameraAR: $cameraAR,
@@ -193,6 +195,16 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: showCameraSetup)
+    }
+
+    private func observingKeyboard<Content: View>(_ content: Content) -> some View {
+        content
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardShown = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardShown = false
+        }
     }
 
     private func observingCheckin<Content: View>(_ content: Content) -> some View {
@@ -281,7 +293,7 @@ struct ContentView: View {
                 CameraRoadMaskStatus(presentation: model.arPresentation, portrait: portrait)
             }
         }
-        .clipped()
+        .clipShape(SideClip())
     }
 
     // MARK: - Page switcher
@@ -682,4 +694,10 @@ struct ContentView: View {
         .padding(12)
         .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 10))
     }
+}
+
+/// Clips only the sides, so the camera page can't spill onto its neighbours during a swipe, while its
+/// full-bleed layers (camera, placeholder, scrims) still reach up under the hidden status bar.
+private struct SideClip: Shape {
+    func path(in rect: CGRect) -> Path { Path(rect.insetBy(dx: 0, dy: -rect.height)) }
 }
