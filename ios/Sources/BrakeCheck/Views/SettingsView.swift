@@ -466,6 +466,8 @@ struct SettingsView: View {
             Text("Check-in replies are recognized on this iPhone when on-device speech is supported. The I'm okay and Send help buttons remain available. Automatic contact alerts require a connected service.")
                 .font(.caption).foregroundStyle(BrakeTheme.muted)
         case .safety:
+            DrivingAssistControls()
+            Divider()
             Toggle("Pre-drive checklist before each trip", isOn: Binding(
                 get: { !skipChecklist }, set: { skipChecklist = !$0 }))
             Toggle("Experimental impact detection", isOn: Binding(get: { impactEnabled }, set: { model.impactEnabled = $0 })).disabled(demoMode)

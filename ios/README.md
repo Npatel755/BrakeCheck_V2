@@ -23,3 +23,11 @@ validation are recorded in [N34-SETTINGS-PERFORMANCE.md](N34-SETTINGS-PERFORMANC
 - `Views/ContentView.swift`: redesigned driving dashboard. Contacts, settings, check-in, and diagnostics have separate views.
 
 First launch: run `python pair.py` on the computer and scan its QR from Settings. Allow Local Network and Camera access, then allow microphone access and run the message-free check-in demo. See the root validation report for remaining physical-device checks.
+
+Navigation route planning, stops, offline road imports and feature coverage are
+documented in [NAVIGATION.md](NAVIGATION.md). N57 integration checks are recorded
+in [N57-VALIDATION.md](N57-VALIDATION.md).
+
+N59 adds four optional, default-off Premium driving-alert previews. Their input
+requirements, subscription gating and validation limits are documented in
+[N59-DRIVING-ALERTS.md](N59-DRIVING-ALERTS.md).

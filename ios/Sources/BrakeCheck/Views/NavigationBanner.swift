@@ -24,6 +24,7 @@ struct NavigationBanner: View {
     }
     private var symbol: String {
         if navigation.hasArrived { return "flag.checkered" }
+        if navigation.userPaused { return "pause.fill" }
         if navigation.isCalculating { return "arrow.triangle.2.circlepath" }
         return NavigationManeuver.symbol(for: primary)
     }
@@ -87,7 +88,10 @@ struct NavigationBanner: View {
     /// The following step, or the trip's remaining time and distance when there is none.
     private var strip: some View {
         HStack(spacing: 10) {
-            if let next = navigation.upcomingInstruction, !navigation.hasArrived {
+            if navigation.isPaused && !navigation.hasArrived {
+                Text(navigation.userPaused ? "Trip paused" : navigation.status)
+                    .lineLimit(2).minimumScaleFactor(0.8)
+            } else if let next = navigation.upcomingInstruction, !navigation.hasArrived {
                 Text("Then").font(.brake(size: 15, weight: .semibold)).opacity(0.75)
                 Image(systemName: NavigationManeuver.symbol(for: next)).font(.brake(size: 15, weight: .bold))
                 Text(Self.road(in: next)).lineLimit(1).minimumScaleFactor(0.8)
@@ -114,6 +118,8 @@ struct NavigationBanner: View {
     }
 
     private var compactLine: String {
+        if navigation.userPaused { return "Trip paused" }
+        if navigation.isPaused { return "Last known route: " + Self.road(in: primary) }
         guard let distance else { return Self.road(in: primary) }
         return "\(distance.value) \(distance.unit) · \(Self.road(in: primary))"
     }

@@ -18,7 +18,7 @@ struct PremiumView: View {
                         .font(.brake(size: 42, weight: .semibold))
                     Text(onContinue == nil ? "Drive with more insight" : "Your first drive is saved")
                         .font(.brake(size: 34, weight: .bold))
-                    Text("BrakeCheck Premium adds deeper trip insights and camera display controls.")
+                    Text("BrakeCheck Premium adds optional driving alerts, deeper trip insights, and camera display controls.")
                         .font(.brake(.title3))
                 }
                 .foregroundStyle(BrakeTheme.text)
@@ -35,6 +35,9 @@ struct PremiumView: View {
                     .foregroundStyle(BrakeTheme.muted)
                 benefit("Deeper trip insights", detail: "See approximate route distance and average speed for saved trips.", icon: "chart.xyaxis.line")
                 benefit("Compact camera directions", detail: "Choose a smaller turn banner to reveal more of the road.", icon: "rectangle.compress.vertical")
+                DrivingAssistControls(offerUpgrade: false)
+                    .padding(18)
+                    .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 20))
                 if store.isSubscribed {
                     Toggle("Use compact camera directions", isOn: $compactBanner)
                         .font(.brake(.subheadline, weight: .semibold))
@@ -48,7 +51,7 @@ struct PremiumView: View {
                     .foregroundStyle(BrakeTheme.muted)
                 benefit("Enhanced AR overlays", detail: "Additional camera-aligned styles are planned. Current AR guidance remains available to everyone.", icon: "viewfinder")
                 benefit("Cloud-assisted model", detail: "A stronger optional cloud model is being researched and is not available yet.", icon: "cloud")
-                Text("Roadmap items are not included in today's purchase. Safety alerts, basic trip summaries, and current AR guidance stay free.")
+                Text("Roadmap items are not included in today's purchase. Collision warnings, emergency check-ins, basic trip summaries, and current AR guidance stay free.")
                     .font(.brake(.caption))
                     .foregroundStyle(BrakeTheme.muted)
                 if store.isSubscribed {

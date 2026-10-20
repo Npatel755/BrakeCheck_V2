@@ -76,7 +76,8 @@ import StoreKit
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result,
                   transaction.productID == Self.monthlyID,
-                  transaction.revocationDate == nil else { continue }
+                  transaction.revocationDate == nil, !transaction.isUpgraded,
+                  transaction.expirationDate.map({ $0 > Date() }) ?? true else { continue }
             active = true
         }
         isSubscribed = active

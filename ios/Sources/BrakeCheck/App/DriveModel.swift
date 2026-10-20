@@ -62,6 +62,11 @@ final class DriveModel: ObservableObject {
     private var currentCameraRisk: RiskSnapshot?
     private var dangerContinuity = LeadDangerContinuity()
     private var laneDisplayContinuity = LaneDisplayContinuity(rejectOutliers: true, smoothingSeconds: 0.4)
+    private var drivingAssist = DrivingAssistEngine()
+    private var assistFeatures: Set<DrivingAssistFeature> = []
+    private var assistLane: LanePath?
+    private var assistSubscriptions = Set<AnyCancellable>()
+    @Published private(set) var drivingAssistAlert: DrivingAssistAlert?
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -254,6 +259,11 @@ final class DriveModel: ObservableObject {
     }
 
     init() {
+        PremiumStore.shared.$isSubscribed.removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.syncDrivingAssists() }.store(in: &assistSubscriptions)
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: RunLoop.main).sink { [weak self] _ in self?.syncDrivingAssists() }
+            .store(in: &assistSubscriptions)
         SpeechVoicePreferences.restoreOriginalDefaultsIfNeeded()
         do {
             savedTrips = try tripMetricsStore.load()
@@ -394,6 +404,7 @@ final class DriveModel: ObservableObject {
                     return
                 }
                 self.lastDetectionsUptime = uptime
+                self.processAssistVehicles(detections, capturedAt: uptime)
                 if !detections.isEmpty || !self.detections.isEmpty { self.detections = detections }
 
             }
@@ -419,14 +430,28 @@ final class DriveModel: ObservableObject {
         camera.tracker.onLane = { [weak self] lane in
             // Perception guides are optional diagnostics. Safety and AR use
             // the tracker's lane directly, so hidden guides need no UI work.
-            guard UserDefaults.standard.bool(forKey: "display.laneGuides") else { return }
+            guard UserDefaults.standard.bool(forKey: "display.laneGuides")
+                || DrivingAssistFeature.allCases.contains(where: { UserDefaults.standard.bool(forKey: $0.preferenceKey) }) else { return }
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo else { return }
                 guard !self.changingCameraGeometry,
                       lane.map({ $0.capturedAt >= self.latestGeometryChangeUptime }) ?? true else { return }
+                self.processAssistLane(lane)
+                guard UserDefaults.standard.bool(forKey: "display.laneGuides") else { return }
                 let path = self.laneDisplayContinuity.update(lane,
                     at: ProcessInfo.processInfo.systemUptime)
                 if self.lanePath?.capturedAt != path?.capturedAt { self.lanePath = path }
+            }
+        }
+        camera.tracker.onTrafficSignal = { [weak self] observation, capturedAt in
+            DispatchQueue.main.async {
+                guard let self, capturedAt >= max(self.latestGeometryChangeUptime, self.latestTrackingResetUptime) else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                let stationary = self.hasStationaryGPS(at: now)
+                    && self.speedService.reading(at: capturedAt)?.isFreshStationary(at: capturedAt) == true
+                let alert = self.drivingAssist.updateSignal(observation, stationary: stationary,
+                    enabled: self.assistAllowed(.greenLight), now: now)
+                self.deliverAssist(alert)
             }
         }
         camera.tracker.onDetectorReady = { [weak self] ready in
@@ -588,7 +613,7 @@ final class DriveModel: ObservableObject {
     }
 
     func startNavigationDrive() {
-        guard !stopping, !demo, !replaying, navigation.mapLocation != nil, navigation.route != nil else { return }
+        guard !stopping, !demo, !replaying, navigation.canStartGuidance else { return }
         navigation.startGuidance()
         if navigation.isNavigating && !tripActive { startTrip() }
     }
@@ -792,6 +817,7 @@ final class DriveModel: ObservableObject {
     }
 
     private func clearTrackingDisplay(_ reason: String) {
+        drivingAssist.reset(); drivingAssistAlert = nil; assistLane = nil
         latestTrackingResetUptime = ProcessInfo.processInfo.systemUptime
 
         targetID = nil
@@ -889,6 +915,7 @@ final class DriveModel: ObservableObject {
     }
 
     private func consume(_ reading: TrackingReading) {
+        defer { processAssistLead(reading) }
 
         guard foreground, tripActive || replaying, !demo,
               !changingCameraGeometry,
@@ -1136,6 +1163,7 @@ final class DriveModel: ObservableObject {
     }
 
     private func tick() {
+        syncDrivingAssists()
         guard foreground else { reconcileDisplayTimer(); return }
 
         let now = ProcessInfo.processInfo.systemUptime
@@ -1282,6 +1310,83 @@ final class DriveModel: ObservableObject {
             camera: cameraRange, confidence: currentLeadConfidence, rearConfirmed: true,
             capturedAt: lastTrackingUptime, now: now)
         if estimatedLeadSpeed != next { estimatedLeadSpeed = next }
+    }
+
+    private func assistAllowed(_ feature: DrivingAssistFeature) -> Bool {
+        foreground && tripActive && cameraReady && !replaying && !demo && !changingCameraGeometry
+            && PremiumStore.shared.isSubscribed && assistFeatures.contains(feature)
+            && UserDefaults.standard.bool(forKey: feature.preferenceKey)
+            && !brakeWarningActive && risk.level != .critical && !safety.checkinPresented
+    }
+
+    private func syncDrivingAssists() {
+        let next = DrivingAssistFeature.enabled(in: .standard, premium: PremiumStore.shared.isSubscribed)
+        if next != assistFeatures {
+            assistFeatures = next; drivingAssist.reset(); drivingAssistAlert = nil; assistLane = nil
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        camera.tracker.setTrafficSignalEnabled(assistAllowed(.greenLight) && hasStationaryGPS(at: now))
+        if let alert = drivingAssistAlert,
+           !assistAllowed(alert.feature) || now - alert.capturedAt > 3 {
+            drivingAssistAlert = nil
+        }
+    }
+
+    private func processAssistLead(_ reading: TrackingReading) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let current = reading.isFreshDetection && !reading.isDetectorSettling && reading.isPathSupported
+            && targetID == reading.targetID && lastTrackingUptime == reading.uptime
+            && TrackingFreshness.measurementIsFresh(capturedAt: reading.uptime, now: now)
+        let stationary = hasStationaryGPS(at: now)
+            && speedService.reading(at: reading.uptime)?.isFreshStationary(at: reading.uptime) == true
+        let alert = drivingAssist.updateLead(id: reading.targetID,
+            distance: current ? cameraRange.distance : nil, rangeRate: current ? cameraRange.rangeRate : nil,
+            confidence: reading.confidence, rearConfirmed: reading.hasConfirmedRearIdentity,
+            stationary: stationary, enabled: assistAllowed(.trafficStart), capturedAt: reading.uptime, now: now)
+        deliverAssist(alert)
+    }
+
+    private func processAssistLane(_ lane: LanePath?) {
+        guard !assistFeatures.isEmpty else { return }
+        assistLane = lane
+        let now = ProcessInfo.processInfo.systemUptime
+        let fix = lane.flatMap { speedService.reading(at: $0.capturedAt) }
+        let speed = fix.flatMap { $0.isConfidentlyMoving(at: now) && $0.accuracy <= 2 ? $0.metersPerSecond : nil }
+        let center = captureGeometry.horizontalFieldOfView.map { fov in
+            0.5 + tan(navigationMountCalibration.yawDegrees * .pi / 180)
+                / (2 * tan(fov * .pi / 360))
+        } ?? .nan
+        // Planned turns and route rejoining can intentionally cross lane paint.
+        let maneuver = navigation.isNavigating && ((navigation.maneuverDistance ?? .infinity) < 100
+            || navigation.isRejoiningRoute)
+        let alert = drivingAssist.updateLane(lane, cameraCenter: center, speed: speed,
+            aligned: cameraAlignmentVerified && !maneuver, enabled: assistAllowed(.laneDeparture), now: now)
+        deliverAssist(alert)
+    }
+
+    private func processAssistVehicles(_ detections: [VehicleDetection], capturedAt: TimeInterval) {
+        guard !assistFeatures.isEmpty else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let fix = speedService.reading(at: capturedAt)
+        let speed = fix.flatMap { $0.isConfidentlyMoving(at: now) && $0.accuracy <= 2 ? $0.metersPerSecond : nil }
+        let vehicles = detections.filter { $0.isFreshDetection && capturedAt - $0.capturedAt <= 0.1 }.map {
+            LeadVehicle(box: $0.box, label: $0.label, confidence: $0.confidence,
+                        viewpoint: $0.viewpoint, trackID: $0.id)
+        }
+        let alert = drivingAssist.updateVehicles(vehicles, lane: assistLane, speed: speed,
+            enabled: assistAllowed(.cutIn) && cameraAlignmentVerified,
+            capturedAt: capturedAt, now: now)
+        deliverAssist(alert)
+    }
+
+    private func deliverAssist(_ alert: DrivingAssistAlert?) {
+        guard let alert, assistAllowed(alert.feature), risk.level != .high,
+              ProcessInfo.processInfo.systemUptime - alert.capturedAt <= 0.5 else { return }
+        drivingAssistAlert = alert
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections {
+            safety.audio.speakDrivingAssist(alert.feature, language: safety.settings.language)
+        }
     }
 
     private func invalidateRisk(_ reason: String, preserveSamples: Bool = false) {

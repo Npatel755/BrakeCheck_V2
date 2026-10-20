@@ -319,6 +319,17 @@ struct ContentView: View {
                  meter: model.dangerMeter, large: large,
                  unavailableTitle: !model.demo && !model.replaying && !model.detectorReady
                     ? (model.detectorStatus.contains("could not load") ? "Detection unavailable" : "Preparing detection") : nil)
+            if let alert = model.drivingAssistAlert, premiumStore.isSubscribed,
+               !critical && !safety.checkinPresented && running && !selecting {
+                Label(alert.feature.alertText, systemImage: alert.feature.icon)
+                    .font(.brake(size: large ? 14 : 12, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .foregroundStyle(BrakeTheme.text)
+                    .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
+                    .accessibilityIdentifier("drivingAssistAlert")
+                    .allowsHitTesting(false)
+            }
             if !critical && !model.demo && !model.replaying && !model.detectorReady && model.detectorStatus.contains("could not load") {
                 Button("Detection failed · tap for details") { model.message = model.detectorStatus }
                     .font(.caption).foregroundStyle(BrakeTheme.caution)

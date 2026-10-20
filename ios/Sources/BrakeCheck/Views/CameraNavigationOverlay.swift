@@ -114,7 +114,7 @@ struct CameraNavigationOverlay: View {
 
         let key = CameraRouteRenderCache.Key(sceneTime: scene.capturedAt, progress: progress, course: fix.course,
 
-            route: navigation.route.map { ObjectIdentifier($0) }, fov: fov, aspect: geometry.aspect,
+            route: navigation.routePath.map { ObjectIdentifier($0) }, fov: fov, aspect: geometry.aspect,
 
             height: mountHeight, horizon: verifiedHorizon + horizonOffset, yaw: mountYaw)
 

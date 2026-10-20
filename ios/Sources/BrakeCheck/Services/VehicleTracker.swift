@@ -86,6 +86,16 @@ final class VehicleTracker {
     private var automaticRequest: VNTrackObjectRequest?
     private var automaticSequence = VNSequenceRequestHandler()
     var onLane: ((LanePath?) -> Void)?
+    var onTrafficSignal: ((TrafficSignalObservation?, TimeInterval) -> Void)?
+    private var trafficSignalEnabled = false
+    private lazy var trafficSignalSampler = TrafficSignalSampler()
+    func setTrafficSignalEnabled(_ enabled: Bool) {
+        queue.async {
+            guard self.trafficSignalEnabled != enabled else { return }
+            self.trafficSignalEnabled = enabled
+            if !enabled { self.onTrafficSignal?(nil, ProcessInfo.processInfo.systemUptime) }
+        }
+    }
     var onARScene: ((CameraARScene?) -> Void)?
     private var arProcessingEnabled = false
     private var lastARPublication: TimeInterval = -.infinity
@@ -480,6 +490,10 @@ final class VehicleTracker {
                 if self.detector != nil {
                     let detectorStarted = ProcessInfo.processInfo.systemUptime
                     let objects = try self.performDetection(buffer, at: uptime)
+                    if self.trafficSignalEnabled, self.isCurrentFrame(submittedGeneration) {
+                        self.onTrafficSignal?(self.trafficSignalSampler.observe(objects, buffer: buffer,
+                            capturedAt: uptime), uptime)
+                    }
                     // Keep pedestrians and cyclists for AR occlusion without
                     // adding them to the vehicle/range/collision pipeline.
                     self.lastObstacleBoxes = objects.compactMap { object in
