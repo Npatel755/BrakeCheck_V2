@@ -106,7 +106,7 @@ final class ConnectionSettings: ObservableObject {
             throw APIError.message("QR code is missing its backend_url or pairing code. Generate a new QR with the updated pair.py.")
         }
         guard payload.app == "BrakeCheck", payload.version == 1 else {
-            throw APIError.message("This is not a supported BrakeCheck pairing QR code.")
+            throw APIError.message("This is not a supported BrakeSense pairing QR code.")
         }
         try await pair(code: payload.code, deviceName: deviceName, backendURL: payload.backend_url)
     }

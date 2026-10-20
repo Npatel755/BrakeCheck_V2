@@ -147,7 +147,7 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showFirstTripPremium, onDismiss: openCompletedTrip) {
             PremiumView(onContinue: { showFirstTripPremium = false })
         }
-        .alert("BrakeCheck", isPresented: messageShown) {
+        .alert("BrakeSense", isPresented: messageShown) {
             Button("OK", role: .cancel) { model.message = nil }
         } message: { Text(model.message ?? "") }
         .confirmationDialog("End this trip? Remaining post-event recording will stop.", isPresented: $stopping, titleVisibility: .visible) {

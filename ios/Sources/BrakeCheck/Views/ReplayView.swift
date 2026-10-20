@@ -36,7 +36,7 @@ struct ReplayView: View {
         var errorDescription: String? {
             switch self {
             case .missingRecordingTime:
-                return "This video has no BrakeCheck clock time. Choose Video only, a matching speed log, or assumed speed."
+                return "This video has no BrakeSense clock time. Choose Video only, a matching speed log, or assumed speed."
             case .noMatchingLog:
                 return "No saved trip log covers this recording. Import the logger file or assume a speed."
             }
@@ -153,7 +153,7 @@ struct ReplayView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     } else {
                         Stepper(String(format: "Speed log offset %+.1f s", offset), value: $offset, in: -30...30, step: 0.5)
-                        Text("BrakeCheck logs speed on every trip and matches it to its own recordings by clock time. Use the offset only for a log from another app or phone.")
+                        Text("BrakeSense logs speed on every trip and matches it to its own recordings by clock time. Use the offset only for a log from another app or phone.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

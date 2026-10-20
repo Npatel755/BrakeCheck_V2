@@ -230,7 +230,7 @@ final class SafetyService: ObservableObject {
             return ContactTestOutcome(accepted: false, detail: "This contact must reply YES before receiving messages.")
         }
         guard let client = settings.client else {
-            return ContactTestOutcome(accepted: false, detail: "Connect BrakeCheck to its backend before sending a test.")
+            return ContactTestOutcome(accepted: false, detail: "Connect BrakeSense to its backend before sending a test.")
         }
         do {
             let response: ContactTestResponse = try await client.request(
@@ -244,7 +244,7 @@ final class SafetyService: ObservableObject {
         } catch {
             return ContactTestOutcome(
                 accepted: false,
-                detail: "BrakeCheck could not confirm Photon accepted the test message. Ask \(contact.first_name) to check their messages before retrying. A one-minute cooldown applies after each attempt. \(error.localizedDescription)")
+                detail: "BrakeSense could not confirm Photon accepted the test message. Ask \(contact.first_name) to check their messages before retrying. A one-minute cooldown applies after each attempt. \(error.localizedDescription)")
         }
     }
 

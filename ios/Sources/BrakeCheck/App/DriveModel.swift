@@ -833,7 +833,7 @@ final class DriveModel: ObservableObject {
 
         camera.markIncident(reason: "Manually marked incident")
 
-        message = "Available footage is being preserved. Keep BrakeCheck visible to capture the next 15 minutes."
+        message = "Available footage is being preserved. Keep BrakeSense visible to capture the next 15 minutes."
 
     }
 

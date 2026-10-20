@@ -35,7 +35,7 @@ struct PreDriveChecklist: View {
             Item(id: 1, title: "Phone mounted", detail: mounted ? "In its mount, facing the road" : "Tap once the phone is in its mount",
                  done: mounted, icon: "iphone.gen3", action: { mounted.toggle() }),
             Item(id: 2, title: "Camera allowed",
-                 detail: cameraAllowed ? "Checked automatically" : camera == .notDetermined ? "Tap to allow, or BrakeCheck asks when the trip starts" : "Turned off · tap to open Settings",
+                 detail: cameraAllowed ? "Checked automatically" : camera == .notDetermined ? "Tap to allow, or BrakeSense asks when the trip starts" : "Turned off · tap to open Settings",
                  done: cameraAllowed, icon: "camera", action: {
                      if camera == .notDetermined {
                          AVCaptureDevice.requestAccess(for: .video) { _ in
@@ -46,7 +46,7 @@ struct PreDriveChecklist: View {
             Item(id: 3, title: "Volume up", detail: loud ? "Loud enough to hear brake alerts" : "Turn it up: brake alerts are spoken out loud",
                  done: loud, icon: "speaker.wave.3", action: { volumeConfirmed.toggle() }),
             Item(id: 4, title: "Location allowed",
-                 detail: locationAllowed ? "Checked automatically · speed comes from GPS" : location == .notDetermined ? "BrakeCheck asks when the trip starts" : "Turned off · tap to open Settings",
+                 detail: locationAllowed ? "Checked automatically · speed comes from GPS" : location == .notDetermined ? "BrakeSense asks when the trip starts" : "Turned off · tap to open Settings",
                  done: locationAllowed, icon: "location", action: {
                      if location == .denied || location == .restricted { openSettings() }
                  })

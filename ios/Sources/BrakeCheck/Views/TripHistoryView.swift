@@ -72,7 +72,7 @@ struct TripHistoryView: View {
     }
     private func exportCSV() {
         do {
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("BrakeCheck-trip-history.csv")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("BrakeSense-trip-history.csv")
             try TripMetricsCSV.encode(model.savedTrips).write(to: url, atomically: true, encoding: .utf8)
             csvURL = url
         } catch { exportError = error.localizedDescription }

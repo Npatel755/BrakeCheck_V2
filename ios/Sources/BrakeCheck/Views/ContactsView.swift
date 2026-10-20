@@ -23,7 +23,7 @@ struct ContactsView: View {
             Form {
                 Section {
                     Label("Your people, one check-in away.", systemImage: "person.2.fill").font(.brake(.headline))
-                    Text("Adding a contact opens their Messages invitation. Tap Send. They open the link and send YES to the BrakeCheck number to confirm. Only confirmed contacts receive alerts; STOP opts them out.")
+                    Text("Adding a contact opens their Messages invitation. Tap Send. They open the link and send YES to the BrakeSense number to confirm. Only confirmed contacts receive alerts; STOP opts them out.")
                         .font(.brake(.caption)).foregroundStyle(.secondary)
                 }
                 Section("Add a contact") {
@@ -139,7 +139,7 @@ struct ContactsView: View {
                 }
                 Button("Cancel", role: .cancel) { testTarget = nil }
             } message: {
-                Text("\(testTarget?.first_name ?? "This contact") will receive a message labeled BRAKECHECK TEST ONLY. It says there is no emergency and no location is shared. Ask them to confirm it arrived.")
+                Text("\(testTarget?.first_name ?? "This contact") will receive a message labeled BRAKESENSE TEST ONLY. It says there is no emergency and no location is shared. Ask them to confirm it arrived.")
             }
             .alert("Emergency contact test", isPresented: Binding(get: { testOutcome != nil }, set: { if !$0 { testOutcome = nil } })) {
                 Button("OK", role: .cancel) { testOutcome = nil }
@@ -151,7 +151,7 @@ struct ContactsView: View {
 }
 
 private func contactInvitationText(_ contact: EmergencyContact) -> String {
-    contact.invite_text + "\n\nOpen the link, then send YES to the BrakeCheck number to confirm. Reply STOP to that number to opt out."
+    contact.invite_text + "\n\nOpen the link, then send YES to the BrakeSense number to confirm. Reply STOP to that number to opt out."
 }
 
 /// The system composer opens with the server-created invitation and recipient.

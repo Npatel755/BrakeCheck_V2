@@ -16,7 +16,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .safety: return "Safety"
         case .permissions: return "Permissions"
         case .diagnostics: return "Diagnostics"
-        case .demo: return "Try BrakeCheck"
+        case .demo: return "Try BrakeSense"
         case .about: return "About & licences"
         }
     }
@@ -39,13 +39,13 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "Choose the look that feels right."
         case .camera: return "Units and overlays for your road view."
         case .recordings: return "Manage video space and optional automatic cleanup."
-        case .connection: return "Connect your private BrakeCheck service."
+        case .connection: return "Connect your private BrakeSense service."
         case .voice: return "Spoken alerts, language, and check-in replies."
         case .safety: return "Impact detection and emergency check-ins."
         case .permissions: return "Manage access to your iPhone's sensors."
         case .diagnostics: return "Camera, GPS, and measurement details."
         case .demo: return "Explore sample driving and check-in features."
-        case .about: return "How BrakeCheck works, its limits, and model notices."
+        case .about: return "How BrakeSense works, its limits, and model notices."
         }
     }
 }
@@ -206,7 +206,7 @@ struct SettingsView: View {
                 .foregroundStyle(BrakeTheme.accent).frame(width: 52, height: 52)
                 .background(BrakeTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
             VStack(alignment: .leading, spacing: 5) {
-                Text("Make BrakeCheck yours.").font(.system(size: 23, weight: .semibold))
+                Text("Make BrakeSense yours.").font(.system(size: 23, weight: .semibold))
                 Text("Your preferences, in one place.").font(.subheadline).foregroundStyle(BrakeTheme.muted)
             }
         }
@@ -372,7 +372,7 @@ struct SettingsView: View {
                 Label("Paired · \(settings.address)", systemImage: "checkmark.shield.fill")
                     .foregroundStyle(BrakeTheme.muted)
             } else {
-                Text("Scan the pairing code from your BrakeCheck service, or enter its address below.")
+                Text("Scan the pairing code from your BrakeSense service, or enter its address below.")
                     .foregroundStyle(BrakeTheme.muted)
             }
             Button(busy ? "Connecting…" : "Test saved connection") {
@@ -431,7 +431,7 @@ struct SettingsView: View {
         case .voice:
             Toggle("Spoken alerts and crash check-in", isOn: $settings.voiceEnabled)
             Picker("Device voice", selection: $selectedVoice) {
-                Text("Original BrakeCheck voice").tag("")
+                Text("Original BrakeSense voice").tag("")
                 ForEach(voiceOptions, id: \.identifier) { voice in
                     Text(SpeechVoicePreferences.label(voice)).tag(voice.identifier)
                 }
@@ -450,7 +450,7 @@ struct SettingsView: View {
             Text("Device voice handles directions, brake warnings, and check-in prompts. Preview while parked. Brake warnings remain clear and at full volume.")
                 .font(.caption).foregroundStyle(BrakeTheme.muted)
             Toggle("Optional ElevenLabs brake alerts", isOn: $backendAlerts)
-            Text("ElevenLabs brake audio requires a connected service. If it is unavailable, BrakeCheck uses the device voice.")
+            Text("ElevenLabs brake audio requires a connected service. If it is unavailable, BrakeSense uses the device voice.")
                 .font(.caption).foregroundStyle(BrakeTheme.muted)
             Picker("Language", selection: $settings.language) {
                 Text("English").tag("en")
@@ -479,7 +479,7 @@ struct SettingsView: View {
             Button("Open iPhone settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
             }
-            Text("Keep BrakeCheck visible for camera recording. Video pauses when the phone locks or the app goes into the background.")
+            Text("Keep BrakeSense visible for camera recording. Video pauses when the phone locks or the app goes into the background.")
                 .foregroundStyle(BrakeTheme.muted)
         case .diagnostics:
             NavigationLink {
@@ -497,7 +497,7 @@ struct SettingsView: View {
                 .font(.caption).foregroundStyle(BrakeTheme.muted)
         case .about:
             Text("A driver aid, not a safety system").font(.brake(.headline))
-            Text("BrakeCheck estimates the gap and closing speed to vehicles ahead. Warnings and camera directions can be late, missed, or wrong, especially with poor visibility or a loose mount. Set up the phone while parked and keep your eyes on the road.")
+            Text("BrakeSense estimates the gap and closing speed to vehicles ahead. Warnings and camera directions can be late, missed, or wrong, especially with poor visibility or a loose mount. Set up the phone while parked and keep your eyes on the road.")
                 .foregroundStyle(BrakeTheme.muted)
             Text("Model and font notices").font(.brake(.headline))
             ForEach(Self.noticeFiles, id: \.name) { notice in
@@ -540,7 +540,7 @@ struct SettingsView: View {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "BrakeCheck \(version) (\(build))"
+        return "BrakeSense \(version) (\(build))"
     }
 
     private func beginPairing(_ qrText: String) {

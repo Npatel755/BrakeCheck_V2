@@ -3,7 +3,7 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
-/// The trip page (design pick #8): the route on a map with the moments BrakeCheck flagged, the
+/// The trip page (design pick #8): the route on a map with the moments BrakeSense flagged, the
 /// totals, a "What happened" list and any saved clips. Trips from before route saving existed show
 /// their totals without a map.
 struct TripDetailView: View {
@@ -64,7 +64,7 @@ struct TripDetailView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "sparkles")
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Interested in BrakeCheck Premium?")
+                                Text("Interested in BrakeSense Premium?")
                                     .font(.brake(.subheadline, weight: .bold))
                                 Text("See extra route insights and the monthly plan")
                                     .font(.brake(.caption))

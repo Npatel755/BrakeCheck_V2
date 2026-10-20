@@ -18,7 +18,7 @@ struct PremiumView: View {
                         .font(.brake(size: 42, weight: .semibold))
                     Text(onContinue == nil ? "Drive with more insight" : "Your first drive is saved")
                         .font(.brake(size: 34, weight: .bold))
-                    Text("BrakeCheck Premium adds deeper trip insights and camera display controls.")
+                    Text("BrakeSense Premium adds deeper trip insights and camera display controls.")
                         .font(.brake(.title3))
                 }
                 .foregroundStyle(BrakeTheme.text)
