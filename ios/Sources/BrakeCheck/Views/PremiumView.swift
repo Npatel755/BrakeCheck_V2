@@ -42,13 +42,7 @@ struct PremiumView: View {
                         .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 18))
                 }
 
-                Text("ON THE ROADMAP")
-                    .font(.brake(size: 12, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(BrakeTheme.muted)
-                benefit("Enhanced AR overlays", detail: "Additional camera-aligned styles are planned. Current AR guidance remains available to everyone.", icon: "viewfinder")
-                benefit("Cloud-assisted model", detail: "A stronger optional cloud model is being researched and is not available yet.", icon: "cloud")
-                Text("Roadmap items are not included in today's purchase. Safety alerts, basic trip summaries, and current AR guidance stay free.")
+                Text("Safety alerts, basic trip summaries, and camera directions stay free.")
                     .font(.brake(.caption))
                     .foregroundStyle(BrakeTheme.muted)
                 if store.isSubscribed {
@@ -68,17 +62,25 @@ struct PremiumView: View {
                 } else if store.isLoadingProduct {
                     ProgressView("Checking App Store availability")
                 } else {
-                    Text("Premium purchases are unavailable on this build.")
+                    // The App Store sets the price; until the product loads, never show one.
+                    Text("Premium can't load from the App Store right now.")
                         .font(.brake(.subheadline, weight: .semibold))
-                    Text("Planned US price: $9.99/month. Purchases become available after the subscription is configured in App Store Connect.")
-                        .font(.brake(.caption))
-                        .foregroundStyle(BrakeTheme.muted)
+                    Button("Try again") { Task { await store.load() } }
+                        .font(.brake(.subheadline, weight: .semibold))
                 }
                 Button("Restore purchases") { Task { await store.restore() } }
                     .disabled(store.isBusy)
                 if let message = store.message {
                     Text(message).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
                 }
+                HStack(spacing: 18) {
+                    Link("Terms of Use", destination: LegalLinks.termsOfUse)
+                    if let privacy = LegalLinks.privacyPolicy {
+                        Link("Privacy Policy", destination: privacy)
+                    }
+                }
+                .font(.brake(.caption, weight: .semibold))
+                .foregroundStyle(BrakeTheme.accentText)
             }
             .frame(maxWidth: 620, alignment: .leading)
             .padding(24)

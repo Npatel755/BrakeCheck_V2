@@ -27,6 +27,12 @@ struct ContactsView: View {
                         .font(.brake(.caption)).foregroundStyle(.secondary)
                 }
                 Section("Add a contact") {
+                    if service.settings.client == nil {
+                        // Contacts live on the paired service, so without one the form can't save.
+                        Label("Emergency contacts are kept by your BrakeSense service. Connect it in Settings › Connection, then add contacts here.",
+                              systemImage: "network.slash")
+                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+                    }
                     TextField("First name", text: $name).textContentType(.givenName)
                     TextField("Phone with country code, +1…", text: $phone).keyboardType(.phonePad)
                     Button(busy ? "Adding…" : "Add contact") {
@@ -59,7 +65,7 @@ struct ContactsView: View {
                                 Label(contact.removalPending ? "Removal pending · retry Remove"
                                       : contact.confirmed ? "Ready for alerts" : "Waiting for YES",
                                       systemImage: contact.confirmed ? "checkmark.seal.fill" : "clock")
-                                    .font(.brake(.caption)).foregroundStyle(contact.confirmed ? BrakeTheme.accent : Color.orange)
+                                    .font(.brake(.caption)).foregroundStyle(contact.confirmed ? BrakeTheme.accentText : Color.orange)
                             }
                             HStack(spacing: 18) {
                                 Button { inviting = contact; invitationNotice = nil } label: {

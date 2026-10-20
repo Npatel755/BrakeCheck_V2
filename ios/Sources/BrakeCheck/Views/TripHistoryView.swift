@@ -35,7 +35,7 @@ struct TripHistoryView: View {
                                             .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                                     }
                                     Spacer()
-                                    Image(systemName: "chevron.right").foregroundStyle(BrakeTheme.accent)
+                                    Image(systemName: "chevron.right").foregroundStyle(BrakeTheme.accentText)
                                 }
                                 HStack(spacing: 20) {
                                     metric("Duration", tripDuration(trip.durationSeconds))
