@@ -1,0 +1,15 @@
+/* Layout for the 1200x630 social card (og/card.html). Everything else comes from site.css. */
+html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+body { background: #050a14; }
+.card {
+  position: relative; width: 1200px; height: 630px; box-sizing: border-box;
+  padding: 64px 0 64px 72px; display: grid; grid-template-columns: 600px 1fr; align-items: center;
+  background: linear-gradient(180deg, #050a14 0%, #0b1424 100%);
+}
+.card .logo { font-size: 2rem; margin: 0; }
+.card .logo svg { width: 44px; height: 44px; }
+.card h1 { margin-top: 40px; font-size: 3.55rem; font-weight: 900; letter-spacing: -0.035em; color: #e4f1ff; }
+.card__line { margin-top: 26px; font: 500 1.35rem/1.4 var(--body); color: #8aa0bc; }
+.card__device { grid-area: auto; margin: 0 0 0 8px; width: 640px; }
+.card__device .device--landscape { display: block; }
+.card__device .device--portrait { display: none; }

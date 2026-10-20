@@ -1,0 +1,19 @@
+# BrakeSense
+
+> Forward-collision warning for iPhone. BrakeSense is a driver aid: the phone's rear camera watches the car ahead, and the app says "Brake" out loud when the gap starts closing too fast. Collision warnings are free; Premium is an optional subscription with extra alerts.
+
+## Key facts
+- Platform: iPhone, iOS 17 or later. Android is planned.
+- Status: coming soon to the App Store.
+- Made by Harrison and Nick, who built the first version at Hacklanta 2026.
+- Free: collision warnings with a spoken alert, directions on the camera view, trip recaps, saved clips, crash check-in with emergency contacts.
+- Premium (optional subscription): traffic start, lane departure, cut-in and green light alerts, deeper trip insights, a compact directions banner.
+- Privacy: car detection runs on the phone, video stays on the phone, and the app has no ads or trackers. Only emergency contacts use a server.
+- Limits: BrakeSense warns; it doesn't brake or steer. It can miss cars in glare, rain, fog or darkness. It has not been independently tested.
+
+## Pages
+- [Home](https://brakesense.app/)
+- [Privacy policy](https://brakesense.app/privacy.html)
+- [Terms of use](https://brakesense.app/terms.html)
+- [Support](https://brakesense.app/support.html)
+- [Press kit](https://brakesense.app/press.html)

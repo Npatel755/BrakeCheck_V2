@@ -1,0 +1,11 @@
+/* Wordmark exports for the press kit (og/logo.html). Colours are the app's text and accent-text tokens. */
+body { margin: 0; padding: 40px; background: #777; }
+.export {
+  display: inline-flex; align-items: center; gap: 30px; margin: 0 0 40px; padding: 24px 32px;
+  font: 700 120px/1 var(--display); letter-spacing: -0.035em;
+}
+.export svg { width: 140px; height: 140px; flex: none; }
+#on-dark { color: #e4f1ff; }
+#on-dark svg, #on-dark .sense { color: #9fcbff; }
+#on-light { color: #08162b; }
+#on-light svg, #on-light .sense { color: #0d2a52; }

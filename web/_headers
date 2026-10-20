@@ -1,0 +1,20 @@
+# Security and caching headers. Netlify and Cloudflare Pages both read this file.
+# If the waitlist posts to another site (Formspree, Basin...), add that origin to connect-src and form-action.
+/*
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  X-Frame-Options: DENY
+
+/assets/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/img/*
+  Cache-Control: public, max-age=604800
+
+/assets/css/*
+  Cache-Control: public, max-age=3600
+
+/assets/js/*
+  Cache-Control: public, max-age=3600

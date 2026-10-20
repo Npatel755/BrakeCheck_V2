@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BrakeSense for iPhone</title>
+  <meta name="description" content="BrakeSense turns your iPhone into a dash cam that watches the car ahead and says “Brake” out loud when the gap closes too fast. Collision warnings are free.">
+  <link rel="canonical" href="https://brakesense.app/">
+  <meta name="theme-color" content="#eaf2fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#050a14" media="(prefers-color-scheme: dark)">
+  <!-- Waitlist delivery: leave empty until a form service is connected, "netlify" on Netlify, or a form endpoint URL. See web/README.md. -->
+  <meta name="waitlist-endpoint" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="BrakeSense">
+  <meta property="og:title" content="BrakeSense: forward-collision warning for the car you already drive">
+  <meta property="og:description" content="Your iPhone watches the car ahead and says “Brake” when the gap closes too fast. Collision warnings are free.">
+  <meta property="og:url" content="https://brakesense.app/">
+  <meta property="og:image" content="https://brakesense.app/assets/img/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="BrakeSense on a phone, warning that the car ahead is braking.">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="favicon.ico" sizes="48x48">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preload" href="assets/fonts/RedHatDisplay-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/site.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "MobileApplication",
+    "name": "BrakeSense",
+    "operatingSystem": "iOS 17 or later",
+    "applicationCategory": "Navigation",
+    "description": "A driver aid for iPhone: the phone's camera watches the car ahead and BrakeSense says “Brake” out loud when the gap closes too fast. Includes directions on the camera view, trip recaps, saved clips and a crash check-in.",
+    "url": "https://brakesense.app/",
+    "image": "https://brakesense.app/icon-512.png",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "publisher": { "@type": "Organization", "name": "BrakeSense", "url": "https://brakesense.app/", "email": "support@brakesense.app" }
+  }
+  </script>
+  <script src="assets/js/site.js" defer></script>
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="lamp" viewBox="0 0 28 28">
+        <g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+          <circle cx="14" cy="14" r="7.5"/>
+          <path d="M4.6 7.5Q.6 14 4.6 20.5M23.4 7.5Q27.4 14 23.4 20.5"/>
+          <path d="M14 9.8V15" stroke-width="2.8"/>
+        </g>
+        <circle cx="14" cy="18.2" r="1.6" fill="currentColor"/>
+      </symbol>
+      <linearGradient id="car-body" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#2b3b57"/>
+        <stop offset=".55" stop-color="#18233a"/>
+        <stop offset="1" stop-color="#0d1525"/>
+      </linearGradient>
+      <linearGradient id="car-glass" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#3c5478"/>
+        <stop offset="1" stop-color="#0b1424"/>
+      </linearGradient>
+      <radialGradient id="car-glow">
+        <stop offset="0" stop-color="#ff4d5e" stop-opacity=".8"/>
+        <stop offset="1" stop-color="#ff4d5e" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+  </svg>
+  <!-- The car ahead in the hero illustration. site.js copies it into each screen; page CSS can't reach inside a <use> copy, and the brake lights need it. -->
+  <template id="car-template">
+    <svg viewBox="0 0 200 150">
+      <ellipse cx="100" cy="145" rx="99" ry="6.5" fill="#000" opacity=".55"/>
+      <rect x="16" y="110" width="30" height="36" rx="6" fill="#04070d"/>
+      <rect x="154" y="110" width="30" height="36" rx="6" fill="#04070d"/>
+      <path d="M51 15Q55 6 66 6H134Q145 6 149 15L171 63H29Z" fill="url(#car-body)"/>
+      <path d="M60 17Q63 11 71 11H129Q137 11 140 17L157 57H43Z" fill="url(#car-glass)"/>
+      <path d="M58 52L74 16H86L66 54Z" fill="#cfe6ff" opacity=".07"/>
+      <path d="M29 59H171Q192 61 194 84L196 117Q196 128 185 128H15Q4 128 4 117L6 84Q8 61 29 59Z" fill="url(#car-body)"/>
+      <path d="M22 66H178" stroke="#3b4f70" stroke-width="1.5" opacity=".75"/>
+      <path class="tail" d="M10 77Q12 70 22 70H60Q65 70 63 76L58 88Q57 92 52 92H14Q8 92 9 86Z"/>
+      <path class="tail" d="M190 77Q188 70 178 70H140Q135 70 137 76L142 88Q143 92 148 92H186Q192 92 191 86Z"/>
+      <rect class="tail" x="84" y="13" width="32" height="4" rx="2"/>
+      <rect x="80" y="96" width="40" height="18" rx="2.5" fill="#1b263c" stroke="#2c3b58"/>
+      <path d="M9 117H191" stroke="#060b14" stroke-width="5" stroke-linecap="round"/>
+      <g class="glow">
+        <ellipse cx="36" cy="81" rx="48" ry="27" fill="url(#car-glow)"/>
+        <ellipse cx="164" cy="81" rx="48" ry="27" fill="url(#car-glow)"/>
+        <ellipse cx="100" cy="15" rx="34" ry="12" fill="url(#car-glow)"/>
+      </g>
+    </svg>
+  </template>
+
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="logo" href="./" aria-label="BrakeSense home">
+        <svg aria-hidden="true"><use href="#lamp"/></svg>
+        <span>Brake<span class="sense">Sense</span></span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="#how">How it works</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="support.html">Support</a>
+        <a class="btn" href="#join">Join the waitlist</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="wrap">
+        <h1 id="hero-title"><span class="nowrap">Forward-collision</span> warning for the car you already drive.</h1>
+        <div class="hero__copy">
+          <p class="hero__lead">BrakeSense turns your iPhone into a dash cam that keeps track of the car in front of you. If the gap starts closing too fast, it says “Brake” out loud, so you don’t have to look at the screen.</p>
+          <form class="waitlist" name="waitlist" method="POST" data-netlify="true" netlify-honeypot="company" novalidate>
+            <input type="hidden" name="form-name" value="waitlist">
+            <label class="waitlist__label" for="email-top">Get an email on launch day</label>
+            <div class="waitlist__row">
+              <input id="email-top" type="email" name="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required>
+              <button class="btn" type="submit">Join the waitlist</button>
+            </div>
+            <p class="waitlist__trap" aria-hidden="true"><label>Company <input name="company" tabindex="-1" autocomplete="off"></label></p>
+            <p class="waitlist__note">We’ll email you once, when BrakeSense is on the App Store.</p>
+            <p class="waitlist__msg" aria-live="polite"></p>
+          </form>
+          <p class="hero__availability">Coming to iPhone. Requires iOS 17 or later.</p>
+        </div>
+
+        <figure class="hero-figure" aria-describedby="hud-caption">
+          <div class="device device--landscape"><div class="device__body">
+            <div class="device__screen">
+              <div class="hud" data-hud data-level="3" aria-hidden="true">
+                <canvas></canvas>
+                <div class="hud__ui">
+                  <div class="hud__car"></div>
+                  <span class="hud__box"></span>
+                  <div class="hud__scrim"></div>
+                  <div class="risk">
+                    <span class="risk__dot"></span>
+                    <svg class="risk__icon" viewBox="0 0 16 16"><path d="M8 1.5 15 14H1z" fill="currentColor"/><path d="M8 6v4" stroke="#ff4d5e" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="12" r="1" fill="#ff4d5e"/></svg>
+                    <span data-label>High risk</span>
+                    <span class="risk__steps"><i></i><i></i><i></i><i></i></span>
+                  </div>
+                  <div class="hud__speed"><span class="hud__key">SPEED</span><b data-speed>37</b><span>mph</span></div>
+                  <dl class="hud__metrics">
+                    <div><dt>Approx. gap</dt><dd><span data-gap>58</span><small>ft</small></dd></div>
+                    <div><dt>Est. closing time</dt><dd><span data-ttc>2.0</span><small>s</small></dd></div>
+                  </dl>
+                  <div class="hud__edge"></div>
+                </div>
+              </div>
+            </div>
+            <span class="device__island"></span></div>
+          </div>
+          <div class="device device--portrait"><div class="device__body">
+            <div class="device__screen">
+              <div class="hud" data-hud data-level="3" aria-hidden="true">
+                <canvas></canvas>
+                <div class="hud__ui">
+                  <div class="hud__car"></div>
+                  <span class="hud__box"></span>
+                  <div class="hud__scrim"></div>
+                  <div class="risk">
+                    <span class="risk__dot"></span>
+                    <svg class="risk__icon" viewBox="0 0 16 16"><path d="M8 1.5 15 14H1z" fill="currentColor"/><path d="M8 6v4" stroke="#ff4d5e" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="12" r="1" fill="#ff4d5e"/></svg>
+                    <span data-label>High risk</span>
+                    <span class="risk__steps"><i></i><i></i><i></i><i></i></span>
+                  </div>
+                  <div class="hud__speed"><span class="hud__key">SPEED</span><b data-speed>37</b><span>mph</span></div>
+                  <dl class="hud__metrics">
+                    <div><dt>Approx. gap</dt><dd><span data-gap>58</span><small>ft</small></dd></div>
+                    <div><dt>Est. closing time</dt><dd><span data-ttc>2.0</span><small>s</small></dd></div>
+                  </dl>
+                  <div class="hud__edge"></div>
+                </div>
+              </div>
+            </div>
+            <span class="device__island"></span></div>
+          </div>
+          <figcaption>
+            <span id="hud-caption">Illustration of the camera screen: the meter climbs as the gap to the braking car ahead closes, then settles once you slow down.</span>
+            <span class="hud-controls">
+              <span class="hud-voice" data-voice aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 7.5h3l4-3.5v12l-4-3.5H3z" fill="currentColor"/><path d="M13 7a4 4 0 0 1 0 6M15.5 4.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>“Brake”</span>
+              <button class="hud-toggle" type="button" data-hud-toggle hidden>Pause animation</button>
+            </span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="statement" aria-label="Why it matters">
+      <div class="wrap">
+        <p>The average car on US roads is <strong>12.8 years old</strong>.<sup><a href="#src-1" aria-label="Source 1">1</a></sup></p>
+        <p>Cars that came with forward-collision warning get into <strong>27% fewer rear-end crashes</strong>.<sup><a href="#src-2" aria-label="Source 2">2</a></sup></p>
+        <p>Most automakers only made it standard around <strong>2022</strong>.<sup><a href="#src-3" aria-label="Source 3">3</a></sup></p>
+        <ol class="sources">
+          <li id="src-1">S&amp;P Global Mobility, average age of light vehicles in operation in the US, 2025.</li>
+          <li id="src-2">IIHS: Cicchino, “Effectiveness of forward collision warning and autonomous emergency braking systems in reducing front-to-rear crash rates,” <i>Accident Analysis &amp; Prevention</i>, 2017. The study covered systems built into cars. BrakeSense itself has not been studied.</li>
+          <li id="src-3">NHTSA and IIHS, 2016: 20 automakers committed to make automatic emergency braking, which includes a forward-collision warning, standard on nearly all new light vehicles by September 2022.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section section--panel" id="how" aria-labelledby="how-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="how-title">It stays quiet until the gap closes fast</h2>
+          <p>BrakeSense finds the car in your lane, estimates how far ahead it is, and uses your GPS speed to work out time to collision: how many seconds until you’d reach that car if nothing changed. The meter at the top of the screen climbs through four steps.</p>
+        </div>
+        <ol class="levels">
+          <li class="level"><span class="level__bar"></span><h3>Low risk</h3><p>A comfortable gap. One blue step is lit.</p></li>
+          <li class="level"><span class="level__bar"></span><h3>Moderate risk</h3><p>The gap is shrinking. Two steps, the second one amber.</p></li>
+          <li class="level"><span class="level__bar"></span><h3>High risk</h3><p>You’re closing in fast. Three steps, and the meter grows.</p></li>
+          <li class="level"><span class="level__bar"></span><h3>Brake</h3><p>The meter turns red, the edge of the screen flashes, and BrakeSense says “Brake” out loud.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="trip-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="trip-title">What a drive looks like</h2>
+          <p>Set it up once before you pull out. After that, the warnings and directions come to you.</p>
+        </div>
+        <ol class="trip">
+          <li class="stage">
+            <span class="stage__num" aria-hidden="true">1</span>
+            <div class="stage__text">
+              <h3>Before you go</h3>
+              <p>Mount your phone so the rear camera faces the road, in portrait or landscape. Tap Start trip, and a 10-second check confirms the mount, camera, location and volume.</p>
+            </div>
+            <div class="device"><div class="device__body">
+              <div class="device__screen">
+                <img src="assets/img/01-home-360.webp" srcset="assets/img/01-home-360.webp 360w, assets/img/01-home-720.webp 720w" sizes="(max-width: 640px) 240px, 260px" width="360" height="783" loading="lazy" decoding="async" alt="BrakeSense home screen with a large Start trip button, plus Navigate and Clips.">
+              </div>
+              <span class="device__island"></span></div>
+            </div>
+          </li>
+          <li class="stage">
+            <span class="stage__num" aria-hidden="true">2</span>
+            <div class="stage__text">
+              <h3>On the road</h3>
+              <p>BrakeSense watches the car ahead the whole time. Want directions? Search a place and tap Start navigation. The next turn shows on the camera view and is read out loud.</p>
+            </div>
+            <div class="device"><div class="device__body">
+              <div class="device__screen">
+                <img src="assets/img/05-route-preview-360.webp" srcset="assets/img/05-route-preview-360.webp 360w, assets/img/05-route-preview-720.webp 720w" sizes="(max-width: 640px) 240px, 260px" width="360" height="783" loading="lazy" decoding="async" alt="A route to Piedmont Park on a map: 2 minutes, 0.4 miles, with a Start navigation button and spoken directions switched on.">
+              </div>
+              <span class="device__island"></span></div>
+            </div>
+          </li>
+          <li class="stage">
+            <span class="stage__num" aria-hidden="true">3</span>
+            <div class="stage__text">
+              <h3>After you park</h3>
+              <p>End the trip for a recap: time, top speed, hard brakes and close calls. The last 15 minutes of video stay on your phone, and Save clip keeps a moment for good.</p>
+            </div>
+            <div class="device"><div class="device__body">
+              <div class="device__screen">
+                <img src="assets/img/11-home-trip-360.webp" srcset="assets/img/11-home-trip-360.webp 360w, assets/img/11-home-trip-720.webp 720w" sizes="(max-width: 640px) 240px, 260px" width="360" height="783" loading="lazy" decoding="async" alt="A trip in progress: End trip button, Save clip, and trip stats for minutes, top speed, hard brakes and close calls.">
+              </div>
+              <span class="device__island"></span></div>
+            </div>
+          </li>
+          <li class="stage">
+            <span class="stage__num" aria-hidden="true">4</span>
+            <div class="stage__text">
+              <h3>If something hits hard</h3>
+              <p>BrakeSense asks “Are you okay?” and listens for your answer. If you ask for help, or don’t answer within a minute, it messages your emergency contacts with your location.</p>
+              <p class="aside muted">It doesn’t call 911. On iPhone 14 and later, Apple’s Crash Detection can.</p>
+            </div>
+            <div class="checkin" role="img" aria-label="Check-in screen: a countdown with 18 seconds left, the question Are you okay?, and buttons for I’m okay and Send help.">
+              <div class="checkin__ring" aria-hidden="true">
+                <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#121e35" stroke-width="9"/><circle cx="60" cy="60" r="52" fill="none" stroke="#cfe6ff" stroke-width="9" stroke-linecap="round" stroke-dasharray="294 327"/></svg>
+                <span>18</span>
+              </div>
+              <p class="checkin__title" aria-hidden="true">Are you okay?</p>
+              <p class="checkin__detail" aria-hidden="true">Say I am okay or help, or use a button.</p>
+              <div class="checkin__buttons" aria-hidden="true"><span>I’m okay</span><span>Send help</span></div>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section section--panel" aria-labelledby="privacy-title">
+      <div class="wrap privacy-grid">
+        <div class="section-head">
+          <h2 id="privacy-title">Your drives stay on your iPhone</h2>
+          <p>Car detection, distance estimates and the spoken check-in all run on the phone’s own chip. Video stays on the phone until you delete it.</p>
+          <p><a href="privacy.html">Read the privacy policy</a></p>
+        </div>
+        <dl class="facts">
+          <div><dt>Works without signal</dt><dd>Warnings run on the phone, so they keep working in a dead zone. Map search and directions need a connection.</dd></div>
+          <div><dt>No account for warnings</dt><dd>Open the app and start a trip. There are no ads or trackers in it.</dd></div>
+          <div><dt>One feature uses our server</dt><dd>Emergency contacts, and only after you add someone. We store each contact’s first name and number, and a check-in sends your location to our server so it can reach them if you need help.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="plans-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="plans-title">Every safety warning is free</h2>
+          <p>Premium is an optional subscription for drivers who want more alerts and more detail.</p>
+        </div>
+        <div class="plans">
+          <div class="plan">
+            <h3>Free</h3>
+            <ul>
+              <li>Collision warnings with the spoken “Brake” alert</li>
+              <li>Directions on the camera view, read out loud</li>
+              <li>Trip recaps and saved clips</li>
+              <li>Crash check-in and emergency contacts</li>
+            </ul>
+          </div>
+          <div class="plan">
+            <h3>Premium <span>optional subscription</span></h3>
+            <ul>
+              <li>Traffic start alert<small>When the car ahead pulls away and you haven’t moved yet</small></li>
+              <li>Lane departure alert<small>When you drift toward a lane line</small></li>
+              <li>Cut-in alert<small>When a car is moving into your lane close ahead</small></li>
+              <li>Green light alert<small>When the light ahead turns green while you’re stopped</small></li>
+              <li>Deeper trip insights and a compact directions banner</li>
+            </ul>
+          </div>
+        </div>
+        <p class="plans__note">Premium alerts stay off until you turn them on. The price is shown in the App Store before you buy, and you can cancel any time in your Apple Account settings.</p>
+      </div>
+    </section>
+
+    <section class="section section--panel" aria-labelledby="limits-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="limits-title">A second pair of eyes, never the first</h2>
+          <p>BrakeSense warns you. It doesn’t brake or steer, and it can be wrong.</p>
+        </div>
+        <ul class="limits">
+          <li>It can miss a car in glare, heavy rain, fog or darkness. At night it switches to a larger detection model, but it is less reliable than in daylight.</li>
+          <li>When it can’t see well enough, the meter says “No reading” instead of guessing.</li>
+          <li>It needs a steady mount and a clear view through the windshield.</li>
+          <li>Set everything up before you drive, and keep your hands off the phone while you’re moving.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="faq-title">
+      <div class="wrap">
+        <div class="section-head"><h2 id="faq-title">Questions</h2></div>
+        <div class="faq">
+          <details>
+            <summary>Which phones does it work on?</summary>
+            <div><p>iPhones running iOS 17 or later. An Android version is planned.</p></div>
+          </details>
+          <details>
+            <summary>Does it record video?</summary>
+            <div><p>While a trip runs, BrakeSense keeps the last 15 minutes of video on your phone and deletes older footage as it goes. Tap Save clip to keep the 15 minutes before and after a moment. A hard jolt saves one automatically. Clips stay on your phone until you delete them.</p></div>
+          </details>
+          <details>
+            <summary>Will it drain my battery?</summary>
+            <div><p>The camera, GPS and screen together use a lot of power, and phones get warm on a sunny dashboard. Keep it on a charger and out of direct sun when you can.</p></div>
+          </details>
+          <details>
+            <summary>Can I mount a phone on my windshield?</summary>
+            <div><p>It depends on your state. Some allow small mounts in a lower corner of the windshield; others want a dash or vent mount. Check your local rules before you buy one.</p></div>
+          </details>
+          <details>
+            <summary>What does Premium cost?</summary>
+            <div><p>Collision warnings, directions, trip recaps and the crash check-in are free. Premium’s price will be shown in the App Store before you buy, and you can cancel any time in your Apple Account settings.</p></div>
+          </details>
+          <details>
+            <summary>Who makes BrakeSense?</summary>
+            <div><p>Harrison and Nick, two students who built the first version at Hacklanta 2026. Questions and ideas go to <a href="mailto:support@brakesense.app">support@brakesense.app</a>.</p></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--panel join" id="join" aria-labelledby="join-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="join-title">Be first when it launches</h2>
+          <p>Leave your email and we’ll send one message when BrakeSense is on the App Store.</p>
+        </div>
+        <form class="waitlist" name="waitlist" method="POST" data-netlify="true" netlify-honeypot="company" novalidate>
+          <input type="hidden" name="form-name" value="waitlist">
+          <label class="waitlist__label" for="email-bottom">Your email</label>
+          <div class="waitlist__row">
+            <input id="email-bottom" type="email" name="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required>
+            <button class="btn" type="submit">Join the waitlist</button>
+          </div>
+          <p class="waitlist__trap" aria-hidden="true"><label>Company <input name="company" tabindex="-1" autocomplete="off"></label></p>
+          <p class="waitlist__note">One email on launch day. We don’t share your address.</p>
+          <p class="waitlist__msg" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div>
+        <a class="logo" href="./" aria-label="BrakeSense home">
+          <svg aria-hidden="true"><use href="#lamp"/></svg>
+          <span>Brake<span class="sense">Sense</span></span>
+        </a>
+        <p class="footer__tag">Forward-collision warning for iPhone.</p>
+      </div>
+      <nav aria-label="Footer">
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="support.html">Support</a>
+        <a href="press.html">Press</a>
+      </nav>
+      <p class="footer__legal">BrakeSense is a driver aid, not a safety system. Keep your eyes on the road and follow traffic laws. © 2026 BrakeSense.</p>
+    </div>
+  </footer>
+</body>
+</html>
