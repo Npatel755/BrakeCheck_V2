@@ -65,6 +65,9 @@
   const DRIVE = [[0, 38, 116], [2, 38, 110], [3, 37, 82], [3.9, 37, 58], [4.7, 36, 39], [5.4, 33, 34],
                  [6.2, 26, 35], [7, 21, 40], [7.8, 22, 46], [9.6, 33, 100], [LOOP, 38, 116]];
   const LEVELS = [[0, 1], [3, 2], [3.9, 3], [4.7, 4], [6.2, 3], [6.9, 2], [7.6, 1]];
+  // Estimated closing time shown on screen (s), scripted to agree with the level; null shows a dash.
+  const CLOSING = [[0, null], [2.3, null], [2.4, 6.4], [3, 3.6], [3.9, 2.2], [4.7, 1.4], [5.3, 1.2],
+                   [6.2, 2.8], [6.9, 5.2], [7.3, null]];
   const BRAKE_LIGHTS = [2, 7.8];
   const VOICE = [4.7, 6.1];
   const LABELS = ["No reading", "Low risk", "Moderate risk", "High risk", "BRAKE NOW"];
@@ -83,6 +86,15 @@
     return { speed: DRIVE[0][1], gap: DRIVE[0][2] };
   };
   const levelAt = (t) => LEVELS.reduce((level, [at, value]) => (t >= at ? value : level), 1);
+  const closingAt = (t) => {
+    const i = CLOSING.findIndex(([at]) => at > t);
+    if (i < 1) return null;
+    const [t0, v0] = CLOSING[i - 1];
+    const [t1, v1] = CLOSING[i];
+    if (v0 === null) return null;
+    if (v1 === null) return v0;
+    return v0 + ((v1 - v0) * (t - t0)) / (t1 - t0);
+  };
   const within = (t, [from, to]) => t >= from && t < to;
 
   class Hud {
@@ -220,8 +232,6 @@
       if (!this.w) this.resize();
       if (!this.w) return;
       const { speed, gap } = sample(t);
-      const before = sample(Math.max(0, t - 0.15)).gap;
-      const closing = (before - gap) / 0.15; // ft/s
       this.phase += speed * 1.4667 * dt;
       this.drawScene(t);
 
@@ -247,8 +257,8 @@
       this.set("lights", within(t, BRAKE_LIGHTS), (on) => this.root.classList.toggle("is-braking-ahead", on));
       this.set("speed", Math.round(speed), (v) => { this.speed.textContent = String(v); });
       this.set("gap", Math.round(gap), (v) => { this.gap.textContent = String(v); });
-      const ttc = closing > 2 && gap / closing < 9.95 ? (gap / closing).toFixed(1) : "–";
-      this.set("ttc", ttc, (v) => { this.ttc.textContent = v; });
+      const closing = closingAt(t);
+      this.set("ttc", closing === null ? "–" : closing.toFixed(1), (v) => { this.ttc.textContent = v; });
     }
 
     set(key, value, apply) {
