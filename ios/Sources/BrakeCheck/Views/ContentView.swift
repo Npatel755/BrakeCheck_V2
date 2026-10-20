@@ -7,6 +7,7 @@ import UIKit
 /// Both pages share one model, so swiping never restarts the trip or tracker.
 struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.requestReview) private var requestReview
     private enum Page: Int, CaseIterable {
         case home, camera, navigation
         var title: String {
@@ -16,6 +17,15 @@ struct ContentView: View {
             case .navigation: return "Navigate"
             }
         }
+        var icon: String {
+            switch self {
+            case .home: return "house.fill"
+            case .camera: return "video.fill"
+            case .navigation: return "location.north.line.fill"
+            }
+        }
+        /// Stable accessibility identifier ("page.home"…), used by the UI test.
+        var key: String { "page." + title.lowercased() }
     }
     private enum HomeDestination: Hashable {
         case settings, contacts, incidents, tripHistory, replay, premium
@@ -33,6 +43,8 @@ struct ContentView: View {
     @AppStorage("navigation.cameraAR") private var cameraAR = true
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
     @AppStorage("display.premiumCompactBanner") private var premiumCompactBanner = false
+    /// Road-model mask and build tag on the camera, for test recordings (Settings > Diagnostics).
+    @AppStorage("diagnostics.developerOverlays") private var developerOverlays = false
     @State private var selecting = false
     @State private var selection: CGRect?
     @State private var measuredDistance = ""
@@ -41,7 +53,8 @@ struct ContentView: View {
     @State private var showCheckin = false
     @State private var showCameraSetup = false
     @State private var page: Page = .home
-    @State private var showFirstTripRating = false
+    /// Set after the first trip; the system review prompt is requested once its summary closes.
+    @State private var reviewAfterSummary = false
     @State private var showFirstTripPremium = false
     @State private var completedTripID: UUID?
     @AppStorage("review.firstTripPrompted") private var firstTripPrompted = false
@@ -104,6 +117,8 @@ struct ContentView: View {
     private var pageStack: some View {
         GeometryReader { geometry in
             let portrait = geometry.size.height > geometry.size.width
+            // One layout for both orientations, so rotating never rebuilds the pages (map, camera, scroll).
+            let layout = portrait ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
             ZStack {
                 VStack(spacing: 0) {
                     if critical && page == .home && !selecting {
@@ -116,20 +131,29 @@ struct ContentView: View {
                         // Drawing a calibration box must not compete with a paging gesture.
                         cameraPage(portrait: portrait)
                     } else {
-                        TabView(selection: $page) {
-                            homePage.tag(Page.home)
-                            cameraPage(portrait: portrait).tag(Page.camera)
-                            NavigationView(navigation: navigation, model: model, useMPH: useMPH,
-                                startDrive: model.startNavigationDrive, openCamera: { page = .camera })
-                                .tag(Page.navigation)
+                        layout {
+                            if !portrait { pageRail }
+                            pages(portrait: portrait)
+                            if portrait { pageBar }
                         }
-                        .tabViewStyle(.page(indexDisplayMode: .never))
-                        if portrait { pageNavigation }
                     }
                 }
                 if critical { BrakeEdgeGlow() }
             }
         }
+    }
+
+    private func pages(portrait: Bool) -> some View {
+        TabView(selection: $page) {
+            homePage.tag(Page.home)
+            cameraPage(portrait: portrait).tag(Page.camera)
+            NavigationView(navigation: navigation, model: model, useMPH: useMPH,
+                startDrive: model.startNavigationDrive)
+                .tag(Page.navigation)
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        // The camera and map run up under the hidden status bar; page content keeps its own safe area.
+        .ignoresSafeArea(.container, edges: .top)
     }
 
     private var presentedPages: some View {
@@ -152,17 +176,6 @@ struct ContentView: View {
         } message: { Text(model.message ?? "") }
         .confirmationDialog("End this trip? Remaining post-event recording will stop.", isPresented: $stopping, titleVisibility: .visible) {
             Button("End trip", role: .destructive) { finishTripAndPresentSummary() }
-        }
-        .alert("How was your first drive?", isPresented: $showFirstTripRating) {
-            Button("Rate BrakeCheck") {
-                if let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
-                    SKStoreReviewController.requestReview(in: scene)
-                }
-                presentFirstTripPremium()
-            }
-            Button("Not now", role: .cancel) { presentFirstTripPremium() }
-        } message: {
-            Text("Your trip summary is ready. Would you like to rate BrakeCheck first?")
         }
     }
 
@@ -195,6 +208,12 @@ struct ContentView: View {
             updateARDemand()
             navigation.setPageVisible(destinations.isEmpty && page == .navigation && !selecting)
             if destinations.isEmpty { presentPendingCheckin() }
+            // Back from the first trip summary: a calm moment for the system's own review prompt,
+            // which decides by itself whether to show (App Review 5.6.1: no custom review prompts).
+            if destinations.isEmpty && reviewAfterSummary && !safety.checkinPresented && !model.tripActive {
+                reviewAfterSummary = false
+                requestReview()
+            }
         }
     }
 
@@ -223,7 +242,11 @@ struct ContentView: View {
     private func arSynced<Content: View>(_ content: Content) -> some View {
         content
         .task { await safety.connectIfPaired() }
-        .onAppear { updateARDemand() }
+        .onAppear {
+            // The service starts in miles; without this a km/h setting only applied after it was changed.
+            navigation.useMPH = useMPH
+            updateARDemand()
+        }
         .onChange(of: page) { _, _ in updateARDemand() }
         .onChange(of: navigation.isNavigating) { _, _ in updateARDemand() }
         .onChange(of: cameraAR) { _, _ in updateARDemand() }
@@ -254,37 +277,26 @@ struct ContentView: View {
             if showsPlaceholder { placeholder }
             scrims(portrait: portrait).ignoresSafeArea().allowsHitTesting(false)
             if portrait { portraitHUD } else { landscapeHUD }
-            if cameraAR && model.cameraReady && !model.replaying && !model.demo && !selecting {
+            if developerOverlays && cameraAR && model.cameraReady && !model.replaying && !model.demo && !selecting {
                 CameraRoadMaskStatus(presentation: model.arPresentation, portrait: portrait)
             }
         }
         .clipped()
     }
 
-    private var pageNavigation: some View {
+    // MARK: - Page switcher
+
+    /// Portrait: a tab bar under the pages. A swipe along it also changes pages.
+    private var pageBar: some View {
         HStack(spacing: 4) {
             ForEach(Page.allCases, id: \.rawValue) { destination in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.22)) { page = destination }
-                } label: {
-                    HStack(spacing: 8) {
-                        Circle().fill(page == destination ? BrakeTheme.accent : BrakeTheme.muted.opacity(0.45))
-                            .frame(width: 5, height: 5)
-                        Text(destination.title).font(.brake(size: 13, weight: .semibold))
-                    }
-                    .foregroundStyle(page == destination ? BrakeTheme.accent : BrakeTheme.muted)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(page == destination ? BrakeTheme.accent.opacity(0.12) : .clear, in: Capsule())
-                }
-                .accessibilityValue(page == destination ? "Selected" : "")
-                .accessibilityHint("Tap a tab or swipe along this bottom bar.")
+                pageButton(destination).frame(maxWidth: .infinity)
             }
         }
-        .buttonStyle(.plain)
         .padding(4)
-        .frame(maxWidth: 360)
-        .background(BrakeTheme.panel, in: Capsule())
-        .padding(.vertical, 4)
+        .frame(maxWidth: 420)
+        .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 12).padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .background(BrakeTheme.background)
         .contentShape(Rectangle())
@@ -298,6 +310,42 @@ struct ContentView: View {
         })
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pages")
+    }
+
+    /// Landscape (a dash mount): a slim rail on the leading edge, like CarPlay's. In the default
+    /// full-frame view it only takes room from the camera's pillarbox bars, so the road stays as large.
+    private var pageRail: some View {
+        VStack(spacing: 8) {
+            ForEach(Page.allCases, id: \.rawValue) { destination in
+                pageButton(destination).frame(width: 60)
+            }
+        }
+        .padding(.horizontal, 6)
+        .frame(maxHeight: .infinity)
+        .background(BrakeTheme.background)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Pages")
+    }
+
+    private func pageButton(_ destination: Page) -> some View {
+        let selected = page == destination
+        return Button {
+            withAnimation(.easeInOut(duration: 0.22)) { page = destination }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: destination.icon).font(.brake(size: 17, weight: .semibold))
+                Text(destination.title).font(.brake(size: 11, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(selected ? BrakeTheme.accentText : BrakeTheme.muted)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(selected ? BrakeTheme.accent.opacity(0.14) : .clear,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(destination.title)
+        .accessibilityValue(selected ? "Selected" : "")
+        .accessibilityIdentifier(destination.key)
     }
 
     private func performTripAction() {
@@ -315,7 +363,8 @@ struct ContentView: View {
         completedTripID = trip.id
         if previousCount == 0 && !firstTripPrompted {
             firstTripPrompted = true
-            showFirstTripRating = true
+            reviewAfterSummary = true
+            presentFirstTripPremium()
         } else {
             openCompletedTrip()
         }
@@ -351,7 +400,7 @@ struct ContentView: View {
                     ? (model.detectorStatus.contains("could not load") ? "Detection unavailable" : "Preparing detection") : nil)
             if !critical && !model.demo && !model.replaying && !model.detectorReady && model.detectorStatus.contains("could not load") {
                 Button("Detection failed · tap for details") { model.message = model.detectorStatus }
-                    .font(.caption).foregroundStyle(BrakeTheme.caution)
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.caution)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(.black.opacity(0.65), in: Capsule())
             }
@@ -382,7 +431,7 @@ struct ContentView: View {
                     CameraPreview(session: model.camera.session, orientation: model.captureGeometry.videoOrientation)
                 }
                 if (model.cameraReady || model.replaying) && !model.demo && !model.changingCameraGeometry {
-                    if page == .camera && cameraAR && !model.replaying && !selecting && destinationPath.isEmpty {
+                    if developerOverlays && page == .camera && cameraAR && !model.replaying && !selecting && destinationPath.isEmpty {
                         CameraRoadMaskOverlay(presentation: model.arPresentation)
                     }
                     if page == .camera && !model.replaying && !selecting && destinationPath.isEmpty {
@@ -407,23 +456,36 @@ struct ContentView: View {
     }
 
     private var placeholder: some View {
-        ZStack {
+        let text = placeholderText
+        return ZStack {
             BrakeTheme.panel.ignoresSafeArea()
             VStack(spacing: 10) {
                 Image(systemName: model.demo ? "car.side.hill.up.fill" : "car.front.waves.up.fill")
-                    .font(.brake(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accent.opacity(0.7))
-                Text(model.demo ? "Simulated drive" : "A clearer view ahead.")
+                    .font(.brake(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accentText.opacity(0.7))
+                Text(text.title)
                     .font(.brake(size: 22, weight: .semibold))
-                Text(model.demo ? "Practice numbers · no camera" : "Start a trip to see the road and track vehicles.")
-                    .font(.brake(size: 12)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
-                if !model.demo {
-                    Text("Swipe to Home for trip controls.")
-                        .font(.brake(size: 12)).foregroundStyle(BrakeTheme.accent)
-                }
+                Text(text.detail)
+                    .font(.brake(size: 13)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
             }
             .padding(.horizontal, 24)
             .offset(y: -24)
         }
+    }
+
+    /// During a trip the camera is starting (or can't), so "Start a trip" would be wrong there.
+    private var placeholderText: (title: String, detail: String) {
+        if model.demo { return ("Simulated drive", "Practice numbers · no camera") }
+        guard model.tripActive else {
+            return ("A clearer view ahead.", "Start a trip from Home to see the road and track vehicles.")
+        }
+        let status = model.cameraStatus
+        if status.localizedCaseInsensitiveContains("denied") {
+            return ("Camera access is off", "Allow Camera for BrakeSense in iPhone Settings to see the road and track vehicles.")
+        }
+        if status.hasPrefix("Camera: ") || status.localizedCaseInsensitiveContains("could not") {
+            return ("Camera unavailable", String(status.dropFirst(status.hasPrefix("Camera: ") ? 8 : 0)))
+        }
+        return ("Starting the camera…", "Keep the phone steady in its mount.")
     }
 
     /// Theme-matched gradients keep readouts legible over the live road.
@@ -521,7 +583,8 @@ struct ContentView: View {
             : ("STANDBY", BrakeTheme.muted)
         return HStack(spacing: 5) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text("\(text) · \(model.measurementRevision)").font(.brake(size: 10, weight: .bold)).tracking(1)
+            Text(developerOverlays ? "\(text) · \(model.measurementRevision)" : text)
+                .font(.brake(size: 10, weight: .bold)).tracking(1)
         }
         .padding(.horizontal, 10).frame(height: 26)
         .background(BrakeTheme.cameraSurface, in: Capsule())
@@ -607,7 +670,7 @@ struct ContentView: View {
 
     private var calibrationControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("While parked, draw around the rear of a vehicle and enter its measured gap.").font(.caption)
+            Text("While parked, draw around the rear of a vehicle and enter its measured gap.").font(.brake(.caption))
             HStack {
                 TextField("Meters", text: $measuredDistance).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
                 Button("Track") {

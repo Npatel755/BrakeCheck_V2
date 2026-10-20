@@ -4,18 +4,18 @@ import MapKit
 import SwiftUI
 import UIKit
 
-/// Route planning and guidance share the driving model, without owning its camera session.
+/// The Navigate page. Planning: the map above a sheet with search, recents and the route card.
+/// Guidance: the camera page's turn banner above the map and a trip bar (arrival, mute, end) below.
+/// Landscape moves the sheet, banner and trip bar into a side column. The pieces are stacked rather
+/// than layered, so no inset is guessed. It shares the driving model without owning its camera session.
 struct NavigationView: View {
     @ObservedObject var navigation: NavigationService
     @ObservedObject var model: DriveModel
     var useMPH: Bool
     var startDrive: () -> Void
-    var openCamera: () -> Void
     @FocusState private var searchFocused: Bool
     @State private var recenterTrigger = 0
-    @State private var panelExpanded = false
-    private enum SearchSection: String { case search = "Search", recents = "Recents" }
-    @State private var searchSection: SearchSection = .search
+    @State private var listHeight: CGFloat = 0
     @State private var confirmingClearRecents = false
     @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
 
@@ -28,412 +28,379 @@ struct NavigationView: View {
         model.tripActive || model.brakeWarningActive || model.demo || model.replaying
     }
 
+    private var trimmedQuery: String { navigation.query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     var body: some View {
         GeometryReader { geometry in
             // A portrait keyboard reduces height; it must not switch us to the landscape layout.
             let landscape = geometry.size.width > 550 && geometry.size.width > geometry.size.height
-            let panelHeight = min(geometry.size.height * 0.65,
-                navigation.isNavigating ? (panelExpanded ? 310.0 : 164.0)
-                    : panelExpanded || searchFocused ? 450.0 : navigation.route != nil ? 310.0 : 230.0)
-            let sideWidth = min(340.0, geometry.size.width * 0.46)
-            ZStack(alignment: .topLeading) {
-                NavigationMapView(route: navigation.route, location: navigation.mapLocation,
-                    locationIsCurrent: navigation.hasFreshLocation,
-                    followsLocation: navigation.isNavigating && navigation.mapLocation != nil,
-                    recenterTrigger: recenterTrigger,
-                    topInset: navigation.isNavigating ? (displaysRisk ? 230 : 160) : (displaysRisk ? 150 : 90),
-                    isVisible: navigation.pageVisible && navigation.foreground)
-                    .overlay(alignment: .bottomTrailing) {
-                        Button { recenterTrigger += 1 } label: {
-                            Image(systemName: "location.north.fill")
-                                .font(.brake(size: 18, weight: .semibold))
-                                .frame(width: 48, height: 48)
-                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Recenter map")
-                        .padding(.trailing, 16).padding(.bottom, 42)
-                    }
-                    .padding(.bottom, landscape ? 0 : panelHeight + 12)
-                    .padding(.trailing, landscape ? sideWidth + 12 : 0)
-
-                VStack(spacing: 8) {
-                    header.padding(.vertical, 12)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
-                    if displaysRisk {
-                        RiskPill(risk: model.risk, critical: model.brakeWarningActive,
-                                 meter: model.dangerMeter, large: false)
-                            .padding(8)
-                            .background(BrakeTheme.background.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
-                    }
-                    if navigation.isNavigating { maneuverCard }
+            // One layout for both orientations keeps the map (and its camera) alive when the phone rotates.
+            let layout = landscape ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+            layout {
+                if !landscape && navigation.isNavigating {
+                    banner(large: true).padding(.horizontal, 12).padding(.vertical, 8)
                 }
-                .frame(width: landscape ? geometry.size.width - sideWidth - 36 : geometry.size.width - 24)
-                .padding(12)
-
-                VStack {
-                    if !landscape { Spacer(minLength: 0) }
-                    destinationPanel
-                        .frame(width: landscape ? sideWidth : nil,
-                               height: landscape ? max(100, geometry.size.height - 24) : panelHeight)
+                mapArea(safeTop: !landscape && navigation.isNavigating ? 0 : geometry.safeAreaInsets.top)
+                if landscape {
+                    sideColumn(height: geometry.size.height)
+                        .frame(width: min(360, geometry.size.width * 0.45))
+                } else {
+                    bottomSheet(maxListHeight: geometry.size.height * 0.42)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: landscape ? .trailing : .bottom)
-                .padding(landscape ? 12 : 8)
             }
-            .animation(.easeInOut(duration: 0.22), value: panelExpanded)
-        }
-        .onChange(of: searchFocused) { _, focused in if focused { panelExpanded = true } }
-        .onChange(of: navigation.pageVisible) { _, visible in
-            if !visible { searchFocused = false }
-        }
-        .onChange(of: navigation.query) { _, _ in searchSection = .search }
-        .onChange(of: searchSection) { _, section in
-            if section == .recents { searchFocused = false; panelExpanded = true }
-        }
-        .confirmationDialog("Clear recent destinations?", isPresented: $confirmingClearRecents, titleVisibility: .visible) {
-            Button("Clear recents", role: .destructive) { navigation.clearRecents() }
-        }
-        .onChange(of: navigation.isNavigating) { _, _ in
-            searchFocused = false
-            panelExpanded = false
-            recenterTrigger += 1
         }
         .background(BrakeTheme.background)
         .foregroundStyle(BrakeTheme.text)
         .tint(BrakeTheme.accentColor(named: accentChoice))
-    }
-
-    private var destinationPanel: some View {
-        VStack(spacing: 0) {
-            Button {
-                searchFocused = false
-                panelExpanded.toggle()
-            } label: {
-                VStack(spacing: 5) {
-                    Capsule().fill(BrakeTheme.muted.opacity(0.5)).frame(width: 36, height: 4)
-                    HStack {
-                        Text(navigation.isNavigating ? "YOUR DRIVE" : "WHERE TO?")
-                            .font(.brake(size: 10, weight: .bold)).tracking(2)
-                        Spacer()
-                        Image(systemName: panelExpanded ? "chevron.down" : "chevron.up")
-                    }
-                    .foregroundStyle(BrakeTheme.muted)
-                }
-                .padding(.horizontal, 18).frame(height: 44)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(panelExpanded ? "Collapse navigation panel" : "Expand navigation panel")
-            ScrollView {
-                VStack(spacing: 12) {
-                    if navigation.isNavigating {
-                        activeJourneyCard
-                        if panelExpanded {
-                            activeControls
-                            if let error = navigation.errorMessage { activeErrorCard(error) }
-                            Text(cameraTrackingText).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                        }
-                    } else {
-                        if navigation.route == nil { searchCard }
-                        if let error = navigation.errorMessage { errorCard(error) }
-                        if let title = navigation.resolvingDestination {
-                            HStack { ProgressView(); Text("Finding \(title)…").font(.brake(.subheadline)) }
-                                .frame(maxWidth: .infinity, alignment: .leading).brakePanel()
-                        } else if navigation.isCalculating {
-                            HStack { ProgressView(); Text("Finding your route…").font(.brake(.subheadline)) }
-                                .frame(maxWidth: .infinity, alignment: .leading).brakePanel()
-                        } else if navigation.destinationTitle != nil && navigation.route == nil {
-                            Text(navigation.status).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                        }
-                        if navigation.route != nil { routePreview; startControls }
-                        if navigation.query.isEmpty && navigation.route == nil {
-                            Text("A clear route. A calmer drive.")
-                                .font(.brake(.headline)).foregroundStyle(BrakeTheme.accent)
-                            Text("Search for a destination while parked. Suggestions appear as you type.")
-                                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                        }
-                    }
-                }
-                .padding(.horizontal, 12).padding(.bottom, 14)
-            }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
+        .animation(.easeInOut(duration: 0.22), value: navigation.isNavigating)
+        .animation(.easeInOut(duration: 0.22), value: navigation.route != nil)
+        .onChange(of: navigation.pageVisible) { _, visible in
+            if !visible { searchFocused = false }
         }
-        .background(BrakeTheme.background.opacity(0.97), in: RoundedRectangle(cornerRadius: 26))
-        .overlay(RoundedRectangle(cornerRadius: 26).stroke(BrakeTheme.accent.opacity(0.15), lineWidth: 1))
-        .shadow(color: .black.opacity(0.35), radius: 18, y: -4)
+        .onChange(of: navigation.isNavigating) { _, _ in
+            searchFocused = false
+            recenterTrigger += 1
+        }
+        .confirmationDialog("Clear recent destinations?", isPresented: $confirmingClearRecents, titleVisibility: .visible) {
+            Button("Clear recents", role: .destructive) { navigation.clearRecents() }
+        }
     }
 
-    private var header: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                Label("Navigation", systemImage: "location.north.line.fill")
-                    .font(.brake(size: 21, weight: .semibold))
-                    .foregroundStyle(BrakeTheme.text)
-                HStack(spacing: 5) {
-                    Circle().fill(cameraTrackingColor).frame(width: 5, height: 5)
-                    Text(cameraTrackingText).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+    // MARK: - Map
+
+    /// `safeTop` is the area the map extends under at the top, so a route overview isn't framed beneath it.
+    private func mapArea(safeTop: CGFloat) -> some View {
+        // The map runs up under the hidden status bar; the clear base keeps the controls in the safe area.
+        Color.clear
+            .background {
+                NavigationMapView(route: navigation.route, location: navigation.mapLocation,
+                    locationIsCurrent: navigation.hasFreshLocation,
+                    followsLocation: navigation.isNavigating && navigation.mapLocation != nil,
+                    recenterTrigger: recenterTrigger,
+                    topInset: safeTop + (displaysRisk ? 72 : 28),
+                    isVisible: navigation.pageVisible && navigation.foreground)
+                    .ignoresSafeArea(.container, edges: .top)
+            }
+            .overlay(alignment: .top) {
+                if displaysRisk {
+                    RiskPill(risk: model.risk, critical: model.brakeWarningActive, meter: model.dangerMeter,
+                             large: false, unavailableTitle: riskUnavailableTitle)
+                        .padding(.top, 12)
                 }
             }
-            Spacer(minLength: 0)
-            Button(action: openCamera) {
-                Label("Camera", systemImage: "video")
-                    .font(.brake(.subheadline, weight: .semibold))
-                    .padding(.horizontal, 13)
-                    .frame(minHeight: 44)
-                    .background(BrakeTheme.panel, in: Capsule())
+            .overlay(alignment: .bottomTrailing) {
+                Button { recenterTrigger += 1 } label: {
+                    Image(systemName: "location.north.fill")
+                        .font(.brake(size: 18, weight: .semibold))
+                        .foregroundStyle(BrakeTheme.accentText)
+                        .frame(width: 48, height: 48)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(navigation.isNavigating ? "Recenter on your position"
+                    : navigation.route == nil ? "Center on your position" : "Show the whole route")
+                .accessibilityIdentifier("nav.recenter")
+                .padding(14)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Camera page")
+    }
+
+    /// While the camera isn't tracking, the risk pill says why instead of "No reading".
+    private var riskUnavailableTitle: String? {
+        guard model.tripActive, !model.demo, !model.replaying else { return nil }
+        if model.stopping { return "Saving recording" }
+        if !model.cameraReady || model.changingCameraGeometry {
+            let status = model.cameraStatus.lowercased()
+            if status.contains("denied") { return "Camera not allowed" }
+            if model.changingCameraGeometry || status.contains("paused") || status.contains("interrupted") { return "Camera paused" }
+            if status.contains("required") || status.contains("could not") || status.contains("unavailable") {
+                return "Camera unavailable"
+            }
+            return "Camera starting"
         }
-        .padding(.horizontal, 20)
-    }
-
-    private var cameraTrackingText: String {
-        if model.demo { return "Simulated driving readings" }
-        if model.replaying { return "Recorded drive playing" }
-        if model.stopping { return "Saving camera recording" }
-        if !model.tripActive { return "Camera tracking is off" }
-        if model.cameraReady && !model.changingCameraGeometry { return "Camera tracking active" }
-        let status = model.cameraStatus.lowercased()
-        if model.changingCameraGeometry || status.contains("paused") || status.contains("interrupted") || status.contains("denied") {
-            return "Camera tracking paused"
+        if !model.detectorReady {
+            return model.detectorStatus.contains("could not load") ? "Detection unavailable" : "Preparing detection"
         }
-        return "Camera tracking starting"
+        return nil
     }
 
-    private var cameraTrackingColor: Color {
-        model.tripActive && model.cameraReady && !model.changingCameraGeometry ? BrakeTheme.accent : BrakeTheme.muted
+    private func banner(large: Bool) -> some View {
+        NavigationBanner(navigation: navigation, presentation: model.arPresentation,
+                         compact: model.brakeWarningActive, large: large, alignmentDetail: false)
     }
 
-    private func planningLayout(landscape: Bool) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                searchCard
-                if let error = navigation.errorMessage { errorCard(error) }
-                if navigation.isCalculating {
-                    HStack(spacing: 10) {
-                        ProgressView().tint(BrakeTheme.accent)
-                        Text("Finding a driving route…").font(.brake(.subheadline))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .brakePanel()
+    // MARK: - Panels
+
+    private func bottomSheet(maxListHeight: CGFloat) -> some View {
+        Group {
+            if navigation.isNavigating { tripBar } else { planner(maxListHeight: maxListHeight) }
+        }
+        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrakeTheme.panel,
+                    in: UnevenRoundedRectangle(topLeadingRadius: 26, topTrailingRadius: 26, style: .continuous))
+        .shadow(color: .black.opacity(0.25), radius: 14, y: -4)
+    }
+
+    private func sideColumn(height: CGFloat) -> some View {
+        VStack(spacing: 10) {
+            if navigation.isNavigating {
+                banner(large: false)
+                Spacer(minLength: 0)
+                tripBar.padding(14).background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            } else {
+                planner(maxListHeight: max(120, height - 150))
+                    .padding(14)
+                    .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(10)
+    }
+
+    // MARK: - Planning
+
+    @ViewBuilder private func planner(maxListHeight: CGFloat) -> some View {
+        if navigation.route != nil {
+            // The route card must never hide its Start button: scroll only when it can't fit.
+            ViewThatFits(in: .vertical) {
+                routeCard
+                ScrollView { routeCard }.scrollIndicators(.hidden)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                searchField
+                if let error = navigation.suggestionError {
+                    Text(error).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 }
-                if navigation.route != nil {
-                    routePreview
-                    routeMap(follow: false)
-                        .frame(height: landscape ? 240 : 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 20))
-                    startControls
-                } else if !navigation.isCalculating && navigation.results.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Plan your next drive.").font(.brake(.headline))
-                        Text("Search for a destination while parked. Your camera tracking stays on when you switch pages during a trip.")
-                            .font(.brake(.subheadline))
-                            .foregroundStyle(BrakeTheme.muted)
-                    }
-                    .brakePanel()
+                // While a chosen destination's route is on the way, the list would only distract.
+                if !(navigation.destinationTitle != nil && (navigation.isCalculating || navigation.resolvingDestination != nil)) {
+                    fittedList(maxHeight: maxListHeight)
                 }
-                if !navigation.status.isEmpty {
-                    Text(navigation.status)
-                        .font(.brake(.caption))
-                        .foregroundStyle(BrakeTheme.muted)
+                progressRow
+                if let note = statusNote {
+                    Text(note).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Maps and route searches require a network connection.")
-                    .font(.brake(.caption))
-                    .foregroundStyle(BrakeTheme.muted)
+                if let error = navigation.errorMessage { errorRow(error) }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(maxWidth: 900)
-            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundStyle(BrakeTheme.muted)
+            TextField("Where to?", text: $navigation.query)
+                .font(.brake(.body))
+                .textInputAutocapitalization(.words)
+                .submitLabel(.search)
+                .focused($searchFocused)
+                .onSubmit { submitSearch() }
+                .accessibilityLabel("Destination search")
+                .accessibilityIdentifier("nav.search")
+            if navigation.isSearching || navigation.suggestionsLoading || navigation.resolvingDestination != nil {
+                ProgressView().tint(BrakeTheme.accentText)
+            } else if !navigation.query.isEmpty {
+                Button { navigation.query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(BrakeTheme.muted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear destination search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 48)
+        .background(BrakeTheme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    /// Recents, suggestions or results: as tall as their rows, scrolling past `maxHeight`.
+    private func fittedList(maxHeight: CGFloat) -> some View {
+        ScrollView {
+            placeList
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: PlaceListHeight.self, value: proxy.size.height)
+                })
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.interactively)
+        .frame(height: min(listHeight, maxHeight))
+        .onPreferenceChange(PlaceListHeight.self) { listHeight = $0 }
     }
 
-    private var searchCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(BrakeTheme.muted)
-                TextField("Address, place, or city", text: $navigation.query)
-                    .font(.brake(.subheadline))
-                    .textInputAutocapitalization(.words)
-                    .autocorrectionDisabled(false)
-                    .submitLabel(.search)
-                    .focused($searchFocused)
-                    .onSubmit { submitSearch() }
-                    .accessibilityLabel("Destination search")
-                if navigation.isSearching || navigation.suggestionsLoading {
-                    ProgressView().tint(BrakeTheme.accent)
-                } else if !navigation.query.isEmpty {
-                    Button { navigation.query = "" } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(BrakeTheme.muted)
+    @ViewBuilder private var placeList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if trimmedQuery.isEmpty {
+                recentList
+            } else {
+                ForEach(navigation.suggestions) { suggestion in
+                    placeRow(suggestion.title, suggestion.subtitle, icon: "mappin.and.ellipse") {
+                        searchFocused = false
+                        navigation.chooseSuggestion(suggestion)
+                    }
+                }
+                ForEach(navigation.results) { result in
+                    placeRow(result.title, result.subtitle, icon: "mappin.circle.fill") {
+                        searchFocused = false
+                        navigation.chooseDestination(result)
+                    }
+                }
+                if navigation.results.isEmpty && !navigation.isSearching {
+                    placeRow("Search for “\(trimmedQuery)”", "", icon: "magnifyingglass") { submitSearch() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var recentList: some View {
+        if navigation.recentDestinations.isEmpty {
+            Label("Search for a place or an address. Plan your route while parked.", systemImage: "info.circle")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+                .padding(.vertical, 8)
+        } else {
+            HStack {
+                Text("RECENT").font(.brake(size: 11, weight: .bold)).tracking(1.2).foregroundStyle(BrakeTheme.muted)
+                Spacer()
+                Button("Clear") { confirmingClearRecents = true }
+                    .font(.brake(.caption, weight: .semibold))
+                    .foregroundStyle(BrakeTheme.accentText)
+                    .frame(minHeight: 32)
+            }
+            ForEach(navigation.recentDestinations.prefix(6)) { recent in
+                HStack(spacing: 0) {
+                    placeRow(recent.title, recent.subtitle, icon: "clock.arrow.circlepath") {
+                        searchFocused = false
+                        navigation.chooseRecent(recent)
+                    }
+                    Button { navigation.removeRecent(recent.id) } label: {
+                        Image(systemName: "xmark").font(.brake(.caption, weight: .semibold))
+                            .foregroundStyle(BrakeTheme.muted)
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Clear destination search")
+                    .accessibilityLabel("Remove \(recent.title) from recents")
                 }
-            }
-            .padding(13)
-            .background(BrakeTheme.background, in: RoundedRectangle(cornerRadius: 12))
-            Picker("Destination options", selection: $searchSection) {
-                Text("Search").tag(SearchSection.search)
-                Text("Recents").tag(SearchSection.recents)
-            }.pickerStyle(.segmented)
-            if searchSection == .recents {
-                recentDestinationsCard
-            } else {
-            if let error = navigation.suggestionError {
-                Text(error).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-            }
-            ForEach(navigation.suggestions) { suggestion in
-                Button {
-                    searchFocused = false
-                    panelExpanded = true
-                    navigation.chooseSuggestion(suggestion)
-                    UISelectionFeedbackGenerator().selectionChanged()
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "mappin.and.ellipse")
-                            .foregroundStyle(BrakeTheme.accent)
-                            .frame(width: 28)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(suggestion.title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
-                            if !suggestion.subtitle.isEmpty {
-                                Text(suggestion.subtitle).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted).lineLimit(2)
-                            }
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.left").font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
-                Divider().overlay(BrakeTheme.muted.opacity(0.15))
-            }
-            Button(action: submitSearch) {
-                Text(navigation.isSearching ? "Searching…" : "Search destinations")
-                    .font(.brake(.subheadline, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(BrakeTheme.accent.opacity(0.1), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(navigation.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || navigation.isSearching)
-            .opacity(navigation.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || navigation.isSearching ? 0.4 : 1)
-            ForEach(navigation.results) { result in
-                Button {
-                    searchFocused = false
-                    navigation.chooseDestination(result)
-                    UISelectionFeedbackGenerator().selectionChanged()
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "mappin.circle.fill").foregroundStyle(BrakeTheme.amber)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(result.title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
-                            if !result.subtitle.isEmpty {
-                                Text(result.subtitle).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                    }
-                    .padding(.vertical, 10)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
-            }
-            }
-        }
-        .brakePanel()
-    }
-
-    private var recentDestinationsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if navigation.recentDestinations.isEmpty {
-                Label("No recent destinations", systemImage: "clock")
-                    .foregroundStyle(BrakeTheme.muted).padding(.vertical, 12)
-            } else {
-                ForEach(navigation.recentDestinations) { recent in
-                    HStack(spacing: 8) {
-                        Button {
-                            searchFocused = false; panelExpanded = true
-                            navigation.chooseRecent(recent)
-                            UISelectionFeedbackGenerator().selectionChanged()
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "clock.arrow.circlepath").foregroundStyle(BrakeTheme.accent)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(recent.title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
-                                    if !recent.subtitle.isEmpty {
-                                        Text(recent.subtitle).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted).lineLimit(2)
-                                    }
-                                }
-                                Spacer(minLength: 0)
-                            }.frame(minHeight: 48).contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                        Button { navigation.removeRecent(recent.id) } label: {
-                            Image(systemName: "xmark").font(.brake(.caption)).frame(width: 44, height: 44)
-                        }.buttonStyle(.plain).foregroundStyle(BrakeTheme.muted)
-                            .accessibilityLabel("Remove \(recent.title) from recents")
-                    }
-                }
-                Button("Clear recents") { confirmingClearRecents = true }
-                    .font(.brake(.caption)).frame(minHeight: 44)
             }
         }
     }
 
-    private func submitSearch() {
-        guard !navigation.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !navigation.isSearching else { return }
-        searchFocused = false
-        navigation.search()
+    private func placeRow(_ title: String, _ subtitle: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            UISelectionFeedbackGenerator().selectionChanged()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.brake(size: 17, weight: .semibold))
+                    .foregroundStyle(BrakeTheme.accentText)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.text)
+                        .lineLimit(2)
+                    if !subtitle.isEmpty {
+                        Text(subtitle).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted).lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(BrakeTheme.text.opacity(0.06)).frame(height: 1).padding(.leading, 40)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
     }
 
-    private var routePreview: some View {
-        VStack(alignment: .leading, spacing: 16) {
+    @ViewBuilder private var progressRow: some View {
+        if let title = navigation.resolvingDestination {
+            progressLine("Finding \(title)…")
+        } else if navigation.isCalculating {
+            progressLine("Finding your route…")
+        }
+    }
+
+    private func progressLine(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            ProgressView().tint(BrakeTheme.accentText)
+            Text(text).font(.brake(.subheadline))
+        }
+        .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+    }
+
+    /// Service messages that need the driver's attention; routine progress lines stay hidden.
+    private var statusNote: String? {
+        let status = navigation.status
+        let notable = ["No matching places", "Search is available", "Navigation is available"]
+        return notable.contains { status.hasPrefix($0) } ? status : nil
+    }
+
+    private func errorRow(_ error: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.warning)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 18) {
+                if navigation.destinationTitle != nil {
+                    Button(navigation.isCalculating ? "Finding route…" : "Try again") { navigation.retryRoute() }
+                        .disabled(navigation.isCalculating)
+                }
+                if error.contains("Settings") {
+                    Button("Open Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    }
+                }
+            }
+            .font(.brake(.subheadline, weight: .semibold))
+            .foregroundStyle(BrakeTheme.accentText)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrakeTheme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var routeCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "mappin.and.ellipse").foregroundStyle(BrakeTheme.amber)
+                Image(systemName: "mappin.circle.fill")
+                    .font(.brake(size: 26, weight: .semibold))
+                    .foregroundStyle(BrakeTheme.accentText)
                 Text(navigation.destinationTitle ?? "Your destination")
-                    .font(.brake(.headline))
+                    .font(.brake(size: 20, weight: .bold))
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Button { navigation.clearDestination() } label: {
-                    Image(systemName: "xmark").font(.brake(.subheadline, weight: .semibold)).frame(width: 32, height: 32)
+                    Image(systemName: "xmark")
+                        .font(.brake(size: 14, weight: .bold))
+                        .foregroundStyle(BrakeTheme.muted)
+                        .frame(width: 36, height: 36)
+                        .background(BrakeTheme.raised, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(BrakeTheme.muted)
                 .accessibilityLabel("Clear planned destination")
+                .accessibilityIdentifier("nav.clear")
             }
             journeyMetrics(time: navigation.route?.expectedTravelTime, distance: navigation.route?.distance)
             if navigation.routeUsesLastKnownLocation {
-                Label("Route starts at your last known GPS location", systemImage: "location.circle")
+                Label("Starts at your last known GPS position", systemImage: "location.circle")
                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             }
-        }
-        .brakePanel()
-    }
-
-    private var startControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Toggle("Spoken directions", isOn: $navigation.spokenDirections)
-                .font(.brake(.subheadline))
             Button(action: startDrive) {
                 Label("Start navigation", systemImage: "location.north.fill")
-                    .font(.brake(size: 16, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
+                    .font(.brake(size: 17, weight: .bold))
+                    .frame(maxWidth: .infinity, minHeight: 54)
                     .foregroundStyle(BrakeTheme.background)
                     .background(BrakeTheme.accent, in: Capsule())
+                    .shadow(color: BrakeTheme.buttonShadow, radius: 10, y: 5)
             }
             .buttonStyle(.plain)
             .disabled(!canStart)
             .opacity(canStart ? 1 : 0.4)
+            .accessibilityIdentifier("nav.start")
+            Toggle(isOn: $navigation.spokenDirections) {
+                Label("Spoken directions", systemImage: "speaker.wave.2").font(.brake(.subheadline))
+            }
+            .tint(BrakeTheme.accent)
             if model.demo || model.replaying {
                 Text("Stop the simulated drive or replay before starting navigation.")
                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
@@ -442,211 +409,127 @@ struct NavigationView: View {
                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             }
         }
-        .brakePanel()
-    }
-
-    @ViewBuilder private func guidanceLayout(landscape: Bool) -> some View {
-        if landscape {
-            HStack(alignment: .top, spacing: 12) {
-                routeMap(follow: navigation.mapLocation != nil)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                ScrollView {
-                    VStack(spacing: 12) {
-                        maneuverCard
-                        if let error = navigation.errorMessage { activeErrorCard(error) }
-                        activeJourneyCard
-                        activeControls
-                    }
-                    .padding(.bottom, 8)
-                }
-                .scrollIndicators(.hidden)
-                .frame(width: 290)
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-        } else {
-            VStack(spacing: 10) {
-                maneuverCard.padding(.horizontal, 16)
-                routeMap(follow: navigation.mapLocation != nil)
-                .frame(minHeight: 140, maxHeight: .infinity)
-                VStack(spacing: 10) {
-                    if let error = navigation.errorMessage { activeErrorCard(error) }
-                    activeJourneyCard
-                    activeControls
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-            }
-        }
-    }
-
-    private var maneuverCard: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: navigation.hasArrived ? "checkmark.circle.fill" : navigation.isRejoiningRoute
-                  ? "arrow.triangle.turn.up.right.diamond" : NavigationManeuver.symbol(for: navigation.instruction))
-                .font(.brake(size: 25, weight: .semibold))
-                .foregroundStyle(BrakeTheme.accent)
-                .frame(width: 32)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 5) {
-                if navigation.hasArrived {
-                    Text("You’ve arrived").font(.brake(.headline)).foregroundStyle(BrakeTheme.accent)
-                    Text(navigation.destinationTitle ?? "Destination reached.")
-                        .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if navigation.isRejoiningRoute {
-                    HStack {
-                        if navigation.isCalculating { ProgressView().tint(BrakeTheme.accent) }
-                        Text(navigation.isCalculating ? "Finding a new route…" : "Rejoining your route")
-                            .font(.brake(.headline))
-                    }
-                    Text(navigation.destinationTitle ?? "Your destination stays selected.")
-                        .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
-                } else {
-                    if let distance = navigation.maneuverDistance, distance.isFinite {
-                        Text(distance < 20 && !navigation.isPaused ? "Now" : "In \(distanceText(distance))")
-                            .font(.brake(size: 22, weight: .semibold)).monospacedDigit()
-                    }
-                    Text(navigation.instruction.isEmpty ? "Follow the route" : navigation.instruction)
-                        .font(.brake(.headline))
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let next = navigation.upcomingInstruction {
-                        Label("Then \(next)", systemImage: NavigationManeuver.symbol(for: next))
-                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                            .lineLimit(2)
-                    }
-                    if let notice = navigation.routeNotice, !notice.isEmpty {
-                        Text(notice).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .brakePanel()
-    }
-
-    private var activeJourneyCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let destination = navigation.destinationTitle {
-                Text(destination).font(.brake(.caption, weight: .semibold)).foregroundStyle(BrakeTheme.muted).lineLimit(1)
-            }
-            journeyMetrics(time: navigation.hasArrived ? 0 : navigation.remainingTime,
-                           distance: navigation.hasArrived ? 0 : navigation.remainingDistance)
-        }
-        .brakePanel()
-    }
-
-    private var activeControls: some View {
-        HStack(spacing: 10) {
-            Button { navigation.spokenDirections.toggle() } label: {
-                Label(navigation.spokenDirections ? "Mute" : "Unmute", systemImage: navigation.spokenDirections ? "speaker.wave.2" : "speaker.slash")
-                    .font(.brake(.subheadline, weight: .semibold))
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(BrakeTheme.panel, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(navigation.spokenDirections ? "Mute spoken directions" : "Enable spoken directions")
-            Button { navigation.stopGuidance() } label: {
-                Label(navigation.hasArrived ? "Done" : "Stop", systemImage: navigation.hasArrived ? "checkmark" : "stop.fill")
-                    .font(.brake(.subheadline, weight: .semibold))
-                    .foregroundStyle(BrakeTheme.danger)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(BrakeTheme.danger.opacity(0.12), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(navigation.hasArrived ? "Finish navigation" : "Stop navigation")
-            .accessibilityHint("Your camera trip continues.")
-        }
-    }
-
-    private func routeMap(follow: Bool) -> some View {
-        NavigationMapView(route: navigation.route, location: navigation.location,
-                          followsLocation: follow, recenterTrigger: recenterTrigger)
-            .overlay(alignment: .topTrailing) {
-                Button { recenterTrigger += 1 } label: {
-                    Image(systemName: "location.fill")
-                        .font(.brake(size: 17, weight: .semibold))
-                        .foregroundStyle(BrakeTheme.accent)
-                        .frame(width: 44, height: 44)
-                        .background(BrakeTheme.panel, in: Circle())
-                        .shadow(color: .black.opacity(0.3), radius: 4)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(navigation.isNavigating ? "Recenter navigation map" : "Show whole route")
-                .padding(12)
-            }
-    }
-
-    private func errorCard(_ error: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(error, systemImage: "exclamationmark.triangle")
-                .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.warning)
-                .fixedSize(horizontal: false, vertical: true)
-            if navigation.destinationTitle != nil {
-                Button("Try route again") { navigation.retryRoute() }
-                    .font(.brake(.subheadline, weight: .semibold))
-                    .disabled(navigation.isCalculating)
-            }
-        }
-        .brakePanel()
-    }
-
-    private func activeErrorCard(_ error: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(error).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
-                .lineLimit(3).fixedSize(horizontal: false, vertical: true)
-            Button { navigation.retryRoute() } label: {
-                Label(navigation.isCalculating ? "Finding route…" : "Try route again", systemImage: "arrow.clockwise")
-                    .font(.brake(.caption, weight: .semibold)).frame(minHeight: 32)
-            }
-            .buttonStyle(.plain)
-            .disabled(navigation.isCalculating)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 14))
     }
 
     private func journeyMetrics(time: Double?, distance: Double?) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            journeyValue("Remaining", value: distance.map(distanceText) ?? "—")
+            journeyValue("Est. drive time", time.map(timeText) ?? "—")
             Spacer(minLength: 0)
-            journeyValue("Est. drive time", value: time.map(timeText) ?? "—")
+            journeyValue("Distance", distance.map(distanceText) ?? "—")
             Spacer(minLength: 0)
-            journeyValue("Est. arrival", value: navigation.hasArrived ? "Arrived" : time.map { Date().addingTimeInterval($0).formatted(date: .omitted, time: .shortened) } ?? "—")
+            journeyValue("Est. arrival", time.map(arrivalText) ?? "—")
         }
     }
 
-    private func journeyValue(_ title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value).font(.brake(size: 18, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+    private func journeyValue(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value).font(.brake(size: 19, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
             Text(title).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         }
         .accessibilityElement(children: .combine)
     }
 
+    // MARK: - Guidance
+
+    private var tripBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if navigation.hasArrived {
+                        Text("You’ve arrived").font(.brake(size: 22, weight: .bold))
+                        Text(navigation.destinationTitle ?? "Destination reached")
+                            .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted).lineLimit(1)
+                    } else {
+                        (Text(navigation.remainingTime.map(arrivalText) ?? "—").font(.brake(size: 24, weight: .bold))
+                            + Text(" arrival").font(.brake(size: 14, weight: .semibold)).foregroundColor(BrakeTheme.muted))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                        Text(remainingLine).font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
+                            .monospacedDigit().lineLimit(1)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: 0)
+                muteButton
+                endButton
+            }
+            if let error = navigation.errorMessage {
+                errorRow(error)
+            } else if let notice = navigation.routeNotice, !notice.isEmpty {
+                Label(notice, systemImage: "exclamationmark.circle")
+                    .font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var remainingLine: String {
+        "\(navigation.remainingTime.map(timeText) ?? "—") · \(navigation.remainingDistance.map(distanceText) ?? "—")"
+    }
+
+    private var muteButton: some View {
+        Button { navigation.spokenDirections.toggle() } label: {
+            Image(systemName: navigation.spokenDirections ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                .font(.brake(size: 17, weight: .semibold))
+                .foregroundStyle(navigation.spokenDirections ? BrakeTheme.text : BrakeTheme.warning)
+                .frame(width: 48, height: 48)
+                .background(BrakeTheme.raised, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(navigation.spokenDirections ? "Mute spoken directions" : "Turn on spoken directions")
+        .accessibilityIdentifier("nav.mute")
+    }
+
+    private var endButton: some View {
+        Button { navigation.stopGuidance() } label: {
+            Text(navigation.hasArrived ? "Done" : "End")
+                .font(.brake(size: 16, weight: .bold))
+                .foregroundStyle(navigation.hasArrived ? BrakeTheme.background : .white)
+                .frame(minWidth: 76, minHeight: 48)
+                .padding(.horizontal, 4)
+                .background(navigation.hasArrived ? BrakeTheme.accent : BrakeTheme.danger, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(navigation.hasArrived ? "Finish navigation" : "End navigation")
+        .accessibilityHint("Your camera trip keeps running.")
+        .accessibilityIdentifier("nav.end")
+    }
+
+    // MARK: - Formatting
+
+    private func submitSearch() {
+        guard !trimmedQuery.isEmpty && !navigation.isSearching else { return }
+        searchFocused = false
+        navigation.search()
+    }
+
+    /// Same rounding as the turn banner, so both say the same distance.
     private func distanceText(_ meters: Double) -> String {
         guard meters.isFinite else { return "—" }
-        let value = max(0, meters)
-        if useMPH {
-            return value >= 160.9344 ? String(format: "%.1f mi", value / 1609.344)
-                : String(format: "%.0f ft", value * 3.280839895)
-        }
-        return value >= 1000 ? String(format: "%.1f km", value / 1000) : String(format: "%.0f m", value)
+        let value = NavigationBanner.formatted(meters, miles: useMPH)
+        return "\(value.value) \(value.unit)"
     }
 
     private func timeText(_ seconds: Double) -> String {
         guard seconds.isFinite else { return "—" }
         if seconds <= 0 { return "0 min" }
-        let minutes = max(1, Int(ceil(max(0, seconds) / 60)))
+        let minutes = max(1, Int(ceil(seconds / 60)))
         return minutes < 60 ? "\(minutes) min" : "\(minutes / 60) hr \(minutes % 60) min"
+    }
+
+    private func arrivalText(_ seconds: Double) -> String {
+        guard seconds.isFinite else { return "—" }
+        return Date().addingTimeInterval(max(0, seconds)).formatted(date: .omitted, time: .shortened)
     }
 }
 
-/// Map panning is disabled so a horizontal drag can always change pages.
-/// Pinch zoom remains available; attribution stays in the unobstructed map footer.
+private struct PlaceListHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// Pan and pinch work on the map itself (they win over the page pager, see NavigationMapSurface);
+/// a horizontal swipe elsewhere on the page still changes pages. Attribution stays in the map footer.
 private struct NavigationMapView: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
     var route: MKRoute?

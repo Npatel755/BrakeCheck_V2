@@ -15,6 +15,12 @@ final class ScreenTour: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         pause(3)
+        let notice = element(app.buttons, ["notice.accept", "I understand"])
+        if notice.waitForExistence(timeout: 3) {
+            snap("00-notice")
+            notice.tap()
+            pause(2)
+        }
         snap("01-home")
 
         openPage(app, "Navigate")
@@ -42,19 +48,16 @@ final class ScreenTour: XCTestCase {
         if start.exists {
             pause(2)
             snap("05-route-preview")
+            XCUIDevice.shared.orientation = .landscapeLeft
+            pause(3)
+            snap("05b-route-landscape")
+            XCUIDevice.shared.orientation = .portrait
+            pause(3)
             start.tap()
             allowSystemAlerts()
             pause(6)
             dismissAppAlert(app, shot: "06a-navigating-alert")
             snap("06-navigating")
-            let details = element(app.buttons, ["nav.details", "Expand navigation panel", "Collapse navigation panel"])
-            if details.exists && details.isHittable {
-                details.tap()
-                pause(2)
-                snap("06b-navigating-details")
-                details.tap()
-                pause(1)
-            }
         }
 
         openPage(app, "Camera")

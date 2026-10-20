@@ -20,9 +20,10 @@ jobs:
         working-directory: ios
     env:
       BUNDLE_ID: com.brakecheck.prototype
-      # Midtown Atlanta (Peachtree St at 10th St). Navigation needs a fix younger than 2 s,
-      # so the tour step re-sends it every second.
+      # Midtown Atlanta (Peachtree St at 10th St). Navigation needs a fix younger than 2 s, and the
+      # Simulator doesn't redeliver an unchanged position, so the tour alternates two points 1 m apart.
       START_FIX: 33.7816,-84.3838
+      START_FIX_ALT: 33.78161,-84.3838
     steps:
       - uses: actions/checkout@v4
 
@@ -61,7 +62,10 @@ jobs:
 
       - name: Run the screen tour
         run: |
-          (while true; do xcrun simctl location "$SIM" set "$START_FIX" >/dev/null 2>&1; sleep 1; done) &
+          (while true; do
+            xcrun simctl location "$SIM" set "$START_FIX" >/dev/null 2>&1; sleep 1
+            xcrun simctl location "$SIM" set "$START_FIX_ALT" >/dev/null 2>&1; sleep 1
+          done) &
           keeper=$!
           set +e
           xcodebuild test-without-building -project AppTarget/BrakeCheckApp.xcodeproj -scheme BrakeCheckApp \
