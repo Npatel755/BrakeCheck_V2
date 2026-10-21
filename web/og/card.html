@@ -1,15 +1,15 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" data-hero="road">
 <head>
   <meta charset="utf-8">
   <meta name="robots" content="noindex">
   <title>BrakeSense Social Card</title>
-  <!-- Source for assets/img/og.png (1200x630). Re-render with the Hackathon Workflow tool:
+  <!-- Source for assets/img/og.png (1200x630): the headline over a real frame of the drive on the home page, with
+       the camera screen at the High risk moment (the poster frame, 6.3 s). Re-render with the Hackathon Workflow tool:
        .venv\Scripts\python.exe tools/html_shot.py --root <repo>/web --page og/card.html
            --out <repo>/web/assets/img/og.png --size 1200x630 --reduced-motion -->
   <link rel="stylesheet" href="../assets/css/site.css">
   <link rel="stylesheet" href="card.css">
-  <script src="../assets/js/site.js" defer></script>
 </head>
 <body>
   <svg class="sprite" aria-hidden="true" focusable="false">
@@ -22,67 +22,39 @@
         </g>
         <circle cx="14" cy="18.2" r="1.6" fill="currentColor"/>
       </symbol>
-      <linearGradient id="car-body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b3b57"/><stop offset=".55" stop-color="#18233a"/><stop offset="1" stop-color="#0d1525"/></linearGradient>
-      <linearGradient id="car-glass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3c5478"/><stop offset="1" stop-color="#0b1424"/></linearGradient>
-      <radialGradient id="car-glow"><stop offset="0" stop-color="#ff4d5e" stop-opacity=".8"/><stop offset="1" stop-color="#ff4d5e" stop-opacity="0"/></radialGradient>
+      <symbol id="viewfinder" viewBox="0 0 16 16">
+        <path d="M1.5 5V2.5a1 1 0 0 1 1-1H5M11 1.5h2.5a1 1 0 0 1 1 1V5M14.5 11v2.5a1 1 0 0 1-1 1H11M5 14.5H2.5a1 1 0 0 1-1-1V11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </symbol>
     </defs>
   </svg>
-  <template id="car-template">
-    <svg viewBox="0 0 200 150">
-      <ellipse cx="100" cy="145" rx="99" ry="6.5" fill="#000" opacity=".55"/>
-      <rect x="16" y="110" width="30" height="36" rx="6" fill="#04070d"/>
-      <rect x="154" y="110" width="30" height="36" rx="6" fill="#04070d"/>
-      <path d="M51 15Q55 6 66 6H134Q145 6 149 15L171 63H29Z" fill="url(#car-body)"/>
-      <path d="M60 17Q63 11 71 11H129Q137 11 140 17L157 57H43Z" fill="url(#car-glass)"/>
-      <path d="M58 52L74 16H86L66 54Z" fill="#cfe6ff" opacity=".07"/>
-      <path d="M29 59H171Q192 61 194 84L196 117Q196 128 185 128H15Q4 128 4 117L6 84Q8 61 29 59Z" fill="url(#car-body)"/>
-      <path d="M22 66H178" stroke="#3b4f70" stroke-width="1.5" opacity=".75"/>
-      <path class="tail" d="M10 77Q12 70 22 70H60Q65 70 63 76L58 88Q57 92 52 92H14Q8 92 9 86Z"/>
-      <path class="tail" d="M190 77Q188 70 178 70H140Q135 70 137 76L142 88Q143 92 148 92H186Q192 92 191 86Z"/>
-      <rect class="tail" x="84" y="13" width="32" height="4" rx="2"/>
-      <rect x="80" y="96" width="40" height="18" rx="2.5" fill="#1b263c" stroke="#2c3b58"/>
-      <path d="M9 117H191" stroke="#060b14" stroke-width="5" stroke-linecap="round"/>
-      <g class="glow">
-        <ellipse cx="36" cy="81" rx="48" ry="27" fill="url(#car-glow)"/>
-        <ellipse cx="164" cy="81" rx="48" ry="27" fill="url(#car-glow)"/>
-        <ellipse cx="100" cy="15" rx="34" ry="12" fill="url(#car-glow)"/>
-      </g>
-    </svg>
-  </template>
-
   <main class="card">
-    <div class="card__copy">
+    <div class="card__head">
+      <h1>Collision warning for cars that never got one.</h1>
       <p class="logo"><svg aria-hidden="true"><use href="#lamp"/></svg><span>Brake<span class="sense">Sense</span></span></p>
-      <h1><span class="nowrap">Forward-collision</span> warning for the car you already drive.</h1>
-      <p class="card__line">Your iPhone says “Brake” when the gap closes too fast.</p>
     </div>
-    <figure class="hero-figure card__device">
-      <div class="device device--landscape"><div class="device__body">
-        <div class="device__screen">
-          <div class="hud" data-hud data-level="4">
-            <canvas></canvas>
-            <div class="hud__ui">
-              <div class="hud__car"></div>
-              <span class="hud__box"></span>
-              <div class="hud__scrim"></div>
-              <div class="risk">
-                <span class="risk__dot"></span>
-                <svg class="risk__icon" viewBox="0 0 16 16"><path d="M8 1.5 15 14H1z" fill="currentColor"/><path d="M8 6v4" stroke="#ff4d5e" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="12" r="1" fill="#ff4d5e"/></svg>
-                <span data-label>BRAKE NOW</span>
-                <span class="risk__steps"><i></i><i></i><i></i><i></i></span>
-              </div>
-              <div class="hud__speed"><span class="hud__key">SPEED</span><b data-speed>36</b><span>mph</span></div>
-              <dl class="hud__metrics">
-                <div><dt>Approx. gap</dt><dd><span data-gap>38</span><small>ft</small></dd></div>
-                <div><dt>Est. closing time</dt><dd><span data-ttc>1.3</span><small>s</small></dd></div>
-              </dl>
-              <div class="hud__edge"></div>
-            </div>
+    <div class="drive card__drive">
+      <div class="drive__stage">
+        <img class="drive__video" src="../assets/video/drive-poster.webp" alt="">
+        <div class="hud" data-level="3" aria-hidden="true">
+          <div class="hud__top">
+            <span class="hud__brand"><svg><use href="#lamp"/></svg><span>Brake<span class="sense">Sense</span></span><span class="hud__live"><i></i>LIVE</span></span>
+            <span class="hud__setup"><svg><use href="#viewfinder"/></svg>Camera setup</span>
           </div>
+          <div class="risk">
+            <span class="risk__dot"></span>
+            <span>High risk</span>
+            <span class="risk__steps"><i></i><i></i><i></i><i></i></span>
+          </div>
+          <div class="hud__speed"><span class="hud__key">SPEED</span><span class="hud__value"><b>14</b><span class="hud__unit">mph</span></span></div>
+          <dl class="hud__metrics">
+            <div><dt>Approx. gap</dt><dd><b>30</b><small>ft</small></dd><dd class="hud__note"></dd></div>
+            <div class="hud__extra"><dt>Their speed</dt><dd><b>5</b><small>mph</small></dd><dd class="hud__note"></dd></div>
+            <div class="hud__extra"><dt>Gap closing</dt><dd><b>9</b><small>mph</small></dd><dd class="hud__note"></dd></div>
+            <div><dt>Est. closing time</dt><dd><b>2.4</b><small>s</small></dd><dd class="hud__note"></dd></div>
+          </dl>
         </div>
-        <span class="device__island"></span>
-      </div></div>
-    </figure>
+      </div>
+    </div>
   </main>
 </body>
 </html>

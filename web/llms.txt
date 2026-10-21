@@ -5,7 +5,7 @@
 ## Key facts
 - Platform: iPhone, iOS 17 or later. Android is planned.
 - Status: coming soon to the App Store.
-- Made by Harrison and Nick, who built the first version at Hacklanta 2026.
+- Made by Harrison and Nick. It started as their team's project at Hacklanta 2026.
 - Free: collision warnings with a spoken alert, directions on the camera view, trip recaps, saved clips, crash check-in with emergency contacts.
 - Premium (optional subscription): traffic start, lane departure, cut-in and green light alerts, deeper trip insights, a compact directions banner.
 - Privacy: car detection runs on the phone, video stays on the phone, and the app has no ads or trackers. Only emergency contacts use a server.

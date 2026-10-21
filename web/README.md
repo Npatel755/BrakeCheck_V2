@@ -48,13 +48,23 @@ Pick one; all are free for a site this size.
 - Add the Smart App Banner: `<meta name="apple-itunes-app" content="app-id=YOUR_APP_ID">`.
 - Set `LegalLinks.privacyPolicy` in the app to the live privacy URL.
 
+## The drive at the top of the page
+
+`assets/video/drive.webm` / `drive.mp4` (and `drive-poster.webp`) are 9.4 seconds of a real test drive: the screen recording from October 11, 2026 (build N11, 169.0 to 178.4 s into `ScreenRecording_10-11-2026 07-31-46_1.mp4`), approaching a car that brakes for a red light. N11's overlays are removed and the detection boxes redrawn the way the current app draws them (Hackathon Workflow repo, `.tmp/apps/brakecheck/site_footage/clean_n11.py`). Plates are blurred.
+
+The readouts over it are live HTML (`site.js`, `ROWS` and `METER`), drawn in the current camera-screen design (`ContentView` landscape HUD, `RiskPill`) from the values that build measured every 0.2 s. The meter follows the current build's rule (`LeadDangerContinuity`: rises at once, drops after 0.35 s of lower readings, brief misses hold). The caption says it was an early build and the screen is redrawn.
+
+- **Better later:** a new screen recording with the current build, and a passenger-held clip of the phone on its mount with the road behind it. Then the redraw goes away.
+- **The illustrated hero** (the drawn road from the first version) is still in the code: `<html data-hero="illustration">`, or add `?hero=illustration` to the URL. Delete whichever path isn't chosen, and the video files if it's the illustration.
+
 ## Design rules
 
-- Colours are the app's own tokens from `ios/Sources/BrakeCheck/Views/BrakeTheme.swift`: Polar night in dark mode, Polar day in light mode. Blue carries the page. The risk ramp (blue, amber, orange, red) appears only where a warning is being explained. Amber is reserved for the brake-lamp icon.
-- Type: Red Hat Display for headings (tight tracking, like the app's logo) and Red Hat Text for reading. Both are self-hosted (`assets/fonts`, OFL), so no visitor data goes to Google.
-- One moving thing: the hero illustration. It mirrors the app's real risk meter (`RiskPill`, `DangerSteps`), target box and metrics, stops when off screen, has a pause button, and shows a still frame when the visitor prefers reduced motion. Nothing else animates on scroll.
-- A painted lane line joins the steps of a trip. No card grids, no all-caps eyebrow labels, no stock imagery.
-- Copy rules come from the Growth Plan: say "driver aid" and "warning", never claim it prevents crashes, and give a source for every stat (the IIHS figure is about built-in systems).
+- Colours are the app's own tokens from `ios/Sources/BrakeCheck/Views/BrakeTheme.swift`: Polar night in dark mode, Polar day in light mode. Blue carries the page. The risk ramp (blue, amber, orange, red) appears only on the camera screen and in the meter list. The camera band is always dark, as the app's camera page is at night.
+- Type: Red Hat Display for headings and Red Hat Text for reading, self-hosted (`assets/fonts`, OFL). Headings at 700-800, not 900, with light negative tracking.
+- Real product only: footage, the app's own pills and notice text, and screenshots shown as screenshots. No drawn phone frames, no illustrations standing in for the product, no stock imagery.
+- One moving thing: the drive band. It stops when off screen, has a Pause button, and shows the poster frame (High risk, 30 ft, 2.4 s) when the visitor prefers reduced motion.
+- No card grids, eyebrow labels, button shadows or alternating section fills. Sections change shape (split, stacked, single column) so the page doesn't repeat one template.
+- Copy rules come from the Growth Plan: say "driver aid" and "warning", never claim it prevents crashes, and give a source for every stat (the IIHS figure is about built-in systems). Write as Harrison and Nick, with real details (Hacklanta, the test drives), and no AI tells (`copywriting` skill).
 
 ## Regenerating images
 
