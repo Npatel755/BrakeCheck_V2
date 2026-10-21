@@ -236,8 +236,9 @@ struct ContentView: View {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(400))
             guard !model.tripActive, !model.replaying else { return }
-            // Demo mode moves to the camera page by itself (observingNavigation).
-            model.setDemo(true)
+            // Demo mode moves to the camera page by itself (observingNavigation). The hard-brake
+            // scenario makes the full Brake warning play about 7 s in.
+            model.setDemo(true, hardBrake: true)
             practiceStartedAt = Date()
         }
     }
