@@ -55,7 +55,7 @@ Pick one; all are free for a site this size.
 The readouts over it are live HTML (`site.js`, `ROWS` and `METER`), drawn in the current camera-screen design (`ContentView` landscape HUD, `RiskPill`) from the values that build measured every 0.2 s. The meter follows the current build's rule (`LeadDangerContinuity`: rises at once, drops after 0.35 s of lower readings, brief misses hold). The caption says it was an early build and the screen is redrawn.
 
 - **Better later:** a new screen recording with the current build, and a passenger-held clip of the phone on its mount with the road behind it. Then the redraw goes away.
-- **The illustrated hero** (the drawn road from the first version) is still in the code: `<html data-hero="illustration">`, or add `?hero=illustration` to the URL. Delete whichever path isn't chosen, and the video files if it's the illustration.
+- The drawn-road illustration from the first version was dropped once the real drive was chosen (2026-10-21); it's in git history (726abe8) if it's ever needed.
 
 ## Design rules
 

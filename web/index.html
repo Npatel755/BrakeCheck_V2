@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-hero="road">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -61,45 +61,8 @@
       <symbol id="viewfinder" viewBox="0 0 16 16">
         <path d="M1.5 5V2.5a1 1 0 0 1 1-1H5M11 1.5h2.5a1 1 0 0 1 1 1V5M14.5 11v2.5a1 1 0 0 1-1 1H11M5 14.5H2.5a1 1 0 0 1-1-1V11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
       </symbol>
-      <linearGradient id="car-body" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#2b3b57"/>
-        <stop offset=".55" stop-color="#18233a"/>
-        <stop offset="1" stop-color="#0d1525"/>
-      </linearGradient>
-      <linearGradient id="car-glass" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#3c5478"/>
-        <stop offset="1" stop-color="#0b1424"/>
-      </linearGradient>
-      <radialGradient id="car-glow">
-        <stop offset="0" stop-color="#ff4d5e" stop-opacity=".8"/>
-        <stop offset="1" stop-color="#ff4d5e" stop-opacity="0"/>
-      </radialGradient>
     </defs>
   </svg>
-  <!-- The car ahead, for the illustrated hero (data-hero="illustration"). site.js copies it into the scene; page CSS
-       can't reach inside a <use> copy, and the brake lights need it. -->
-  <template id="car-template">
-    <svg viewBox="0 0 200 150">
-      <ellipse cx="100" cy="145" rx="99" ry="6.5" fill="#000" opacity=".55"/>
-      <rect x="16" y="110" width="30" height="36" rx="6" fill="#04070d"/>
-      <rect x="154" y="110" width="30" height="36" rx="6" fill="#04070d"/>
-      <path d="M51 15Q55 6 66 6H134Q145 6 149 15L171 63H29Z" fill="url(#car-body)"/>
-      <path d="M60 17Q63 11 71 11H129Q137 11 140 17L157 57H43Z" fill="url(#car-glass)"/>
-      <path d="M58 52L74 16H86L66 54Z" fill="#cfe6ff" opacity=".07"/>
-      <path d="M29 59H171Q192 61 194 84L196 117Q196 128 185 128H15Q4 128 4 117L6 84Q8 61 29 59Z" fill="url(#car-body)"/>
-      <path d="M22 66H178" stroke="#3b4f70" stroke-width="1.5" opacity=".75"/>
-      <path class="tail" d="M10 77Q12 70 22 70H60Q65 70 63 76L58 88Q57 92 52 92H14Q8 92 9 86Z"/>
-      <path class="tail" d="M190 77Q188 70 178 70H140Q135 70 137 76L142 88Q143 92 148 92H186Q192 92 191 86Z"/>
-      <rect class="tail" x="84" y="13" width="32" height="4" rx="2"/>
-      <rect x="80" y="96" width="40" height="18" rx="2.5" fill="#1b263c" stroke="#2c3b58"/>
-      <path d="M9 117H191" stroke="#060b14" stroke-width="5" stroke-linecap="round"/>
-      <g class="glow">
-        <ellipse cx="36" cy="81" rx="48" ry="27" fill="url(#car-glow)"/>
-        <ellipse cx="164" cy="81" rx="48" ry="27" fill="url(#car-glow)"/>
-        <ellipse cx="100" cy="15" rx="34" ry="12" fill="url(#car-glow)"/>
-      </g>
-    </svg>
-  </template>
 
   <a class="skip" href="#main">Skip to content</a>
 
@@ -122,8 +85,8 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="wrap hero__intro">
         <h1 id="hero-title">Collision warning for cars that never got one.</h1>
-        <div class="hero__side">
-          <p class="hero__lead">Mount your iPhone on the windshield and BrakeSense keeps track of the car in front of you. If the gap starts closing too fast, it says “Brake” out loud, so you don’t have to look at the screen.</p>
+        <p class="hero__lead">Mount your iPhone on the windshield and BrakeSense keeps track of the car in front of you. If the gap starts closing too fast, it says “Brake” out loud, so you don’t have to look at the screen.</p>
+        <div class="hero__cta">
           <form class="waitlist" name="waitlist" method="POST" data-netlify="true" netlify-honeypot="company" novalidate>
             <input type="hidden" name="form-name" value="waitlist">
             <label class="waitlist__label" for="email-top">Get one email on launch day</label>
@@ -144,9 +107,6 @@
             <source src="assets/video/drive.webm" type="video/webm">
             <source src="assets/video/drive.mp4" type="video/mp4">
           </video>
-          <canvas class="drive__canvas" aria-hidden="true"></canvas>
-          <div class="drive__car" aria-hidden="true"></div>
-          <span class="drive__box" aria-hidden="true"></span>
           <div class="hud" data-hud data-level="0" aria-hidden="true">
             <div class="hud__top">
               <span class="hud__brand"><svg><use href="#lamp"/></svg><span>Brake<span class="sense">Sense</span></span><span class="hud__live"><i></i>LIVE</span></span>
@@ -169,10 +129,7 @@
           </div>
         </div>
         <figcaption class="wrap">
-          <span id="drive-caption">
-            <span class="for-road">On a real drive, the car ahead brakes for a red light. The meter climbs to High risk, then settles once we stop behind it. We recorded this on the phone on October 11, 2026 with an early build, so the screen is redrawn in today’s design using the readings it took. License plates are blurred.</span>
-            <span class="for-illustration">Illustration of the camera screen: the meter climbs as the gap to the braking car ahead closes, then settles once you slow down.</span>
-          </span>
+          <span id="drive-caption">On a real drive, the car ahead brakes for a red light. The meter climbs to High risk, then settles once we stop behind it. We recorded this on the phone on October 11, 2026 with an early build, so the screen is redrawn in today’s design using the readings it took. License plates are blurred.</span>
           <button class="drive__toggle" type="button" data-drive-toggle hidden>Pause</button>
         </figcaption>
       </figure>
@@ -287,7 +244,7 @@
       <div class="wrap founders__grid">
         <div class="founders__note">
           <h2 id="join-title">Who’s building it</h2>
-          <p>We’re Harrison and Nick. BrakeSense started as our team’s project at Hacklanta 2026 in October.<span class="for-road"> The drive at the top of this page is one of our test runs from that weekend.</span></p>
+          <p>We’re Harrison and Nick. BrakeSense started as our team’s project at Hacklanta 2026 in October. The drive at the top of this page is one of our test runs from that weekend.</p>
           <p>The average car on US roads is 12.8 years old,<sup><a href="#src-1" aria-label="Source 1">1</a></sup> and most automakers only made forward-collision warning standard around 2022.<sup><a href="#src-2" aria-label="Source 2">2</a></sup> Cars that have it get into 27% fewer rear-end crashes.<sup><a href="#src-3" aria-label="Source 3">3</a></sup> An iPhone already has the camera and the chip to give an older car that kind of warning, so that’s what we built.</p>
           <p>Questions and ideas go to <a href="mailto:support@brakesense.app">support@brakesense.app</a>.</p>
         </div>

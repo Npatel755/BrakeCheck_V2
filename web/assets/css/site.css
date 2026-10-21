@@ -129,9 +129,6 @@ p + p { margin-top: 0.9em; }
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .nowrap { white-space: nowrap; }
 
-/* Which hero is showing: the real drive (road) or the illustration */
-html[data-hero="road"] .for-illustration, html[data-hero="illustration"] .for-road { display: none; }
-
 /* ---------- header ---------- */
 .site-header {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
@@ -192,23 +189,26 @@ html[data-hero="road"] .for-illustration, html[data-hero="illustration"] .for-ro
 }
 
 /* ---------- hero ---------- */
-.hero { padding-top: clamp(28px, 5vw, 72px); }
+/* The headline across the top, the pitch and the waitlist side by side under it, then the drive. */
+.hero { padding-top: clamp(24px, 3.5vw, 52px); }
 .hero__intro {
-  display: grid; align-items: end; gap: 28px clamp(32px, 5vw, 72px);
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  padding-bottom: clamp(32px, 4.5vw, 60px);
+  display: grid; align-items: start; gap: 24px clamp(32px, 5vw, 72px);
+  grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+  grid-template-areas: "title title" "lead cta";
+  padding-bottom: clamp(32px, 4vw, 52px);
 }
-.hero h1 { font-size: var(--fs-hero); max-width: 12em; }
-.hero__lead { font-size: var(--fs-lead); color: var(--muted); max-width: 34em; }
-.hero .waitlist { margin-top: 26px; }
-.hero__availability { margin-top: 14px; font-size: 0.92rem; color: var(--muted); }
+.hero h1 { grid-area: title; font-size: var(--fs-hero); max-width: 15em; }
+.hero__lead { grid-area: lead; font-size: var(--fs-lead); color: var(--muted); max-width: 34em; }
+.hero__cta { grid-area: cta; }
+.hero__availability { margin-top: 12px; font-size: 0.92rem; color: var(--muted); }
 @media (max-width: 900px) {
   /* Phones: headline, then the drive, then the pitch and the form */
   .hero { display: flex; flex-direction: column; }
   .hero__intro { display: contents; }
   .hero h1 { order: 1; width: min(100% - 32px, var(--wrap)); margin: 0 auto 24px; }
   .hero .drive { order: 2; }
-  .hero__side { order: 3; width: min(100% - 32px, var(--wrap)); margin: 28px auto 0; }
+  .hero__lead { order: 3; width: min(100% - 32px, var(--wrap)); margin: 28px auto 0; }
+  .hero__cta { order: 4; width: min(100% - 32px, var(--wrap)); margin: 24px auto 0; }
 }
 
 /* ---------- the drive (camera band) ---------- */
@@ -222,9 +222,7 @@ html[data-hero="road"] .for-illustration, html[data-hero="illustration"] .for-ro
 }
 /* 1 pt of the app's screen: the cropped picture is 765 pt wide (2294 px at 3x); phones use a 360 pt square */
 .drive__stage > * { --pt: calc(100cqw / 765); }
-.drive__video, .drive__canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-html[data-hero="road"] .drive__canvas, html[data-hero="road"] .drive__car, html[data-hero="road"] .drive__box { display: none; }
-html[data-hero="illustration"] .drive__video { display: none; }
+.drive__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .drive figcaption {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
   padding: 14px 0 18px; font-size: 0.88rem; line-height: 1.5; color: var(--band-muted);
@@ -236,17 +234,6 @@ html[data-hero="illustration"] .drive__video { display: none; }
   font: 600 0.84rem var(--display);
 }
 .drive__toggle:hover { border-color: rgba(228, 241, 255, 0.5); }
-
-/* Illustration only: the car ahead and its target box, positioned by site.js */
-.drive__car { position: absolute; left: 0; top: 0; width: 100px; transform-origin: 0 0; will-change: transform; visibility: hidden; }
-.drive__box { position: absolute; left: 0; top: 0; width: 0; height: 0; visibility: hidden; border: calc(2.5 * var(--pt, 1px)) solid #cfe6ff; }
-.drive.is-ready .drive__car, .drive.is-ready .drive__box { visibility: visible; }
-.drive__car svg { width: 100%; height: auto; overflow: visible; }
-.drive__car .tail { fill: #5a1820; transition: fill 0.12s; }
-.drive__car .glow { opacity: 0; transition: opacity 0.12s; }
-.drive.is-braking-ahead .drive__car .tail { fill: #ff4d5e; }
-.drive.is-braking-ahead .drive__car .glow { opacity: 1; }
-.drive.is-brake .drive__box { border-color: #ff4d5e; border-width: calc(3 * var(--pt, 1px)); }
 
 /* The camera screen's readouts, laid out like ContentView's landscape HUD in points:
    the cropped picture is 765 x 325 pt (2294 x 975 px at 3x). */
