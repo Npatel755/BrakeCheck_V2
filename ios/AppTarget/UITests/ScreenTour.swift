@@ -109,16 +109,14 @@ final class ScreenTour: XCTestCase {
         }
         pause(2)
         snap("00c-paywall-yearly")
+        // The lower plans start under the pinned buy button; scroll them clear before tapping.
+        app.swipeUp()
+        pause(1)
         for (key, shot) in [("plan.monthly", "00d-paywall-monthly"), ("plan.lifetime", "00e-paywall-lifetime")] {
             let plan = element(app.buttons, [key])
             if plan.waitForExistence(timeout: 3) {
                 plan.tap()
                 pause(1)
-                // Bring the selected plan into view above the pinned buy button.
-                if key == "plan.monthly" {
-                    app.swipeUp()
-                    pause(1)
-                }
                 snap(shot)
             }
         }
