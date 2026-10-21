@@ -295,7 +295,7 @@ struct ContentView: View {
         ZStack {
             roadView(portrait: portrait).ignoresSafeArea()
             if showsPlaceholder { placeholder }
-            scrims(portrait: portrait).ignoresSafeArea().allowsHitTesting(false)
+            if colorScheme == .dark { scrims(portrait: portrait).ignoresSafeArea().allowsHitTesting(false) }
             if portrait { portraitHUD } else { landscapeHUD }
             if developerOverlays && cameraAR && model.cameraReady && !model.replaying && !model.demo && !selecting {
                 CameraRoadMaskStatus(presentation: model.arPresentation, portrait: portrait)
@@ -519,12 +519,13 @@ struct ContentView: View {
         return ("Starting the camera…", "Keep the phone steady in its mount.")
     }
 
-    /// Theme-matched gradients keep readouts legible over the live road.
+    /// Dark mode only: a navy fade keeps the floating readouts legible over the live road. A white fade over the
+    /// video looked like fog, so in light mode the readouts sit on their own plates instead (CameraPlate).
     private func scrims(portrait: Bool) -> some View {
         VStack(spacing: 0) {
-            LinearGradient(colors: [BrakeTheme.cameraScrim.opacity(colorScheme == .light ? 0.94 : 0.6), .clear], startPoint: .top, endPoint: .bottom).frame(height: portrait ? 190 : 130)
+            LinearGradient(colors: [BrakeTheme.cameraScrim.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom).frame(height: portrait ? 190 : 130)
             Spacer(minLength: 0)
-            LinearGradient(colors: [.clear, BrakeTheme.cameraScrim.opacity(colorScheme == .light ? 0.96 : 0.7)], startPoint: .top, endPoint: .bottom).frame(height: portrait ? 260 : 150)
+            LinearGradient(colors: [.clear, BrakeTheme.cameraScrim.opacity(0.7)], startPoint: .top, endPoint: .bottom).frame(height: portrait ? 260 : 150)
         }
     }
 
@@ -603,6 +604,7 @@ struct ContentView: View {
             BrakeLogo(size: size)
             statusPill
         }
+        .modifier(CameraPlate(shape: AnyShape(Capsule()), padding: EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 4)))
         .fixedSize()
     }
 
@@ -649,10 +651,12 @@ struct ContentView: View {
                 Text("GPS GAP · ESTIMATED").font(.brake(size: 9, weight: .semibold)).foregroundStyle(BrakeTheme.warning)
             }
         }
+        .modifier(CameraPlate())
         .shadow(color: colorScheme == .dark ? .black.opacity(0.5) : .clear, radius: 6)
     }
 
-    /// Numbers float on the video like a head-up display; the bottom scrim and a shadow keep them readable.
+    /// Numbers float on the video like a head-up display; in dark mode the bottom scrim and a shadow keep them
+    /// readable, in light mode a plate does.
     /// Feet and mph when the speed unit is mph, metres and km/h otherwise.
     private func carAheadNumbers(compact: Bool) -> some View {
         let risk = model.risk
@@ -681,6 +685,7 @@ struct ContentView: View {
                             ? "Not closing" : model.collisionBlocker)
             }
         }
+        .modifier(CameraPlate())
         .shadow(color: colorScheme == .dark ? .black.opacity(0.9) : .clear, radius: 8, y: 1)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Car ahead, estimated")
@@ -712,6 +717,22 @@ struct ContentView: View {
         }
         .padding(12)
         .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// Light mode has no scrim over the camera, so readouts that would float on the video sit on a plate, the same
+/// surface the risk and status pills use. Dark mode leaves them floating over its scrim.
+private struct CameraPlate: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    var shape = AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    var padding = EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if colorScheme == .light {
+            content.padding(padding).background(BrakeTheme.cameraSurface, in: shape)
+        } else {
+            content
+        }
     }
 }
 
