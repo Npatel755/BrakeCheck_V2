@@ -140,6 +140,11 @@ struct PremiumOffer: Identifiable {
         #if SCREENSHOTS
         if ProcessInfo.processInfo.arguments.contains("-screenshotPremiumActive") { active = .annual }
         #endif
+        #if ROADTEST
+        // Road-test builds (ios-roadtest-ipa.yml, sideloaded for the Go alert road trials) unlock
+        // Premium without a purchase. App Store and TestFlight builds never set ROADTEST.
+        active = .annual
+        #endif
         activePlan = active
         isSubscribed = active != nil
     }

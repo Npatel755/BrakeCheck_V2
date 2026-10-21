@@ -28,6 +28,11 @@ struct PremiumView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                #if ROADTEST
+                Text("Road-test build: Premium is unlocked for testing. This is not an App Store build.")
+                    .font(.brake(.caption, weight: .semibold))
+                    .foregroundStyle(BrakeTheme.warning)
+                #endif
                 if store.isSubscribed {
                     activeSection
                 } else {
@@ -48,6 +53,10 @@ struct PremiumView: View {
         .accessibilityIdentifier("premiumPreview")
         .safeAreaInset(edge: .top) {
             if let onClose { closeBar(onClose) }
+        }
+        // The buy button stays on screen from the first view; the full terms sit under the plans.
+        .safeAreaInset(edge: .bottom) {
+            if !store.isSubscribed, store.offers[selected] != nil { stickyPurchase }
         }
         .task { await store.load() }
     }
@@ -90,14 +99,19 @@ struct PremiumView: View {
     }
 
     private var benefits: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             benefit("car.side.arrowtriangle.up.arrowtriangle.down", "Go alerts",
                     "A heads-up when the car ahead pulls away or your light turns green.")
+            Divider().overlay(BrakeTheme.text.opacity(0.06))
             benefit("chart.xyaxis.line", "Every trip, with trends",
                     "All your drives, not just the last 7 days, plus your weekly hard-brake trend.")
+            Divider().overlay(BrakeTheme.text.opacity(0.06))
             benefit("rectangle.compress.vertical", "Display options",
                     "A compact turn banner that shows more of the road.")
         }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var alwaysFree: some View {
@@ -140,7 +154,6 @@ struct PremiumView: View {
             if selected == .annual, let annual = store.offers[.annual], let days = annual.trialDays {
                 trialTimeline(annual, days: days)
             }
-            purchaseButton
             Text(terms)
                 .font(.brake(.caption))
                 .foregroundStyle(BrakeTheme.muted)
@@ -337,6 +350,34 @@ struct PremiumView: View {
         .accessibilityIdentifier("paywall.purchase")
     }
 
+    private var stickyPurchase: some View {
+        VStack(spacing: 10) {
+            Text(shortTerms)
+                .font(.brake(.caption, weight: .semibold))
+                .foregroundStyle(BrakeTheme.muted)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            purchaseButton
+        }
+        .frame(maxWidth: 560)
+        .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+        .background(BrakeTheme.background)
+        .overlay(alignment: .top) { Divider().overlay(BrakeTheme.text.opacity(0.08)) }
+    }
+
+    /// One line under the button's price: what happens and when. The full terms are in the list above.
+    private var shortTerms: String {
+        guard let offer = store.offers[selected] else { return "" }
+        switch offer.plan {
+        case .annual:
+            if let days = offer.trialDays { return "\(days) days free, then \(offer.displayPrice)/year. Cancel anytime." }
+            return "\(offer.displayPrice) per year. Renews automatically."
+        case .monthly: return "\(offer.displayPrice) per month. Renews automatically."
+        case .lifetime: return "\(offer.displayPrice) once. No subscription."
+        }
+    }
+
     private var buttonTitle: String {
         guard let offer = store.offers[selected] else { return "Continue" }
         switch offer.plan {
@@ -382,9 +423,7 @@ struct PremiumView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func closeBar(_ close: @escaping () -> Void) -> some View {

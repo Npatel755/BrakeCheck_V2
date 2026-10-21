@@ -100,6 +100,8 @@ final class ScreenTour: XCTestCase {
         // The simulated car ahead brakes about 7 s in; the warning follows.
         pause(9)
         snap("00b-practice-drive")
+        pause(2)
+        snap("00b2-practice-warning")
         let paywall = app.descendants(matching: .any).matching(identifier: "premiumPreview").firstMatch
         guard paywall.waitForExistence(timeout: 20) else {
             snap("00c-no-paywall")
@@ -112,6 +114,11 @@ final class ScreenTour: XCTestCase {
             if plan.waitForExistence(timeout: 3) {
                 plan.tap()
                 pause(1)
+                // Bring the selected plan into view above the pinned buy button.
+                if key == "plan.monthly" {
+                    app.swipeUp()
+                    pause(1)
+                }
                 snap(shot)
             }
         }
