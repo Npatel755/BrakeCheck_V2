@@ -21,6 +21,7 @@ final class ScreenTour: XCTestCase {
             notice.tap()
             pause(2)
         }
+        walkOnboardingPaywall(app)
         snap("01-home")
 
         openPage(app, "Navigate")
@@ -84,6 +85,48 @@ final class ScreenTour: XCTestCase {
             settings.tap()
             pause(2)
             snap("12-settings")
+        }
+    }
+
+    /// Onboarding after the notice: the practice drive offer, the simulated drive, then the
+    /// Premium paywall with each plan selected. Screenshot builds show the planned US prices,
+    /// because the Simulator has no App Store products. Ends back on Home.
+    @MainActor
+    private func walkOnboardingPaywall(_ app: XCUIApplication) {
+        let start = element(app.buttons, ["practice.start", "Start practice drive"])
+        guard start.waitForExistence(timeout: 5) else { return }
+        snap("00a-practice-offer")
+        start.tap()
+        // The simulated car ahead brakes about 7 s in; the warning follows.
+        pause(9)
+        snap("00b-practice-drive")
+        let paywall = app.descendants(matching: .any).matching(identifier: "premiumPreview").firstMatch
+        guard paywall.waitForExistence(timeout: 20) else {
+            snap("00c-no-paywall")
+            return
+        }
+        pause(2)
+        snap("00c-paywall-yearly")
+        for (key, shot) in [("plan.monthly", "00d-paywall-monthly"), ("plan.lifetime", "00e-paywall-lifetime")] {
+            let plan = element(app.buttons, [key])
+            if plan.waitForExistence(timeout: 3) {
+                plan.tap()
+                pause(1)
+                snap(shot)
+            }
+        }
+        let yearly = element(app.buttons, ["plan.annual"])
+        if yearly.exists {
+            yearly.tap()
+            pause(1)
+        }
+        app.swipeUp()
+        pause(1)
+        snap("00f-paywall-bottom")
+        let notNow = element(app.buttons, ["paywall.notNow", "Not now"])
+        if notNow.waitForExistence(timeout: 3) {
+            notNow.tap()
+            pause(2)
         }
     }
 

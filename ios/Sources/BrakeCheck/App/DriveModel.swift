@@ -431,7 +431,7 @@ final class DriveModel: ObservableObject {
             // Perception guides are optional diagnostics. Safety and AR use
             // the tracker's lane directly, so hidden guides need no UI work.
             guard UserDefaults.standard.bool(forKey: "display.laneGuides")
-                || DrivingAssistFeature.allCases.contains(where: { UserDefaults.standard.bool(forKey: $0.preferenceKey) }) else { return }
+                || DrivingAssistFeature.offered.contains(where: { UserDefaults.standard.bool(forKey: $0.preferenceKey) }) else { return }
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo else { return }
                 guard !self.changingCameraGeometry,

@@ -64,9 +64,9 @@ struct TripDetailView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "sparkles")
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Interested in BrakeSense Premium?")
+                                Text("Route distance and average speed")
                                     .font(.brake(.subheadline, weight: .bold))
-                                Text("See extra route insights and the monthly plan")
+                                Text("Part of BrakeSense Premium, with Go alerts and weekly trends")
                                     .font(.brake(.caption))
                             }
                             Spacer(minLength: 0)

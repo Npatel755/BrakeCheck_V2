@@ -39,9 +39,12 @@ public enum DrivingAssistFeature: String, CaseIterable, Identifiable, Codable {
         case .greenLight: return "Signal changed — check the road"
         }
     }
+    /// The alerts BrakeSense offers. Lane Departure and Cut-In are left out of v1 (no validated
+    /// lane model), so they can't be switched on even if an old preference says so.
+    public static let offered: [Self] = [.trafficStart, .greenLight]
     public static func enabled(in defaults: UserDefaults, premium: Bool) -> Set<Self> {
         guard premium else { return [] }
-        return Set(allCases.filter { defaults.bool(forKey: $0.preferenceKey) })
+        return Set(offered.filter { defaults.bool(forKey: $0.preferenceKey) })
     }
 }
 

@@ -59,6 +59,12 @@ struct ContentView: View {
     @State private var showFirstTripPremium = false
     @State private var completedTripID: UUID?
     @AppStorage("review.firstTripPrompted") private var firstTripPrompted = false
+    /// Onboarding: the driver-aid notice (BrakeCheckApp), then one practice drive offer, then Premium.
+    @AppStorage("onboarding.driverAidNotice") private var acceptedNotice = 0
+    @AppStorage("onboarding.practiceDriveOffered") private var practiceDriveOffered = false
+    @State private var showPracticePrompt = false
+    @State private var practiceStartedAt: Date?
+    @State private var showOnboardingPremium = false
 
     init(model: DriveModel) {
         self.model = model
@@ -185,7 +191,7 @@ struct ContentView: View {
     }
 
     private var drivingPages: some View {
-        observingKeyboard(arSynced(observingNavigation(observingCamera(observingCheckin(presentedPages)))))
+        observingOnboarding(observingKeyboard(arSynced(observingNavigation(observingCamera(observingCheckin(presentedPages))))))
         .overlay {
             if showCameraSetup {
                 CameraCalibrationOverlay(model: model, presentation: model.arPresentation, cameraAR: $cameraAR,
@@ -194,6 +200,60 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: showCameraSetup)
+    }
+
+    /// After the notice: offer the practice drive once, and follow a watched one with Premium.
+    private func observingOnboarding<Content: View>(_ content: Content) -> some View {
+        content
+        .onAppear { offerPracticeDriveIfDue() }
+        .onChange(of: acceptedNotice) { _, _ in offerPracticeDriveIfDue() }
+        .sheet(isPresented: $showPracticePrompt) {
+            PracticeDrivePrompt(start: startPracticeDrive, skip: { showPracticePrompt = false })
+                .presentationDetents([.medium, .large])
+        }
+        .fullScreenCover(isPresented: $showOnboardingPremium) {
+            PremiumView(context: .onboarding, onClose: { showOnboardingPremium = false })
+        }
+        .task(id: practiceStartedAt) {
+            guard practiceStartedAt != nil else { return }
+            try? await Task.sleep(for: .seconds(16))
+            if practiceStartedAt != nil { finishPracticeDrive() }
+        }
+    }
+
+    private func offerPracticeDriveIfDue() {
+        guard acceptedNotice >= 1, !practiceDriveOffered, !model.tripActive, !model.replaying, !model.demo else { return }
+        practiceDriveOffered = true
+        Task { @MainActor in
+            // Let the notice finish closing before the sheet opens.
+            try? await Task.sleep(for: .milliseconds(600))
+            showPracticePrompt = true
+        }
+    }
+
+    private func startPracticeDrive() {
+        showPracticePrompt = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !model.tripActive, !model.replaying else { return }
+            // Demo mode moves to the camera page by itself (observingNavigation).
+            model.setDemo(true)
+            practiceStartedAt = Date()
+        }
+    }
+
+    /// The simulated car ahead brakes about 7 s in and the warning follows, so Premium is offered
+    /// only after a drive that ran long enough to show it.
+    private func finishPracticeDrive() {
+        guard let started = practiceStartedAt else { return }
+        practiceStartedAt = nil
+        model.setDemo(false)
+        page = .home
+        guard Date().timeIntervalSince(started) >= 12, !premiumStore.isSubscribed else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            showOnboardingPremium = true
+        }
     }
 
     private func observingKeyboard<Content: View>(_ content: Content) -> some View {
@@ -299,6 +359,11 @@ struct ContentView: View {
             if portrait { portraitHUD } else { landscapeHUD }
             if developerOverlays && cameraAR && model.cameraReady && !model.replaying && !model.demo && !selecting {
                 CameraRoadMaskStatus(presentation: model.arPresentation, portrait: portrait)
+            }
+            if practiceStartedAt != nil {
+                PracticeDriveBanner(end: finishPracticeDrive)
+                    .frame(maxWidth: 420)
+                    .offset(y: portrait ? 70 : 50)
             }
         }
         .clipShape(SideClip())
