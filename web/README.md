@@ -24,15 +24,31 @@ Then open http://localhost:8000.
 ## Before going live
 
 1. **Domain.** Every absolute URL uses `https://brakesense.app` (canonical tags, Open Graph, sitemap, robots, llms.txt, JSON-LD). If you pick another domain, find and replace it across `web/`.
-2. **Support email.** The site uses `support@brakesense.app`. Set up forwarding to a real inbox first (Cloudflare Email Routing is free), or replace the address everywhere.
-3. **Waitlist.** Set `<meta name="waitlist-endpoint">` in `index.html`:
+2. **Support email.** The site uses `support@brakesense.app`. Forward it to the BrakeSense Gmail with Cloudflare Email Routing (the privacy policy says Cloudflare forwards it and Google stores it), or replace the address everywhere.
+3. **Waitlist.** Netlify Forms don't work on Cloudflare Pages. The privacy policy assumes the waitlist lives in the Cloudflare account (a Pages Function writing to D1 or KV). If you use a form service instead, change the waitlist row and bullet in `privacy.html`. Then set `<meta name="waitlist-endpoint">` in `index.html` to:
    - `netlify` when hosted on Netlify (the forms already carry `data-netlify`; turn on form detection in the site settings, then redeploy), or
-   - a form service URL (Formspree, Basin...). Then add that origin to `connect-src` and `form-action` in `_headers`.
+   - the form's URL. If it's on another origin, add that origin to `connect-src` and `form-action` in `_headers`.
    While it's empty, the form says signups aren't connected instead of pretending to work.
-4. **Backend facts in the privacy policy** (Nick): the messaging provider (the policy names Photon), deleting check-in records after 30 days, HTTPS-only in production, and whether optional ElevenLabs voice alerts ship in v1. Update the policy if any differ.
-5. **Features shown.** The home page describes the crash check-in with emergency contacts and the four Premium alerts. If either isn't in the first release, remove it from `index.html`, `press.html` and `llms.txt`.
-6. **Legal review.** The privacy policy and terms are plain-English drafts written from the app's code, not legal advice. Have someone qualified read them.
+4. **Backend facts in the privacy policy** (Nick). `privacy.html` describes today's single-driver backend (`backend/`, `photon-agent/`). Check that the production backend matches it:
+   - The app sends nothing to the server until a contact is added.
+   - **Check-in records are deleted after 30 days.** The policy promises this, and the current code keeps them forever.
+   - The host and its region. The policy says "our cloud host" and "in the US". Name it once it's picked.
+   - The name contacts see in messages comes from the app. Today it's `DRIVER_NAME` on the server.
+   - **Trip summaries.** After every trip the app posts minutes, top speed, hard brakes and close calls, and any confirmed contact can text "drive" to get them. Keep it, make it a setting, or drop it. If it goes, delete "After each trip" and its table row in `privacy.html`, and the summary mentions in `index.html` and `llms.txt`.
+   - Whether the optional ElevenLabs voice ships in v1.
+   - The production server accepts HTTPS only.
+   - Photon's terms protect data at least as well as the policy. App Review guideline 5.1.1(i) asks for this.
+5. **Features shown.** The Premium list on the home page and in `llms.txt` matches the October 21 decision (Go alerts, full trip history with weekly trends, compact turn banner; Lane Departure and Cut-In aren't in v1). Keep `index.html`, `press.html`, `llms.txt` and `terms.html` in step with the app.
+6. **Legal review.** The privacy policy and terms are plain-English drafts written from the app's code, not legal advice. Questions for the reviewer:
+   - Governing law and venue, left out of the terms until someone qualified picks them.
+   - Whether to add an arbitration clause.
+   - The liability cap in terms section 10 (the greater of 12 months of Premium or $50).
+   - The Lifetime wording in terms section 5.
+   - Whether the check-in's "Send help" answer counts as health data under Washington's My Health My Data Act, which applies at any size.
 7. **Screenshots** come from the Simulator screen tour (`.github/workflows/ios-screens.yml`). Re-shoot them when the UI changes.
+8. **Links in the app** (before the first App Review submission, not after). Set `LegalLinks.privacyPolicy` to `https://brakesense.app/privacy.html`, and point `LegalLinks.termsOfUse` at `https://brakesense.app/terms.html`, because today it opens Apple's EULA, which leaves out our terms. Guideline 3.1.2 needs both links in the app. The App Store description needs the Terms link too, plus Apple's Standard EULA.
+9. **App Privacy answers** in App Store Connect must match `privacy.html`. With emergency contacts on, that's Contacts (contact names and numbers), Name (the name in messages), Precise Location (check-ins), User ID (the phone's key) and Other Data (trip summaries), all for App Functionality, linked to the user and not used for tracking. Check each against Apple's definitions. `PrivacyInfo.xcprivacy` declares no collected data, so update it to match.
+10. **The launch email** to the waitlist needs an unsubscribe link and a postal address (CAN-SPAM). A PO box works.
 
 ## Deploy
 
@@ -46,7 +62,6 @@ Pick one; all are free for a site this size.
 
 - Swap the waitlist forms for Apple's "Download on the App Store" badge (follow Apple's badge guidelines).
 - Add the Smart App Banner: `<meta name="apple-itunes-app" content="app-id=YOUR_APP_ID">`.
-- Set `LegalLinks.privacyPolicy` in the app to the live privacy URL.
 
 ## The drive at the top of the page
 
