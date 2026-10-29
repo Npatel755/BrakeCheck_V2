@@ -7,7 +7,7 @@ name: iOS screens
 
 on:
   push:
-    branches: ['claude/**', 'main_v3', 'navigation_included']
+    branches: ['main', 'claude/**', 'main_v3', 'navigation_included']
   workflow_dispatch:
 
 jobs:

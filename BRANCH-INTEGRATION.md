@@ -1,7 +1,7 @@
 # Branch integration — 29 October 2026
 
 Reviewed every local branch and every fetched `origin` branch. Integrated the
-compatible improvements into `navigation_included`, preserving the existing
+compatible improvements into `main` (build N72), preserving the existing
 local backend, recording, replay and navigation work. Other working checkouts
 were read and snapshotted without modifying their files or indexes.
 
@@ -44,7 +44,7 @@ were read and snapshotted without modifying their files or indexes.
 - Combined deployment exclusions for durable crash state, pairing/contact data,
   Photon state and local artifacts. The staging test checks original files are
   preserved and these files never enter the upload copy.
-- Enabled build/screenshot/road-test CI on `navigation_included`. Kept source
+- Enabled build/screenshot CI on `main` and retained the existing branch workflows. Kept source
   line endings portable and included packaged model weights in source inventory.
 
 ## Validation
@@ -75,8 +75,9 @@ The upstream branch union is retained in commit `c1a0e21`. The complete resolved
 result, including both sets of pre-existing local work, is also retained on
 `integration/all-improvements-20261029-185405`.
 
-The active branch retains the integrated local work as uncommitted changes for
-review. No remote branch was pushed. Safety snapshots:
+The complete source result is now committed on the active `main` branch.
+Unrelated local training/review data and tools remain outside this source commit.
+No remote branch was pushed. Safety snapshots:
 
 - Original working-folder source state:
   `safety/branch-integration-20261029-185405` (`29da71f`).
@@ -85,3 +86,7 @@ review. No remote branch was pushed. Safety snapshots:
 
 Existing training/review data, local tools, reports, credentials and unrelated
 untracked files were preserved. The performance checkout remains untouched.
+
+The release IPA for this integration is version 0.4.0, build 72 (N72).
+Its build and package verification receipt is saved under
+`test-results/main-n72-20261029/`.
