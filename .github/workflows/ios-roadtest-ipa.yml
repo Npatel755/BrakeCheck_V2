@@ -1,0 +1,70 @@
+# Road-test build: an unsigned Release .ipa with Premium unlocked (the ROADTEST flag), so the
+# Go alerts can be trialed on a real drive before the App Store products exist. Install it with
+# Sideloadly, which signs it with your own Apple ID (a free ID re-signs every 7 days).
+# Never upload this build to App Store Connect. Runs on Claude branches, or manually.
+# Download without a login: nightly.link/Npatel755/BrakeCheck_V2/workflows/ios-roadtest-ipa/<branch>/BrakeSense-roadtest-ipa.zip
+name: iOS road-test build
+
+on:
+  push:
+    branches: ['claude/**']
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate the Xcode app project
+        run: |
+          brew install xcodegen
+          bash scripts/generate_app_project.sh
+
+      - name: Build (Release, unsigned, Premium unlocked)
+        run: |
+          set +e
+          xcodebuild -project AppTarget/BrakeCheckApp.xcodeproj -scheme BrakeCheckApp \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build/dd -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) ROADTEST' build > ipa-build.log 2>&1
+          status=$?
+          grep -E "^/.*: error: " ipa-build.log | sed "s|$GITHUB_WORKSPACE/||" | sort -u | head -50 | while IFS= read -r line; do
+            file=$(echo "$line" | cut -d: -f1); lineno=$(echo "$line" | cut -d: -f2)
+            msg=$(echo "$line" | cut -d: -f4- | sed 's/^ error: //')
+            echo "::error file=$file,line=$lineno::$msg"
+          done
+          grep -E "error:" ipa-build.log | grep -vE "^/.*: error: " | sort -u | head -20 | while IFS= read -r line; do echo "::error title=xcodebuild::$line"; done
+          [ $status -ne 0 ] && tail -30 ipa-build.log | while IFS= read -r line; do echo "::notice title=ipa-build.log tail::$line"; done
+          exit $status
+
+      - name: Package the .ipa
+        run: |
+          app=build/dd/Build/Products/Release-iphoneos/BrakeCheck.app
+          test -d "$app"
+          mkdir -p ipa/Payload
+          cp -R "$app" ipa/Payload/
+          (cd ipa && zip -qry ../BrakeSense-roadtest.ipa Payload)
+          version=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$app/Info.plist")
+          build=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$app/Info.plist")
+          echo "::notice title=BrakeSense-roadtest.ipa::version $version ($build), $(du -h BrakeSense-roadtest.ipa | cut -f1), commit ${GITHUB_SHA::7}, Premium unlocked"
+
+      - name: Upload the .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrakeSense-roadtest-ipa
+          path: ios/BrakeSense-roadtest.ipa
+          retention-days: 30
+
+      - name: Upload the build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipa-build-log
+          path: ios/ipa-build.log

@@ -44,12 +44,15 @@ jobs:
           xcrun simctl privacy "$udid" grant location "$BUNDLE_ID" || true
           xcrun simctl privacy "$udid" grant camera "$BUNDLE_ID" || true
 
+      # SCREENSHOTS only lets the paywall show the planned prices when no App Store products load
+      # (the Simulator has none). App Store, TestFlight and IPA builds never set it.
       - name: Build for testing (Release, what users get)
         run: |
           set +e
           xcodebuild build-for-testing -project AppTarget/BrakeCheckApp.xcodeproj -scheme BrakeCheckApp \
             -configuration Release -destination "id=$SIM" -derivedDataPath build/dd \
-            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO > screens-build.log 2>&1
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO \
+            'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) SCREENSHOTS' > screens-build.log 2>&1
           status=$?
           grep -E "^/.*: error: " screens-build.log | sed "s|$GITHUB_WORKSPACE/||" | sort -u | head -50 | while IFS= read -r line; do
             file=$(echo "$line" | cut -d: -f1); lineno=$(echo "$line" | cut -d: -f2)

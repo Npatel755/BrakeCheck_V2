@@ -4,18 +4,16 @@ import SwiftUI
 struct DrivingAssistControls: View {
     @ObservedObject private var premium = PremiumStore.shared
     @AppStorage("premium.drivingAssist.trafficStart") private var trafficStart = false
-    @AppStorage("premium.drivingAssist.laneDeparture") private var laneDeparture = false
-    @AppStorage("premium.drivingAssist.cutIn") private var cutIn = false
     @AppStorage("premium.drivingAssist.greenLight") private var greenLight = false
     var offerUpgrade = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Label("Premium driving alerts", systemImage: "sparkles")
+            Label("Go alerts", systemImage: "sparkles")
                 .font(.brake(.headline))
-            Text("Optional camera-based previews. All alerts start off, including after subscribing. Enable each one while parked.")
+            Text("Optional camera-based reminders while you're stopped. Each one starts off, including after you subscribe. Turn them on while parked.")
                 .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
-            ForEach(DrivingAssistFeature.allCases) { feature in
+            ForEach(DrivingAssistFeature.offered) { feature in
                 Toggle(isOn: binding(feature)) {
                     VStack(alignment: .leading, spacing: 4) {
                         Label(feature.title, systemImage: feature.icon)
@@ -25,7 +23,7 @@ struct DrivingAssistControls: View {
                 }
                 .disabled(!premium.isSubscribed)
                 .accessibilityIdentifier(feature.preferenceKey)
-                .accessibilityHint(premium.isSubscribed ? "Optional driving alert" : "Requires an active Premium subscription")
+                .accessibilityHint(premium.isSubscribed ? "Optional driving alert" : "Requires BrakeSense Premium")
             }
             if !premium.isSubscribed {
                 Label("Premium required · alerts are off", systemImage: "lock.fill")
@@ -34,7 +32,7 @@ struct DrivingAssistControls: View {
                     NavigationLink("View Premium") { PremiumView() }
                 }
             }
-            Text("These previews can miss events or give false reminders. Lane Departure cannot identify intentional lane changes. Green-light reminders only support a single clear vertical signal and cannot distinguish arrows; confirm the signal applies to your lane and check the road yourself.")
+            Text("These reminders can miss a change or fire when nothing changed. Green Light only reads a single, clear vertical signal and can't tell arrows apart. Check that the signal is yours and look at the road before you move.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         }
     }
@@ -43,9 +41,9 @@ struct DrivingAssistControls: View {
         let stored: Binding<Bool>
         switch feature {
         case .trafficStart: stored = $trafficStart
-        case .laneDeparture: stored = $laneDeparture
-        case .cutIn: stored = $cutIn
         case .greenLight: stored = $greenLight
+        // Not offered in v1 (DrivingAssistFeature.offered); nothing can switch them on.
+        case .laneDeparture, .cutIn: return .constant(false)
         }
         return Binding(get: { premium.isSubscribed && stored.wrappedValue }, set: { value in
             guard premium.isSubscribed else { return }

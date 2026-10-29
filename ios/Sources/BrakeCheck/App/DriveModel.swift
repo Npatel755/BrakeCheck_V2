@@ -75,6 +75,8 @@ final class DriveModel: ObservableObject {
     private var foreground = true
 
     private var demoStarted: TimeInterval = 0
+    /// The onboarding practice drive: a harder stop ahead, so the full Brake warning plays.
+    private var demoHardBrake = false
 
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
@@ -431,7 +433,7 @@ final class DriveModel: ObservableObject {
             // Perception guides are optional diagnostics. Safety and AR use
             // the tracker's lane directly, so hidden guides need no UI work.
             guard UserDefaults.standard.bool(forKey: "display.laneGuides")
-                || DrivingAssistFeature.allCases.contains(where: { UserDefaults.standard.bool(forKey: $0.preferenceKey) }) else { return }
+                || DrivingAssistFeature.offered.contains(where: { UserDefaults.standard.bool(forKey: $0.preferenceKey) }) else { return }
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo else { return }
                 guard !self.changingCameraGeometry,
@@ -866,13 +868,14 @@ final class DriveModel: ObservableObject {
     func deleteIncident(_ id: UUID) { camera.deleteIncident(id) }
     func applyRecordingPreferences() { camera.applyRecordingPreferences() }
 
-    func setDemo(_ enabled: Bool) {
+    func setDemo(_ enabled: Bool, hardBrake: Bool = false) {
 
         guard !tripActive, !stopping, !replaying else { return }
 
         navigation.setLiveModeAllowed(!enabled)
 
         demo = enabled
+        demoHardBrake = enabled && hardBrake
         gpsSpeedEstimated = false
         gpsEstimateLeadEligible = false
         estimatedLeadSpeed = nil
@@ -1176,6 +1179,25 @@ final class DriveModel: ObservableObject {
 
             let t = (now - demoStarted).truncatingRemainder(dividingBy: 20)
 
+            if demoHardBrake {
+                // Practice drive: the car ahead brakes hard (6 m/s² for 2 s from 7 s), past the
+                // -5 m/s² line in RiskRules, so the Brake warning plays. The driver reacts 1.5 s
+                // later (3 m/s² for 4 s); both end at 13 m/s with a 35 m gap.
+                let leadBrake = max(0, min(2, t - 7))
+                let egoBrake = max(0, min(4, t - 8.5))
+                let leadLostTravel = 3 * leadBrake * leadBrake + 12 * max(0, t - 9)
+                let egoLostTravel = 1.5 * egoBrake * egoBrake + 12 * max(0, t - 12.5)
+                let ego = 25 - 3 * egoBrake
+                let lead = 25 - 6 * leadBrake
+                speed = ego
+                egoAcceleration = t >= 8.5 && t < 12.5 ? -3 : 0
+                risk = RiskRules.evaluate(distance: 65 - leadLostTravel + egoLostTravel,
+                                          egoSpeed: ego, rangeRate: lead - ego,
+                                          leadAcceleration: t >= 7 && t < 9 ? -6 : 0)
+                updateTripEvents()
+                return
+            }
+
             // Lead brakes at 7s; ego brakes at 9s. Both decelerate at 3 m/s² for 4s.
 
             let leadBrake = max(0, min(4, t - 7))
@@ -1352,10 +1374,13 @@ final class DriveModel: ObservableObject {
         let now = ProcessInfo.processInfo.systemUptime
         let fix = lane.flatMap { speedService.reading(at: $0.capturedAt) }
         let speed = fix.flatMap { $0.isConfidentlyMoving(at: now) && $0.accuracy <= 2 ? $0.metersPerSecond : nil }
-        let center = captureGeometry.horizontalFieldOfView.map { fov in
-            0.5 + tan(navigationMountCalibration.yawDegrees * .pi / 180)
-                / (2 * tan(fov * .pi / 360))
-        } ?? .nan
+        // Typed steps: as one closure of untyped literals, Xcode's type checker timed out here.
+        var center = Double.nan
+        if let fov = captureGeometry.horizontalFieldOfView {
+            let yawRadians: Double = navigationMountCalibration.yawDegrees * Double.pi / 180
+            let halfFieldRadians: Double = fov * Double.pi / 360
+            center = 0.5 + tan(yawRadians) / (2 * tan(halfFieldRadians))
+        }
         // Planned turns and route rejoining can intentionally cross lane paint.
         let maneuver = navigation.isNavigating && ((navigation.maneuverDistance ?? .infinity) < 100
             || navigation.isRejoiningRoute)
