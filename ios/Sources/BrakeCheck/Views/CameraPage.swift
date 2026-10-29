@@ -52,6 +52,16 @@ struct CameraPage: View {
             if showsPlaceholder { placeholder }
             if colorScheme == .dark { scrims(portrait: portrait).ignoresSafeArea().allowsHitTesting(false) }
             if portrait { portraitHUD } else { landscapeHUD }
+            if cameraVisible && navigation.isNavigating && !critical && !selecting {
+                VStack {
+                    Spacer()
+                    NavigationCameraGuidanceView(navigation: navigation, useMPH: useMPH, showsInstruction: false)
+                        .padding(.horizontal, portrait ? 14 : 24)
+                        .padding(.bottom, portrait ? 100 : 64)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .allowsHitTesting(false)
+            }
             if developerOverlays && cameraAR && model.cameraReady && !model.replaying && !model.demo && !selecting {
                 CameraRoadMaskStatus(presentation: model.arPresentation, portrait: portrait)
             }
@@ -122,6 +132,12 @@ struct CameraPage: View {
                     .font(.brake(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accentText.opacity(0.7))
                 Text(text.title)
                     .font(.brake(size: 22, weight: .semibold))
+                if model.tripActive && !model.demo {
+                    Button { model.retryCamera() } label: {
+                        Label("Retry camera", systemImage: "arrow.clockwise").frame(minHeight: 44)
+                    }
+                    .disabled(model.stopping)
+                }
                 Text(text.detail)
                     .font(.brake(size: 13)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
             }

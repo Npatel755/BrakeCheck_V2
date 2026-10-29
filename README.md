@@ -81,7 +81,7 @@ See `ios/VALIDATION.md` and the current numbered validation notes for build resu
 
 ## 4. Pair the iPhone
 
-For a public HTTPS service, use the [Koyeb deployment guide](cloud/README.md) first, then run the same pairing utility with `--backend-url https://<your-koyeb-domain>`.
+For a public HTTPS service, use the [Railway deployment guide](README-RAILWAY.md) first, then run the same pairing utility with `--backend-url https://<your-railway-domain>`.
 
 1. After updating an existing checkout, install the new backend packages once from `BrakeCheck\backend`:
 
@@ -101,9 +101,9 @@ For a public HTTPS service, use the [Koyeb deployment guide](cloud/README.md) fi
 4. When BrakeCheck shows it is connected, return to PowerShell and press Enter to delete the temporary QR image. Future launches reconnect automatically. A LAN backend can be rediscovered through Bonjour if its computer's IP changes; a Koyeb backend reconnects over HTTPS. You can test the saved connection in Settings.
 5. In **Settings → Voice**, tap **Allow spoken check-in replies** if you want to use speech. iOS may request Microphone and Speech Recognition permission. On-device recognition also depends on the iPhone and selected language; the on-screen buttons work without it. If you enabled optional ElevenLabs brake alerts, tap **Prepare ElevenLabs brake alert** while connected. Device voice works without preparation.
 
-The QR contains a short-lived pairing code, not the permanent backend key. The pairing utility uses the backend admin key; the iPhone stores its own device token, and the server stores only a hash of that token. For a local server this is `backend/paired_devices.json`; on Koyeb it is `/data/paired_devices.json`. Revoke a paired phone through the authenticated `/pairing/devices/{device_id}` admin endpoint.
+The QR contains a short-lived pairing code, not the permanent backend key. The pairing utility uses the backend admin key; the iPhone stores its own device token, and the server stores only a hash of that token. For a local server this is `backend/paired_devices.json`; on Railway it is `/data/paired_devices.json`. Revoke a paired phone through the authenticated `/pairing/devices/{device_id}` admin endpoint.
 
-Windows Firewall may ask to allow Python on private networks; allow it for the network you trust. Campus Wi-Fi may isolate devices or block Bonjour. If pairing cannot discover a LAN backend, try a private hotspot or use **Advanced · manual connection** in Settings. Use the Koyeb guide for an internet-hosted HTTPS backend; do not expose the local development server directly to the public internet.
+Windows Firewall may ask to allow Python on private networks; allow it for the network you trust. Campus Wi-Fi may isolate devices or block Bonjour. If pairing cannot discover a LAN backend, try a private hotspot or use **Advanced · manual connection** in Settings. Use the Railway guide for an internet-hosted HTTPS backend; do not expose the local development server directly to the public internet.
 
 ## 5. Add and confirm a contact
 

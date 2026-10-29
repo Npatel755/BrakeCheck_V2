@@ -1,5 +1,16 @@
 .git
 .github
+ios/
+BrakeCheck_Dataset/
+weights/
+yolo11n.pt
+test-results/
+reports/
+tools/
+.tmp/
+.worktrees/
+**/road-motion-backup-*
+**/ui-handoff-backup-*
 .venv
 **/.venv
 **/node_modules

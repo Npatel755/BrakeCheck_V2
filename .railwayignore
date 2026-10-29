@@ -1,5 +1,16 @@
 # Deploy the cloud service from the directory containing Dockerfile and railway.json.
 /ios/
+/BrakeCheck_Dataset/
+/weights/
+/yolo11n.pt
+/test-results/
+/reports/
+/tools/
+/.tmp/
+/.worktrees/
+/photon-backup-*/
+/road-motion-backup-*/
+/ui-handoff-backup-*/
 .git/
 .github/
 **/.venv/
@@ -17,6 +28,10 @@
 **/contacts.tmp
 **/paired_devices.json
 **/paired_devices.tmp
+**/photon-optouts.json
+**/photon-optouts.json.*.tmp
+**/photon-alerts.json
+**/photon-alerts.json.*.tmp
 **/voice_cache/
 **/voice_samples/
 **/*.ipa

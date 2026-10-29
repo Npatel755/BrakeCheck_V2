@@ -1,7 +1,7 @@
 # Commercial model candidates (evaluation branch)
 
-This branch stores the two published checkpoints selected for evaluation and
-packages a test iOS app using them. The converted models have **not passed live
+This folder stores the two published checkpoints selected for evaluation and
+the converted packages for an optional test iOS app. The converted models have **not passed live
 lane or AR validation**. The attached dataset plan is intentionally not
 implemented here.
 
@@ -34,7 +34,23 @@ implemented here.
 - Intel Open Model Zoo license: Apache-2.0. Preserve upstream notices and
   confirm rights for the exact checkpoint before release.
 
-The main working branch retains UFLD/SegFormer for testing. This branch's iOS
-target bundles only comma.ai and Intel camera weights. Neither model's license
+The standard app bundle retains UFLD/SegFormer for testing. `LaneTracker` also
+supports a candidate-only bundle with comma.ai and Intel camera weights.
+Neither model's license
 is a substitute for measured lane geometry, camera alignment or on-device
 testing.
+
+## Prepare a separate trial
+
+Run `python model_candidates/stage_candidate.py --output <new-folder>/LaneModelData`
+to copy complete candidate packages and generate their SHA-256 manifest. The
+output must be a new folder; the app's existing resources are preserved.
+In a separate trial checkout, replace `ios/Sources/BrakeCheck/Resources/LaneModelData`
+with that staged folder before building. The runtime selects the comma.ai decoder
+when `CommaLane.mlpackage` is bundled, and selects Intel for the matching road
+model. Keep the standard and candidate bundles separate.
+
+Use `python model_candidates/verify_candidate.py --resources <folder> --hashes-only`
+to verify resource bytes without Core ML tooling. Omit `--hashes-only` when
+`coremltools` is installed to check tensor contracts too; add `--ipa <file>` to
+check the packaged trial's assets and licenses. No model is activated by staging.

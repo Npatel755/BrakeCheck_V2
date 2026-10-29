@@ -37,6 +37,7 @@ final class DriveModel {
     var closeCalls = 0
     var maxSpeedMPH: Double = 0
     private var tripStarted = Date()
+    private var currentTripID = UUID()
     private var lastTripPublishedSecond = -1
     @ObservationIgnored private var brakeWarningLatch = BrakeWarningLatch()
     private(set) var brakeWarningActive = false
@@ -246,6 +247,8 @@ final class DriveModel {
 
     var recorderStatus = "Recorder stopped"
     var recordingStorageBytes: Int64?
+    var unindexedRecordings: [UnindexedRecording] = []
+    var recordingRecoveryWarnings: [String] = []
 
     var motionStatus = "Impact sensing off"
 
@@ -330,7 +333,7 @@ final class DriveModel {
 
             guard let self, self.tripActive, !self.demo, self.foreground else { return }
 
-            self.camera.markIncident(reason: String(format: "Experimental impact candidate, %.1f g", g))
+            self.camera.markIncident(reason: String(format: "Experimental impact candidate, %.1f g", g), tripID: self.currentTripID)
 
             if self.safety.settings.autoCheckin {
                 self.safety.beginCheckin(location: self.speedService.latestLocation,
@@ -374,6 +377,12 @@ final class DriveModel {
         camera.onRecordingStorage = { [weak self] bytes in
             DispatchQueue.main.async { self?.recordingStorageBytes = bytes }
         }
+        camera.onRecordingRecovery = { [weak self] clips, warnings in
+            DispatchQueue.main.async {
+                self?.unindexedRecordings = clips
+                self?.recordingRecoveryWarnings = warnings
+            }
+        }
 
         camera.onIncidents = { [weak self] events in
 
@@ -383,7 +392,9 @@ final class DriveModel {
 
         camera.onTrackingReset = { [weak self] reason in
 
-            DispatchQueue.main.async { self?.clearTarget(reason) }
+            // CameraService already invalidated inference on the capture queue.
+            // A second clear here can supersede its newly queued FOV configuration.
+            DispatchQueue.main.async { self?.clearTrackingDisplay(reason) }
 
         }
 
@@ -595,6 +606,7 @@ final class DriveModel {
         clearTarget("Starting trip · acquiring the lead")
         tripActive = true
         tripStarted = Date(); tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
+        currentTripID = UUID()
         lastTripPublishedSecond = -1
         tripHadGPSSpeed = false
         lastLoggedGPSUptime = nil
@@ -619,6 +631,11 @@ final class DriveModel {
         guard !stopping, !demo, !replaying, navigation.canStartGuidance else { return }
         navigation.startGuidance()
         if navigation.isNavigating && !tripActive { startTrip() }
+    }
+
+    func retryCamera() {
+        guard tripActive, foreground, !stopping, !demo, !replaying, !cameraReady else { return }
+        requestCameraIfNeeded()
     }
 
     private func requestCameraIfNeeded() {
@@ -659,7 +676,7 @@ final class DriveModel {
         let endedAt = Date()
         tripMinutes = max(0, endedAt.timeIntervalSince(tripStarted) / 60)
         do {
-            let trip = TripMetrics(startedAt: tripStarted, endedAt: endedAt,
+            let trip = TripMetrics(id: currentTripID, startedAt: tripStarted, endedAt: endedAt,
                 maxSpeedMPH: tripHadGPSSpeed ? maxSpeedMPH : nil,
                 estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls)
             savedTrips = try tripMetricsStore.save(trip)
@@ -860,7 +877,7 @@ final class DriveModel {
 
         guard tripActive, !demo else { return }
 
-        camera.markIncident(reason: "Manually marked incident")
+        camera.markIncident(reason: "Manually marked incident", tripID: currentTripID)
 
         message = "Available footage is being preserved. Keep BrakeSense visible to capture the next 15 minutes."
 

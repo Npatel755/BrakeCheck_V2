@@ -7,7 +7,7 @@ name: iOS road-test build
 
 on:
   push:
-    branches: ['claude/**']
+    branches: ['claude/**', 'main_v3', 'navigation_included']
   workflow_dispatch:
 
 jobs:

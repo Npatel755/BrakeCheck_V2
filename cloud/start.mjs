@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { supervise } from './supervisor.mjs';
 
 const port = process.env.PORT || '8000';
 process.env.PHOTON_AGENT_PORT ||= '8787';
@@ -19,38 +20,7 @@ const children = [
   }),
 ];
 
-let stopping = false;
-function stop(exitCode) {
-  if (stopping) return;
-  stopping = true;
-  const running = children.filter(child => child.exitCode === null);
-  if (running.length === 0) {
-    process.exitCode = exitCode;
-    return;
-  }
-  let remaining = running.length;
-  const forceStop = setTimeout(() => {
-    for (const child of running) child.kill('SIGKILL');
-  }, 8000);
-  forceStop.unref();
-  for (const child of running) {
-    child.once('exit', () => {
-      remaining -= 1;
-      if (remaining === 0) {
-        clearTimeout(forceStop);
-        process.exitCode = exitCode;
-      }
-    });
-    child.kill('SIGTERM');
-  }
-}
-
-for (const child of children) {
-  child.once('error', () => stop(1));
-  child.once('exit', code => {
-    if (!stopping) stop(code ?? 1);
-  });
-}
+const stop = supervise(children);
 
 process.once('SIGTERM', () => stop(0));
 process.once('SIGINT', () => stop(0));

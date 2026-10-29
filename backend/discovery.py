@@ -1,8 +1,8 @@
 """Advertise the local FastAPI service through Bonjour/mDNS."""
-import ipaddress
 import os
 import socket
 import logging
+from lan import is_private_ipv4
 
 log = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ def _local_ipv4() -> str:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.connect(('192.0.2.1', 9))
             address = sock.getsockname()[0]
-            if ipaddress.ip_address(address).is_private:
+            if is_private_ipv4(address):
                 return address
     except OSError:
         pass
@@ -22,8 +22,7 @@ def _local_ipv4() -> str:
     try:
         for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
             address = item[4][0]
-            parsed = ipaddress.ip_address(address)
-            if parsed.is_private and not parsed.is_loopback and not parsed.is_link_local:
+            if is_private_ipv4(address):
                 candidates.append(address)
     except OSError:
         pass

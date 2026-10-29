@@ -58,6 +58,17 @@ def start(client, **kwargs):
     return result.json()['crash_id']
 
 
+def settled_delivery(client, cid):
+    """Delivery runs on a worker; wait for its final API state, not scheduling luck."""
+    deadline = time.monotonic() + 3
+    while True:
+        result = client.get(f'/crash/{cid}').json()
+        if not result.get('delivery_pending'):
+            return result
+        assert time.monotonic() < deadline, result
+        time.sleep(0.01)
+
+
 def mock_delivery(monkeypatch, sent=1, error=None):
     calls = []
     def send(c):
@@ -157,6 +168,7 @@ def test_manual_help_and_retry_send_once(client, monkeypatch):
     cid = start(client)
     one = client.post(f'/crash/{cid}/respond', json={'status': 'help'}).json()
     two = client.post(f'/crash/{cid}/timeout').json()
+    one = settled_delivery(client, cid)
     assert one['alerted'] and one['sent'] == 1 and two['status'] == 'help'
     assert len(calls) == 1
 
@@ -165,7 +177,7 @@ def test_timer_fires_if_phone_disconnects(client, monkeypatch):
     calls = mock_delivery(monkeypatch)
     cid = start(client)
     crash.CRASHES[cid]['_timer'].callback()
-    assert client.get(f'/crash/{cid}').json()['alerted'] is True
+    assert settled_delivery(client, cid)['alerted'] is True
     assert len(calls) == 1
 
 
@@ -175,7 +187,7 @@ def test_concurrent_resolutions_send_once(client, monkeypatch):
     with ThreadPoolExecutor(max_workers=6) as pool:
         results = list(pool.map(lambda _: crash._resolve(crash.CRASHES[cid], 'help'), range(6)))
     assert len(calls) == 1 and all(x.get('delivery_pending') or x['sent'] == 1 for x in results)
-    assert client.get(f'/crash/{cid}').json()['sent'] == 1
+    assert settled_delivery(client, cid)['sent'] == 1
 
 
 @pytest.mark.parametrize('status', ['help', 'no_response'])
@@ -191,6 +203,7 @@ def test_zero_sent_is_not_alerted(client, monkeypatch):
     mock_delivery(monkeypatch, sent=0)
     cid = start(client)
     result = client.post(f'/crash/{cid}/timeout').json()
+    result = settled_delivery(client, cid)
     assert not result['alerted'] and result['alert_error']
     assert client.get(result['ack_audio_url']).content == b'MP3:failed_ack:en'
 
@@ -211,7 +224,9 @@ def test_agent_offline_reports_failure(client, monkeypatch):
 
 
 def test_no_confirmed_contacts_does_not_contact_agent(client):
-    result = client.post(f'/crash/{start(client)}/timeout').json()
+    cid = start(client)
+    client.post(f'/crash/{cid}/timeout')
+    result = settled_delivery(client, cid)
     assert not result['alerted'] and result['sent'] == 0
     assert 'No confirmed' in result['alert_error']
 

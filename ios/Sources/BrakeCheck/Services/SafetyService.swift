@@ -37,6 +37,8 @@ final class SafetyService: ObservableObject {
     private var lastBrake: TimeInterval = -.infinity
     private var sessionGeneration = UUID()
     private var awaitingAlertDelivery = false
+    private var brakePlayback: Task<Void, Never>?
+    private var brakePlaybackID = UUID()
 
     var canRespond: Bool { checkinPresented && !resolved && !sending && (isDryRun || crashID != nil) }
 
@@ -163,6 +165,7 @@ final class SafetyService: ObservableObject {
     func brakeWarning() {
         let now = ProcessInfo.processInfo.systemUptime
         guard !checkinPresented, now - lastBrake > 8 else { return }
+        cancelBrakePlayback()
         beforePriorityAudio?()
         lastBrake = now
         // Use the voice cooldown so a persistent critical state does not
@@ -171,7 +174,20 @@ final class SafetyService: ObservableObject {
         guard settings.voiceEnabled else { return }
         if SpeechVoicePreferences.usesBackendAlerts, let data = brakeAudio,
            preparedSignature == settings.address + settings.language + settings.credentialForSignature {
-            Task { try? await audio.play(data) }
+            let playbackID = brakePlaybackID
+            brakePlayback = Task { @MainActor [weak self] in
+                guard let self, self.brakePlaybackID == playbackID, !self.checkinPresented,
+                      self.settings.voiceEnabled, !Task.isCancelled else { return }
+                do { try await self.audio.play(data) }
+                catch is CancellationError { return }
+                catch {
+                    guard self.brakePlaybackID == playbackID, !self.checkinPresented,
+                          self.settings.voiceEnabled, !Task.isCancelled else { return }
+                    self.brakeAudio = nil
+                    self.voiceStatus = "Device voice fallback · alert audio unavailable"
+                    self.audio.speakBrake(language: self.settings.language)
+                }
+            }
         } else {
             audio.speakBrake(language: settings.language)
         }
@@ -179,6 +195,7 @@ final class SafetyService: ObservableObject {
 
     func previewVoice() {
         guard !checkinPresented, !audio.isBusy else { return }
+        cancelBrakePlayback()
         beforePriorityAudio?()
         audio.speakPreview(language: settings.language)
     }
@@ -252,6 +269,7 @@ final class SafetyService: ObservableObject {
         guard !checkinPresented else { return }
         if dryRun { beginLocalDemo(); return }
         guard let client = settings.client else { error = "Connect the backend before starting a check-in."; return }
+        cancelBrakePlayback()
         beforePriorityAudio?()
         sessionGeneration = UUID()
         let generation = sessionGeneration
@@ -546,7 +564,14 @@ final class SafetyService: ObservableObject {
             return
         }
         // The backend owns the timeout even if iOS suspends the app.
+        cancelBrakePlayback()
         flow?.cancel(); polling?.cancel(); polling = nil; replyRecognizer.cancel(); audio.stop()
+    }
+
+    private func cancelBrakePlayback() {
+        brakePlaybackID = UUID()
+        brakePlayback?.cancel()
+        brakePlayback = nil
     }
 
     func resumeForegroundPolling() {

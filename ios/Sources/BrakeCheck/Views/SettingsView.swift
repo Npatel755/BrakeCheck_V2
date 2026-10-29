@@ -98,6 +98,7 @@ struct SettingsView: View {
     @AppStorage("display.laneGuides") private var showLanes = false
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
     @AppStorage("navigation.cameraAR") private var cameraAR = true
+    @AppStorage("navigation.cameraGuidance") private var cameraGuidance = true
     @AppStorage("recording.limitGB") private var recordingLimitGB = 0
     @AppStorage("recording.retentionDays") private var recordingRetentionDays = 0
     @AppStorage("checklist.skip") private var skipChecklist = false
@@ -323,6 +324,7 @@ struct SettingsView: View {
             Toggle("Show lane guides", isOn: $showLanes)
             Toggle("Show full camera frame", isOn: $showFullFrame)
             Toggle("Directions on the road", isOn: $cameraAR)
+            Toggle("Camera route overview", isOn: $cameraGuidance)
             CameraCalibrationControls(model: model, presentation: arPresentation, cameraAR: $cameraAR, openCameraSetup: openCameraSetup)
             Text("These preferences also apply to replayed drives.").foregroundStyle(BrakeTheme.muted)
         case .recordings:

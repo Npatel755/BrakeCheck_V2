@@ -13,7 +13,10 @@ cp -a "$project_root/backend" "$project_root/photon-agent" "$project_root/cloud"
 find "$staging_root" -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -delete
 find "$staging_root" -type f \( -name 'contacts.json' -o -name 'contacts.tmp' \
   -o -name 'crashes.json' -o -name 'crashes.json.*.tmp' \
-  -o -name 'paired_devices.json' -o -name 'paired_devices.tmp' -o -name '*.ipa' \) -delete
+  -o -name 'paired_devices.json' -o -name 'paired_devices.tmp' \
+  -o -name 'photon-optouts.json' -o -name 'photon-optouts.json.*.tmp' \
+  -o -name 'photon-alerts.json' -o -name 'photon-alerts.json.*.tmp' \
+  -o -name 'railway-variables.env' -o -name '*.ipa' -o -name '*.log' \) -delete
 find "$staging_root" -type d \( -name '.venv' -o -name 'node_modules' -o -name '__pycache__' \
   -o -name '.pytest_cache' -o -name 'voice_cache' -o -name 'voice_samples' \) -prune -exec rm -rf {} +
 

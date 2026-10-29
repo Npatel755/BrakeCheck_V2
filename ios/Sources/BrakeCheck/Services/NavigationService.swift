@@ -195,7 +195,8 @@ final class NavigationService: NSObject, ObservableObject {
     private var lastFixTimestamp: Date?
     private var locationEligibleAfter = Date.distantFuture
     private var lastSpokenPrompt: String?
-    private var spokenStages: [Int: Int] = [:]
+    private var voiceProgress = NavigationVoiceProgress()
+    private var activeVoicePrompt: UUID?
     private var lastRerouteAt = Date.distantPast
     private var recovery = NavigationRecovery()
 
@@ -490,7 +491,7 @@ final class NavigationService: NSObject, ObservableObject {
         hasArrived = false
         isPaused = !hasFreshLocation
         lastSpokenPrompt = nil
-        spokenStages = [:]
+        voiceProgress.reset()
         resetProgress()
         reconcileLocation()
         if hasFreshLocation, let location { updateProgress(location) }
@@ -524,7 +525,7 @@ final class NavigationService: NSObject, ObservableObject {
         cancelDirections()
         needsRoute = requiresNewPlan && destination != nil
         lastSpokenPrompt = nil
-        spokenStages = [:]
+        voiceProgress.reset()
         routeNotice = nil
         resetProgress()
         maneuverDistance = nil
@@ -538,6 +539,9 @@ final class NavigationService: NSObject, ObservableObject {
 
     func stopSpeaking(deactivateSession: Bool = true) {
         // Invalidate ownership before stopSpeaking emits cancellation callbacks.
+        if currentUtterance != nil { lastSpokenPrompt = nil }
+        voiceProgress.cancel()
+        activeVoicePrompt = nil
         currentUtterance = nil
         let owned = ownsAudioSession
         ownsAudioSession = false
@@ -741,7 +745,7 @@ final class NavigationService: NSObject, ObservableObject {
         requiresNewPlan = false
         isRejoiningRoute = false
         hasArrived = false
-        lastSpokenPrompt = nil; spokenStages = [:]
+        lastSpokenPrompt = nil; voiceProgress.reset(); activeVoicePrompt = nil
         etaEstimator.reset()
         trafficTimeMultiplier = 1
         routeGeometryReady = false; preparedProgress = nil; routeProgress = nil
@@ -961,14 +965,17 @@ final class NavigationService: NSObject, ObservableObject {
         upcomingInstruction = steps.indices.dropFirst(effectiveIndex + 1)
             .first(where: { !steps[$0].instruction.isEmpty }).map { steps[$0].instruction }
         routeNotice = step?.notice
-        maneuverDistance = snapshot.distanceToStep
+        let spokenMeters = NavigationVoiceGuidance.distanceToManeuver(projectedStep: index,
+            instructionStep: effectiveIndex, distanceToStep: snapshot.distanceToStep,
+            stepDistances: steps.map(\.distance), routeDistance: activeRoute?.distance ?? 0)
+            ?? snapshot.distanceToStep
+        maneuverDistance = spokenMeters
         status = "Navigation active"
-        let threshold = max(40, min(100, max(0, fix.speed) * 6))
-        let stage = snapshot.distanceToStep <= 15 ? 2 : snapshot.distanceToStep <= threshold ? 1 : 0
-        guard stage > (spokenStages[effectiveIndex] ?? -1) else { return }
-        let prefix = stage == 2 || index == 0 ? "" : "In \(spokenDistance(snapshot.distanceToStep)), "
+        guard let stage = NavigationVoiceGuidance.stage(distance: spokenMeters, speed: fix.speed),
+              voiceProgress.shouldAnnounce(step: effectiveIndex, stage: stage) else { return }
+        let prefix = stage == 3 || effectiveIndex == 0 ? "" : "In \(spokenDistance(spokenMeters)), "
         if announce(prefix + instruction, key: "\(routeRevision):\(effectiveIndex):\(stage)") {
-            spokenStages[effectiveIndex] = stage
+            activeVoicePrompt = voiceProgress.begin(step: effectiveIndex, stage: stage)
         }
     }
 
@@ -1029,8 +1036,15 @@ final class NavigationService: NSObject, ObservableObject {
         return true
     }
 
-    private func completeSpeech(_ utterance: AVSpeechUtterance) {
+    private func completeSpeech(_ utterance: AVSpeechUtterance, completed: Bool) {
         guard currentUtterance === utterance else { return }
+        if completed {
+            if let activeVoicePrompt { voiceProgress.finish(activeVoicePrompt) }
+        } else {
+            voiceProgress.cancel()
+            lastSpokenPrompt = nil
+        }
+        activeVoicePrompt = nil
         currentUtterance = nil
         let owned = ownsAudioSession
         ownsAudioSession = false
@@ -1403,10 +1417,10 @@ extension NavigationService: CLLocationManagerDelegate {
 
 extension NavigationService: AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor [weak self] in self?.completeSpeech(utterance) }
+        Task { @MainActor [weak self] in self?.completeSpeech(utterance, completed: true) }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor [weak self] in self?.completeSpeech(utterance) }
+        Task { @MainActor [weak self] in self?.completeSpeech(utterance, completed: false) }
     }
 }

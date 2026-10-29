@@ -41,6 +41,15 @@ struct HomeView: View {
                     header
                     startTile
                     if model.tripActive && !model.demo && !model.replaying { tripControls }
+                    if model.tripActive && !model.cameraReady && !model.demo && !model.replaying {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(model.cameraStatus).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
+                            Button { model.retryCamera() } label: {
+                                Label("Retry camera", systemImage: "arrow.clockwise").frame(minHeight: 44)
+                            }
+                            .disabled(model.stopping)
+                        }
+                    }
                     HStack(spacing: 12) {
                         smallTile("Navigate", detail: "Directions on camera", icon: "location.north.line.fill",
                                   iconColor: BrakeTheme.accentText, iconBackground: BrakeTheme.accent.opacity(0.15), action: openNavigation)

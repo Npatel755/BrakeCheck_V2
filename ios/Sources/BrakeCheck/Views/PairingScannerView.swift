@@ -1,5 +1,6 @@
 import AVFoundation
 import SwiftUI
+import BrakeCheckCore
 import UIKit
 
 struct QRCodeScanner: UIViewControllerRepresentable {

@@ -2,6 +2,9 @@
 
 The complete setup guide is **[../README.md](../README.md)**. Build from this directory:
 
+Navigation planning, offline road imports, feature coverage and camera-guidance
+limitations are documented in **[NAVIGATION.md](NAVIGATION.md)**.
+
 ```bash
 xtool dev build -c release --ipa
 xtool dev run -c release

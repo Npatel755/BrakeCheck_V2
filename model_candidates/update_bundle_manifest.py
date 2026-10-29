@@ -6,10 +6,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RESOURCES = ROOT / "ios/Sources/BrakeCheck/Resources/LaneModelData"
+RESOURCES = ROOT / "model_candidates"
 
 
-def main():
+def write_manifest(resources: Path):
     models = [
         {
             "name": "CommaLane",
@@ -33,11 +33,19 @@ def main():
         },
     ]
     files = {
-        str(path.relative_to(RESOURCES)).replace("\\", "/"): hashlib.sha256(path.read_bytes()).hexdigest()
+        str(path.relative_to(resources)).replace("\\", "/"): hashlib.sha256(path.read_bytes()).hexdigest()
         for name in ("CommaLane.mlpackage", "IntelRoad.mlpackage")
-        for path in sorted((RESOURCES / name).rglob("*")) if path.is_file()
+        for path in sorted((resources / name).rglob("*")) if path.is_file()
     }
-    (RESOURCES / "manifest.json").write_text(json.dumps({"models": models, "files": files}, indent=2) + "\n")
+    (resources / "manifest.json").write_text(json.dumps({"models": models, "files": files}, indent=2) + "\n", encoding="utf-8")
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--resources', type=Path, default=RESOURCES)
+    args = parser.parse_args()
+    write_manifest(args.resources)
 
 
 if __name__ == "__main__":

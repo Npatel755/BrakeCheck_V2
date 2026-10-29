@@ -7,11 +7,8 @@ from pathlib import Path
 import plistlib
 import zipfile
 
-import coremltools as ct
-
-
 ROOT = Path(__file__).resolve().parents[1]
-RESOURCE = ROOT / "ios/Sources/BrakeCheck/Resources/LaneModelData"
+RESOURCE = ROOT / "model_candidates"
 CONTRACTS = {
     "CommaLane": (512, 384, "lane_scores", [1, 5, 384, 512]),
     "IntelRoad": (640, 384, "road_scores", [1, 2, 384, 640]),
@@ -21,12 +18,18 @@ CONTRACTS = {
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ipa", type=Path)
+    parser.add_argument("--resources", type=Path, default=RESOURCE)
+    parser.add_argument("--hashes-only", action="store_true", help="Verify bytes without the optional coremltools dependency")
     args = parser.parse_args()
-    manifest = json.loads((RESOURCE / "manifest.json").read_text())
+    resource = args.resources
+    manifest = json.loads((resource / "manifest.json").read_text(encoding="utf-8"))
     assert {entry["name"] for entry in manifest["models"]} == set(CONTRACTS)
     for name, (width, height, output, shape) in CONTRACTS.items():
-        package = RESOURCE / f"{name}.mlpackage"
+        package = resource / f"{name}.mlpackage"
         assert package.is_dir()
+        if args.hashes_only:
+            continue
+        import coremltools as ct
         spec = ct.models.MLModel(str(package), skip_model_load=True).get_spec()
         assert spec.description.input[0].name == "image"
         assert spec.description.input[0].type.imageType.width == width
@@ -34,10 +37,10 @@ def main():
         assert spec.description.output[0].name == output
         assert list(spec.description.output[0].type.multiArrayType.shape) == shape
     for relative, digest in manifest["files"].items():
-        assert hashlib.sha256((RESOURCE / relative).read_bytes()).hexdigest() == digest, relative
-    assert not (RESOURCE / "UFLDLane.mlpackage").exists()
-    assert not (RESOURCE / "SegFormerRoad.mlpackage").exists()
-    print("Core ML contracts, resource hashes and candidate-only resources PASS")
+        assert hashlib.sha256((resource / relative).read_bytes()).hexdigest() == digest, relative
+    assert not (resource / "UFLDLane.mlpackage").exists()
+    assert not (resource / "SegFormerRoad.mlpackage").exists()
+    print("Candidate resource hashes PASS" if args.hashes_only else "Core ML contracts and candidate resource hashes PASS")
     if args.ipa:
         with zipfile.ZipFile(args.ipa) as archive:
             names = archive.namelist()
@@ -46,7 +49,7 @@ def main():
                      and name.count("/") == 2 and name.endswith(".app/Info.plist")]
             assert infos
             info = plistlib.loads(archive.read(infos[0]))
-            assert info["CFBundleVersion"] == "53"
+            assert info["CFBundleVersion"]
             for relative, digest in manifest["files"].items():
                 matches = [name for name in names if name.endswith("LaneModelData/" + relative)]
                 assert len(matches) == 1, relative
@@ -54,7 +57,7 @@ def main():
             assert not any("UFLDLane.mlpackage" in name or "SegFormerRoad.mlpackage" in name for name in names)
             assert any(name.endswith("ModelLicenses/Comma10k-MIT.txt") for name in names)
             assert any(name.endswith("ModelLicenses/Apache-2.0.txt") for name in names)
-        print("IPA N53 candidate weights, licenses, hashes and CRC PASS")
+        print("IPA candidate weights, licenses, hashes and CRC PASS")
 
 
 if __name__ == "__main__":

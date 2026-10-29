@@ -87,9 +87,10 @@ final class ReplayService {
             let displayTransform = track.preferredTransform
             while isCurrent(current), let sample = output.copyNextSampleBuffer() {
                 let pts = CMSampleBufferGetPresentationTimeStamp(sample)
-                guard pts.isValid else { continue }
+                guard pts.isNumeric else { continue }
                 if firstPTS == nil { firstPTS = pts }
-                let offset = max(0, CMTimeGetSeconds(CMTimeSubtract(pts, firstPTS ?? pts)))
+                let offset = CMTimeGetSeconds(CMTimeSubtract(pts, firstPTS ?? pts))
+                guard offset.isFinite, offset >= clipLength else { continue }
                 clipLength = offset
                 let wait = clipWallStart + offset - ProcessInfo.processInfo.systemUptime
                 if wait < -0.25 { continue }

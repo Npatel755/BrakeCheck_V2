@@ -44,7 +44,7 @@ def _save_locked():
 def _start_timer_locked(c: dict):
     deadline = c['deadline']
     timer = threading.Timer(max(0, deadline - time.time()),
-                            lambda: _resolve(c, 'no_response', expected_deadline=deadline))
+                            lambda: _resolve(c, 'no_response', expected_deadline=deadline, expected_timer=timer))
     timer.daemon = True
     c['_timer'] = timer
     timer.start()
@@ -149,7 +149,7 @@ def _agent(path: str, payload: dict) -> dict:
 def _audio(kind: str, lang: str) -> Response:
     try:
         return Response(voice.say(kind, lang), media_type='audio/mpeg')
-    except (requests.RequestException, RuntimeError):
+    except (requests.RequestException, RuntimeError, OSError):
         raise HTTPException(502, 'Voice service unavailable. Use the on-screen check-in buttons.')
 
 
@@ -289,10 +289,12 @@ def _send_photon_alert(c: dict) -> dict:
     return _agent('/alert', payload)
 
 
-def _resolve(c: dict, status: str, transcript: str = '', expected_deadline: float | None = None) -> dict:
+def _resolve(c: dict, status: str, transcript: str = '', expected_deadline: float | None = None, *, expected_timer=None) -> dict:
     # The lock serializes manual buttons, transcription, and the server timer.
     # Once decided, a retry returns the same result and never sends another alert.
     with LOCK:
+        if expected_timer is not None and c.get('_timer') is not expected_timer:
+            return _public(c)
         if c['status'] != 'pending' or (expected_deadline is not None
                                        and c.get('deadline') != expected_deadline):
             return _public(c)

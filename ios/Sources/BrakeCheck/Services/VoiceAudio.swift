@@ -27,7 +27,7 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
 
     func requestMicrophone() async -> Bool {
         await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            AVAudioApplication.requestRecordPermission { granted in
                 continuation.resume(returning: granted)
             }
         }
@@ -147,7 +147,8 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
     }
 
     func recordReply() async throws -> Data {
-        guard AVAudioSession.sharedInstance().recordPermission == .granted else {
+        try Task.checkCancellation()
+        guard AVAudioApplication.shared.recordPermission == .granted else {
             throw APIError.message("Microphone unavailable. Use the buttons below.")
         }
         let session = AVAudioSession.sharedInstance()
@@ -155,7 +156,6 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
         try session.setActive(true)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("reply-\(UUID().uuidString).m4a")
         defer {
-            recorder?.stop(); recorder = nil
             try? FileManager.default.removeItem(at: url)
             try? session.setActive(false, options: [.notifyOthersOnDeactivation])
         }
@@ -164,6 +164,16 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
             AVNumberOfChannelsKey: 1, AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
         ])
         recorder = recording
+        defer {
+            recording.stop()
+            // A canceled recording can unwind after a new audio owner starts.
+            if recorder === recording {
+                recorder = nil
+                if player == nil && activeUtterance == nil {
+                    try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+                }
+            }
+        }
         guard recording.record() else { throw APIError.message("Microphone could not start. Use the buttons below.") }
         try await Task.sleep(nanoseconds: 6_000_000_000)
         try Task.checkCancellation()
@@ -172,7 +182,7 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
     }
 
     func stop() {
-        player?.stop(); recorder?.stop()
+        player?.stop(); recorder?.stop(); recorder = nil
         activeUtterance = nil
         let pendingSpeech = speechCompletion
         speechCompletion = nil

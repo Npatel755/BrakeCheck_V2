@@ -45,6 +45,10 @@ final class LaneTracker {
         guard interval.isFinite, (0.20...0.50).contains(interval) else { return }
         stateLock.lock(); minimumInterval = interval; stateLock.unlock()
     }
+    // Candidate-only bundles opt into comma.ai/Intel; the standard bundle retains UFLD/SegFormer.
+    private lazy var usesCommaModels = (try? locateModel(named: "CommaLane")) != nil
+    private var laneLabel: String { usesCommaModels ? "comma.ai" : "UFLD" }
+    private var roadLabel: String { usesCommaModels ? "Intel" : "SegFormer" }
     private var loadingStarted = false
     private var modelReady = false
     private var modelBusy = false
@@ -87,9 +91,9 @@ final class LaneTracker {
         loadingStarted = true
         stateLock.unlock()
         modelQueue.async {
-            self.onStatus?("UFLD + SegFormer road model loading…")
+            self.onStatus?("\(self.laneLabel) + \(self.roadLabel) road model loading…")
             do {
-                let source = try self.locateModel(named: "UFLDLane")
+                let source = try self.locateModel(named: self.usesCommaModels ? "CommaLane" : "UFLDLane")
                 let compiled = try self.compiledModel(from: source)
                 let options = MLModelConfiguration()
                 options.computeUnits = .all
@@ -101,17 +105,21 @@ final class LaneTracker {
                     try FileManager.default.removeItem(at: compiled)
                     model = try MLModel(contentsOf: self.compiledModel(from: source), configuration: options)
                 }
+                let laneOutput = self.usesCommaModels ? "lane_scores" : "lane_logits"
+                let laneShape = self.usesCommaModels ? [1, 5, 384, 512] : [1, 201, 18, 4]
+                let outputShape = model.modelDescription.outputDescriptionsByName[laneOutput]?
+                    .multiArrayConstraint?.shape.map { $0.intValue }
                 guard let image = model.modelDescription.inputDescriptionsByName["image"]?.imageConstraint,
-                      image.pixelsWide == 800, image.pixelsHigh == 288,
-                      model.modelDescription.outputDescriptionsByName["lane_logits"]?.multiArrayConstraint?.shape.map({ $0.intValue }) == [1, 201, 18, 4] else {
+                      image.pixelsWide == (self.usesCommaModels ? 512 : 800),
+                      image.pixelsHigh == (self.usesCommaModels ? 384 : 288), outputShape == laneShape else {
                     throw LaneModelError.contract
                 }
                 self.inputWidth = image.pixelsWide; self.inputHeight = image.pixelsHigh
                 self.model = model
                 self.stateLock.lock(); self.modelReady = true; self.stateLock.unlock()
-                self.onStatus?("UFLD lanes ready · road model loading")
+                self.onStatus?("\(self.laneLabel) lanes ready · road model loading")
                 do {
-                    let roadSource = try self.locateModel(named: "SegFormerRoad")
+                    let roadSource = try self.locateModel(named: self.usesCommaModels ? "IntelRoad" : "SegFormerRoad")
                     let compiled = try self.compiledModel(from: roadSource)
                     let road: MLModel
                     do { road = try MLModel(contentsOf: compiled, configuration: options) }
@@ -123,14 +131,14 @@ final class LaneTracker {
                           roadImage.pixelsWide == 640, roadImage.pixelsHigh == 384,
                           road.modelDescription.outputDescriptionsByName["road_scores"]?.multiArrayConstraint?.shape.map({ $0.intValue }) == [1, 2, 384, 640] else { throw LaneModelError.contract }
                     self.roadModel = road
-                    self.onStatus?("UFLD lanes + SegFormer road ready")
+                    self.onStatus?("\(self.laneLabel) lanes + \(self.roadLabel) road ready")
                 } catch {
                     self.roadModel = nil
-                    self.onStatus?("UFLD lanes ready · road segmentation unavailable: \(error.localizedDescription)")
+                    self.onStatus?("\(self.laneLabel) lanes ready · road segmentation unavailable: \(error.localizedDescription)")
                 }
             } catch {
                 self.stateLock.lock(); self.loadingStarted = false; self.stateLock.unlock()
-                self.onStatus?("UFLD/SegFormer road model unavailable: \(error.localizedDescription) · paint fallback")
+                self.onStatus?("\(self.laneLabel)/\(self.roadLabel) road model unavailable: \(error.localizedDescription) · paint fallback")
             }
         }
     }
@@ -246,7 +254,7 @@ final class LaneTracker {
                 guard let prediction = try self.inference.auxiliary({
                     let trace = PerformanceTrace.begin(.laneInference)
                     defer { PerformanceTrace.end(trace) }
-                    let input = try self.makeInput(buffer, width: 800, height: 288, pool: &self.inputPool)
+                    let input = try self.makeInput(buffer, width: self.inputWidth, height: self.inputHeight, pool: &self.inputPool)
                     guard let frame = self.lumaFrame(buffer, at: time) else { throw LaneModelError.frame }
                     let provider = try MLDictionaryFeatureProvider(dictionary: ["image": MLFeatureValue(pixelBuffer: input)])
                     return (try model.prediction(from: provider), frame)
@@ -265,7 +273,7 @@ final class LaneTracker {
                 let laneDuration = ProcessInfo.processInfo.systemUptime - started
                 self.laneLatencyHistory.observe(laneDuration)
                 self.stateLock.unlock()
-                guard let scores = result.featureValue(for: "lane_logits")?.multiArrayValue else {
+                guard let scores = result.featureValue(for: self.usesCommaModels ? "lane_scores" : "lane_logits")?.multiArrayValue else {
                     throw LaneModelError.output
                 }
                 // Decode and publish lanes before waiting for segmentation.
@@ -295,8 +303,8 @@ final class LaneTracker {
                     let duration = Int((finished - started) * 1000)
                     let count = rows.filter { !$0.peaks.isEmpty }.count
                     self.onStatus?(finished - time > 1.0
-                        ? "UFLD · \(duration) ms · frame too old to track"
-                        : "UFLD · \(duration) ms · \(count) lane rows · road \(roadRows) rows · \(self.neuralEstimator.status)")
+                        ? "\(self.laneLabel) · \(duration) ms · frame too old to track"
+                        : "\(self.laneLabel) · \(duration) ms · \(count) lane rows · road \(roadRows) rows · \(self.neuralEstimator.status)")
                 }
             } catch {
                 self.consecutiveErrors += 1
@@ -308,7 +316,7 @@ final class LaneTracker {
                 self.roadMeasurements = []
                 self.stateLock.unlock()
                 self.neuralEstimator.reset()
-                self.onStatus?("UFLD/SegFormer road model inference error: \(error.localizedDescription) · retrying · paint fallback")
+                self.onStatus?("\(self.laneLabel)/\(self.roadLabel) road model inference error: \(error.localizedDescription) · retrying · paint fallback")
             }
         }
     }
@@ -361,7 +369,7 @@ final class LaneTracker {
                 }
             } catch {
                 failed = true
-                self.onStatus?("UFLD lanes active - SegFormer road model retrying: \(error.localizedDescription)")
+                self.onStatus?("\(self.laneLabel) lanes active - \(self.roadLabel) road model retrying: \(error.localizedDescription)")
             }
             guard attempted else { return }
             let finished = ProcessInfo.processInfo.systemUptime
@@ -432,11 +440,21 @@ final class LaneTracker {
     }
 
     private func decode(_ array: MLMultiArray, excluding boxes: [CGRect]) throws -> [LaneMarkingRow] {
-        guard array.shape.map({ $0.intValue }) == [1, 201, 18, 4] else { throw LaneModelError.output }
+        guard array.shape.map({ $0.intValue }) == (usesCommaModels ? [1, 5, 384, 512] : [1, 201, 18, 4]) else { throw LaneModelError.output }
         let strides = array.strides.map { $0.intValue }
         guard strides.count == 4, strides.allSatisfy({ $0 > 0 }) else { throw LaneModelError.output }
         func scan(_ read: (Int) -> Double) -> [LaneMarkingRow] {
-            UFLDLaneDecoder.decode(excluding: boxes) { grid, row, lane in
+            if usesCommaModels {
+                return CommaLaneMarkingDecoder.decode(excluding: boxes) { x, y in
+                    let offset = y * strides[2] + x * strides[3]
+                    let logits = (0..<5).map { read($0 * strides[1] + offset) }
+                    guard logits.allSatisfy(\.isFinite), let maximum = logits.max() else { return 0 }
+                    let weights = logits.map { exp($0 - maximum) }
+                    let total = weights.reduce(0, +)
+                    return total > 0 ? weights[1] / total : 0
+                }
+            }
+            return UFLDLaneDecoder.decode(excluding: boxes) { grid, row, lane in
                 read(grid * strides[1] + row * strides[2] + lane * strides[3])
             }
         }
@@ -616,8 +634,8 @@ private enum LaneModelError: LocalizedError {
     case missing, contract, frame, output
     var errorDescription: String? {
         switch self {
-        case .missing: return "UFLDLane or SegFormerRoad model package is missing"
-        case .contract: return "expected UFLD 800×288 lane_logits and SegFormer road model 640×384 road_scores"
+        case .missing: return "The bundled lane or road model package is missing"
+        case .contract: return "The bundled lane or road model has an unsupported input/output contract"
         case .frame: return "camera frame could not be resized"
         case .output: return "expected floating-point scores [1,2,height,width]"
         }

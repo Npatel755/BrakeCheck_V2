@@ -444,7 +444,7 @@ final class VehicleTracker {
     @discardableResult
     func submit(_ buffer: CVPixelBuffer, uptime: TimeInterval,
                 captureISO: Double? = nil, exposureSeconds: Double? = nil) -> Bool {
-        guard uptime.isFinite, uptime <= ProcessInfo.processInfo.systemUptime else { return false }
+        guard TrackingFreshness.measurementIsFresh(capturedAt: uptime, now: ProcessInfo.processInfo.systemUptime) else { return false }
         lock.lock()
         guard !busy else {
             lock.unlock()
@@ -459,7 +459,8 @@ final class VehicleTracker {
                 self.busy = false
                 self.lock.unlock()
             }
-            guard self.isCurrentFrame(submittedGeneration) else { return }
+            guard self.isCurrentFrame(submittedGeneration),
+                  TrackingFreshness.measurementIsFresh(capturedAt: uptime, now: ProcessInfo.processInfo.systemUptime) else { return }
             do {
                 self.updateDetectorLighting(buffer, at: uptime, iso: captureISO, exposure: exposureSeconds)
                 let captureDetectorGeneration = self.detectorGeneration

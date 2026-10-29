@@ -9,6 +9,8 @@ Uses the ElevenLabs REST API directly (no SDK), key in ELEVENLABS_API_KEY.
 import hashlib
 import os
 import re
+import tempfile
+import threading
 from pathlib import Path
 
 import requests
@@ -39,6 +41,8 @@ ROLE_OF = {"brake": "alert", "checkin": "calm", "ok_ack": "calm", "help_ack": "c
 TTS_MODEL = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2")
 STT_MODEL = os.getenv("ELEVENLABS_STT_MODEL", "scribe_v2")
 CACHE_DIR = Path(os.getenv("VOICE_CACHE_DIR", Path(__file__).parent / "voice_cache"))
+# Bounded locks coalesce requests for the same phrase without blocking all voices.
+_CACHE_LOCKS = tuple(threading.Lock() for _ in range(32))
 
 # Standard phrases. eleven_multilingual_v2 speaks whatever language the text is in.
 PHRASES = {
@@ -86,20 +90,34 @@ def tts(text: str, role: str = "calm", voice_id: str | None = None) -> bytes:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha1(f"{voice_id}|{TTS_MODEL}|{role}|{sorted(settings.items())}|{text}".encode()).hexdigest()[:16]
     cached = CACHE_DIR / f"{digest}.mp3"
-    if cached.exists():
-        return cached.read_bytes()
+    with _CACHE_LOCKS[int(digest, 16) % len(_CACHE_LOCKS)]:
+        if cached.exists():
+            audio = cached.read_bytes()
+            if audio:
+                return audio
 
-    r = requests.post(
-        f"{API}/text-to-speech/{voice_id}",
-        params={"output_format": "mp3_44100_128"},
-        headers={"xi-api-key": _key(), "Content-Type": "application/json"},
-        json={"text": text, "model_id": TTS_MODEL, "voice_settings": settings},
-        timeout=30,
-    )
-    if r.status_code != 200:
-        raise RuntimeError(f"ElevenLabs TTS failed: HTTP {r.status_code} {r.text[:300]}")
-    cached.write_bytes(r.content)
-    return r.content
+        r = requests.post(
+            f"{API}/text-to-speech/{voice_id}",
+            params={"output_format": "mp3_44100_128"},
+            headers={"xi-api-key": _key(), "Content-Type": "application/json"},
+            json={"text": text, "model_id": TTS_MODEL, "voice_settings": settings},
+            timeout=30,
+        )
+        if r.status_code != 200:
+            raise RuntimeError(f"ElevenLabs TTS failed: HTTP {r.status_code} {r.text[:300]}")
+        if not r.content:
+            raise RuntimeError("ElevenLabs TTS returned empty audio.")
+        # Readers must never see a partially written MP3, including across processes.
+        staged = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=CACHE_DIR, suffix='.tmp', delete=False) as temporary:
+                staged = Path(temporary.name)
+                temporary.write(r.content)
+            staged.replace(cached)
+        finally:
+            if staged is not None:
+                staged.unlink(missing_ok=True)
+        return r.content
 
 
 def stt(audio: bytes, filename: str = "reply.m4a") -> str:
@@ -113,7 +131,13 @@ def stt(audio: bytes, filename: str = "reply.m4a") -> str:
     )
     if r.status_code != 200:
         raise RuntimeError(f"ElevenLabs STT failed: HTTP {r.status_code} {r.text[:300]}")
-    return (r.json().get("text") or "").strip()
+    try:
+        payload = r.json()
+    except ValueError as exc:
+        raise RuntimeError("ElevenLabs STT returned invalid JSON.") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("text"), str):
+        raise RuntimeError("ElevenLabs STT returned an invalid transcript.")
+    return payload["text"].strip()
 
 
 _HELP = re.compile(r"\b(help|hurt|injured|ambulance|call|911|no|not okay|not ok|bleeding|pain|ayuda|herido|no estoy bien)\b")

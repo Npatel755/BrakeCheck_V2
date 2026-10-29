@@ -56,7 +56,7 @@ jobs:
           old = "PRODUCT_BUNDLE_IDENTIFIER: com.brakecheck.prototype"
           assert old in text, "project.yml bundle ID line changed; update ios-testflight.yml"
           spec.write_text(text.replace(old, "PRODUCT_BUNDLE_IDENTIFIER: " + os.environ["BUNDLE_ID"]))
-          # Release turns the trained lane models off (AppScope.neuralLanes). Their weights must
+          # This release export intentionally omits the experimental lane model weights. They must
           # not ship: SegFormer's licence is non-commercial and UFLD was trained on CULane
           # (non-commercial). Leave them out before signing rather than strip them after.
           package = pathlib.Path("Package.swift")
