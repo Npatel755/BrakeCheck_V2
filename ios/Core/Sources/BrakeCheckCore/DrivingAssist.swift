@@ -111,7 +111,10 @@ public struct DrivingAssistEngine {
         guard enabled, stationary, rearConfirmed, confidence >= 0.8, fresh(time, now: now),
               let distance, distance.isFinite, (2...50).contains(distance),
               let rate = rangeRate, rate.isFinite else { resetLead(); return nil }
-        if leadID != id || leadTime.map({ time <= $0 || time - $0 > 0.6 }) == true { resetLead() }
+        // A repeated callback is not another observation. Ignore it instead
+        // of clearing already measured stopped-lead history.
+        if leadID == id, let previous = leadTime, time == previous { return nil }
+        if leadID != id || leadTime.map({ time < $0 || time - $0 > 0.6 }) == true { resetLead() }
         leadID = id; leadTime = time
         if !leadArmed {
             guard abs(rate) <= 0.3 else { stoppedSince = nil; stoppedRange = nil; return nil }

@@ -106,8 +106,8 @@ struct CameraPage: View {
                         CameraNavigationOverlay(navigation: navigation, presentation: model.arPresentation, geometry: model.captureGeometry)
                     }
                     if showLanes && !selecting {
-                        CameraPerceptionOverlay(presentation: model.arPresentation, lane: model.lanePath,
-                            navigationOnCamera: cameraVisible && navigation.isNavigating && cameraAR)
+                        CameraPerceptionOverlay(lane: model.lanePath, predictions: model.lanePredictions,
+                                                vehicleBoxes: model.detections.map(\.box))
                     }
                     if showDetections && !selecting {
                         DetectionOverlay(detections: model.detections, hazardTargetID: model.collisionHazardID,
@@ -132,14 +132,31 @@ struct CameraPage: View {
                     .font(.brake(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accentText.opacity(0.7))
                 Text(text.title)
                     .font(.brake(size: 22, weight: .semibold))
-                if model.tripActive && !model.demo {
-                    Button { model.retryCamera() } label: {
-                        Label("Retry camera", systemImage: "arrow.clockwise").frame(minHeight: 44)
-                    }
-                    .disabled(model.stopping)
-                }
                 Text(text.detail)
                     .font(.brake(size: 13)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
+                if model.tripActive && !model.demo && !model.stopping {
+                    if model.cameraStatus.localizedCaseInsensitiveContains("denied") {
+                        Button {
+                            guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+                            UIApplication.shared.open(settingsURL)
+                        } label: {
+                            Label("Open iPhone Settings", systemImage: "gearshape")
+                                .frame(minHeight: 44)
+                                .padding(.horizontal, 16)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("camera.openSettings")
+                    } else if cameraCanRetry {
+                        Button(action: model.retryCamera) {
+                            Label("Retry camera", systemImage: "arrow.clockwise")
+                                .frame(minHeight: 44)
+                                .padding(.horizontal, 16)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityHint("Restarts the camera while keeping your current trip.")
+                        .accessibilityIdentifier("camera.retry")
+                    }
+                }
             }
             .padding(.horizontal, 24)
             .offset(y: -24)
@@ -149,6 +166,7 @@ struct CameraPage: View {
     /// During a trip the camera is starting (or can't), so "Start a trip" would be wrong there.
     private var placeholderText: (title: String, detail: String) {
         if model.demo { return ("Simulated drive", "Practice numbers · no camera") }
+        if model.stopping { return ("Finishing your trip…", "Saving the last video and GPS samples.") }
         guard model.tripActive else {
             return ("A clearer view ahead.", "Start a trip from Home to see the road and track vehicles.")
         }
@@ -156,10 +174,17 @@ struct CameraPage: View {
         if status.localizedCaseInsensitiveContains("denied") {
             return ("Camera access is off", "Allow Camera for BrakeSense in iPhone Settings to see the road and track vehicles.")
         }
-        if status.hasPrefix("Camera: ") || status.localizedCaseInsensitiveContains("could not") {
+        if status == "Camera interrupted" {
+            return ("Camera temporarily interrupted", "Recording and tracking will resume when the camera is available again.")
+        }
+        if cameraCanRetry {
             return ("Camera unavailable", String(status.dropFirst(status.hasPrefix("Camera: ") ? 8 : 0)))
         }
         return ("Starting the camera…", "Keep the phone steady in its mount.")
+    }
+
+    private var cameraCanRetry: Bool {
+        model.canRetryCamera
     }
 
     /// Theme-matched gradients keep readouts legible over the live road.
@@ -198,6 +223,9 @@ struct CameraPage: View {
                 }
                 if critical || (running && !selecting) { riskPill(large: false) }
             }
+            if showLanes && running && !model.demo && !selecting {
+                CameraLanePredictionStatus(model: model).frame(maxWidth: .infinity, alignment: .leading)
+            }
             Spacer(minLength: 0)
             if selecting { calibrationControls.frame(maxWidth: 440) }
             // Standby shows only the welcome; readouts appear once there is something to read.
@@ -224,6 +252,9 @@ struct CameraPage: View {
                 if critical || (running && !selecting) {
                     riskPill(large: true)
                 }
+            }
+            if showLanes && running && !model.demo && !selecting {
+                CameraLanePredictionStatus(model: model).frame(maxWidth: .infinity, alignment: .leading)
             }
             Spacer(minLength: 0)
             if selecting { calibrationControls }

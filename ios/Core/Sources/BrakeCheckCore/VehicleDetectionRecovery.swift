@@ -44,6 +44,7 @@ public struct VehicleDetectionRecovery {
     public mutating func propose(_ vehicles: [LeadVehicle], at time: TimeInterval,
                                  preferredBox: CGRect?, lastDetectedAt: TimeInterval?,
                                  trackedBox: CGRect?, lane: LanePath?, imageAspect: Double,
+                                 boundaries: LanePredictionObservation? = nil,
                                  interval: TimeInterval?, captureAge: TimeInterval,
                                  vehicleLatency: TimeInterval) -> VehicleSearchCrop? {
         guard time.isFinite else { reset(); return nil }
@@ -54,12 +55,22 @@ public struct VehicleDetectionRecovery {
               captureAge.isFinite, (0...0.25).contains(captureAge),
               vehicleLatency.isFinite, (0...0.20).contains(vehicleLatency),
               captureAge + max(0.06, vehicleLatency) <= 0.45 else { return nil }
-        let target = trackedBox.flatMap { LeadVehicle.validBox($0) ? $0 : nil }
+        let trackedTarget = trackedBox.flatMap { LeadVehicle.validBox($0) ? $0 : nil }
             ?? preferredBox.flatMap { box -> CGRect? in
                 guard LeadVehicle.validBox(box), let seen = lastDetectedAt,
                       seen.isFinite, time >= seen, time - seen <= 0.90 else { return nil }
                 return box
             }
+        // Identity can remain tracked after a lane departure. Do not keep
+        // zooming that adjacent car while the measured ego path has no car.
+        let target = trackedTarget.flatMap { box -> CGRect? in
+            if LeadLaneRelevance.excludes(box, boundaries: boundaries, at: time) { return nil }
+            guard let lane, lane.isUsable(at: time), lane.confidence >= 0.70,
+                  let bounds = lane.bounds(at: Double(box.minY)) else { return box }
+            let overlap = max(0, min(Double(box.maxX), bounds.right) - max(Double(box.minX), bounds.left))
+                / Double(box.width)
+            return overlap < 0.10 ? nil : box
+        }
         let region: CGRect
         if let target {
             guard !vehicles.contains(where: { $0.confidence >= 0.65 && Self.overlap($0.box, target) >= 0.35
@@ -71,6 +82,7 @@ public struct VehicleDetectionRecovery {
         } else {
             guard !vehicles.contains(where: { vehicle in
                 guard ["car", "truck", "bus"].contains(vehicle.label), vehicle.confidence >= 0.65 else { return false }
+                if LeadLaneRelevance.excludes(vehicle.box, boundaries: boundaries, at: time) { return false }
                 // A strong car in the adjacent lane must not suppress the
                 // search for a missing lead in a freshly measured ego lane.
                 guard let lane, lane.isUsable(at: time), lane.confidence >= 0.70,

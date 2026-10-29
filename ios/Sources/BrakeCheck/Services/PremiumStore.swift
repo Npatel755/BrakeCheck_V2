@@ -21,6 +21,13 @@ struct PremiumOffer: Identifiable {
 
 @MainActor final class PremiumStore: ObservableObject {
     static let shared = PremiumStore()
+    static var localTestingAvailable: Bool {
+        #if BRAKECHECK_PREMIUM_TESTING
+        true
+        #else
+        false
+        #endif
+    }
     static let trialReminderID = "premium.trialReminder"
 
     @Published private(set) var offers: [PremiumPlan: PremiumOffer] = [:]
@@ -28,11 +35,17 @@ struct PremiumOffer: Identifiable {
     /// True for any active Premium purchase: the yearly or monthly subscription, or Lifetime.
     @Published private(set) var isSubscribed = false
     @Published private(set) var activePlan: PremiumPlan?
+    @Published private(set) var localTestingEnabled = false
     @Published private(set) var isBusy = false
     @Published var message: String?
     private var updates: Task<Void, Never>?
+    private var verifiedSubscription = false
 
     private init() {
+        #if BRAKECHECK_PREMIUM_TESTING
+        localTestingEnabled = UserDefaults.standard.bool(forKey: "premium.localTestAccess")
+        isSubscribed = localTestingEnabled
+        #endif
         updates = Task { [weak self] in
             for await result in Transaction.updates {
                 guard let self else { return }
@@ -47,6 +60,7 @@ struct PremiumOffer: Identifiable {
 
     func load() async {
         await refreshEntitlement()
+        guard !Self.localTestingAvailable else { return }
         guard !isLoadingProduct else { return }
         isLoadingProduct = true
         defer { isLoadingProduct = false }
@@ -66,6 +80,7 @@ struct PremiumOffer: Identifiable {
     }
 
     func purchase(_ plan: PremiumPlan) async {
+        guard !Self.localTestingAvailable else { return }
         guard let offer = offers[plan], !isBusy else { return }
         guard let product = offer.product else {
             message = "Purchases aren't available in this build."
@@ -95,6 +110,7 @@ struct PremiumOffer: Identifiable {
     }
 
     func restore() async {
+        guard !Self.localTestingAvailable else { return }
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
@@ -110,6 +126,7 @@ struct PremiumOffer: Identifiable {
     /// Apple's own sheet for offer codes (the waitlist code, creator codes). A redeemed code
     /// arrives through Transaction.updates like any purchase.
     func redeemOfferCode() async {
+        guard !Self.localTestingAvailable else { return }
         guard let scene = Self.activeScene else { return }
         do { try await AppStore.presentOfferCodeRedeemSheet(in: scene) } catch {
             message = "Couldn't open code redemption: \(error.localizedDescription)"
@@ -117,6 +134,7 @@ struct PremiumOffer: Identifiable {
     }
 
     func manageSubscription() async {
+        guard !Self.localTestingAvailable else { return }
         guard let scene = Self.activeScene else { return }
         do { try await AppStore.showManageSubscriptions(in: scene) } catch {
             message = "Couldn't open subscription settings: \(error.localizedDescription)"
@@ -146,7 +164,21 @@ struct PremiumOffer: Identifiable {
         active = .annual
         #endif
         activePlan = active
-        isSubscribed = active != nil
+        verifiedSubscription = active != nil
+        updateAccess()
+    }
+
+    func setLocalTestingEnabled(_ enabled: Bool) {
+        #if BRAKECHECK_PREMIUM_TESTING
+        localTestingEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "premium.localTestAccess")
+        message = nil
+        updateAccess()
+        #endif
+    }
+
+    private func updateAccess() {
+        isSubscribed = verifiedSubscription || (Self.localTestingAvailable && localTestingEnabled)
     }
 
     private static func offer(_ plan: PremiumPlan, _ product: Product) async -> PremiumOffer {

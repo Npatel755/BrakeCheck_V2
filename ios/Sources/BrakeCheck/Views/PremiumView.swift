@@ -11,17 +11,19 @@ struct PremiumView: View {
     @ObservedObject private var store = PremiumStore.shared
     @AppStorage("display.premiumCompactBanner") private var compactBanner = false
     @State private var selected: PremiumPlan = .annual
+    private let model: DriveModel?
     private let context: Context
     private let onClose: (() -> Void)?
 
-    init(context: Context = .browse, onClose: (() -> Void)? = nil) {
+    init(model: DriveModel? = nil, context: Context = .browse, onClose: (() -> Void)? = nil) {
+        self.model = model
         self.context = context
         self.onClose = onClose
     }
 
     /// The first-trip screen: closing it opens the trip summary.
-    init(onContinue: (() -> Void)?) {
-        self.init(context: .firstTrip, onClose: onContinue)
+    init(model: DriveModel? = nil, onContinue: (() -> Void)?) {
+        self.init(model: model, context: .firstTrip, onClose: onContinue)
     }
 
     var body: some View {
@@ -33,8 +35,12 @@ struct PremiumView: View {
                     .font(.brake(.caption, weight: .semibold))
                     .foregroundStyle(BrakeTheme.warning)
                 #endif
+                if PremiumStore.localTestingAvailable { localTestingControls }
                 if store.isSubscribed {
                     activeSection
+                } else if PremiumStore.localTestingAvailable {
+                    DrivingAssistControls(model: model, offerUpgrade: false)
+                    alwaysFree
                 } else {
                     benefits
                     alwaysFree
@@ -59,6 +65,16 @@ struct PremiumView: View {
             if !store.isSubscribed, store.offers[selected] != nil { stickyPurchase }
         }
         .task { await store.load() }
+    }
+
+    private var localTestingControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Enable Premium for testing", isOn: Binding(
+                get: { store.localTestingEnabled }, set: { store.setLocalTestingEnabled($0) }))
+                .accessibilityIdentifier("premiumLocalTestingToggle")
+            Text("Unlock features on this device without a purchase. Available in test builds only.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+        }.padding(18).brakePanel()
     }
 
     // MARK: - Sections
@@ -166,7 +182,7 @@ struct PremiumView: View {
             Label(activeLabel, systemImage: "checkmark.seal.fill")
                 .font(.brake(.headline))
                 .foregroundStyle(BrakeTheme.accentText)
-            DrivingAssistControls(offerUpgrade: false)
+            DrivingAssistControls(model: model, offerUpgrade: false)
                 .padding(18)
                 .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 20))
             Toggle("Compact camera directions", isOn: $compactBanner)
@@ -182,6 +198,7 @@ struct PremiumView: View {
     }
 
     private var activeLabel: String {
+        if store.localTestingEnabled { return "Premium test access active" }
         switch store.activePlan {
         case .lifetime?: return "Lifetime Premium"
         case .monthly?: return "Monthly plan active"
@@ -197,6 +214,7 @@ struct PremiumView: View {
                     .foregroundStyle(BrakeTheme.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if !PremiumStore.localTestingAvailable {
             HStack(spacing: 20) {
                 Button("Restore purchases") { Task { await store.restore() } }
                     .disabled(store.isBusy)
@@ -204,6 +222,7 @@ struct PremiumView: View {
                     Button("Redeem code") { Task { await store.redeemOfferCode() } }
                         .accessibilityIdentifier("paywall.redeem")
                 }
+            }
             }
             HStack(spacing: 20) {
                 Link("Terms of Use", destination: LegalLinks.termsOfUse)

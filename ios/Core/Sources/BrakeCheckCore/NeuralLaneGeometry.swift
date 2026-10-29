@@ -299,19 +299,41 @@ public struct LaneModelMeasurement {
 /// Keep a bounded history and pick the newest observation no later than the
 /// vehicle frame. A future mask must not hide a valid older observation.
 public struct LaneMeasurementBuffer {
-    private var measurements: [LaneModelMeasurement] = []
+    private struct Entry {
+        let measurement: LaneModelMeasurement
+        var invalidatedAt: TimeInterval?
+    }
+    private var measurements: [Entry] = []
+    private var lastObservedAt: TimeInterval = -.infinity
     public init() {}
-    public mutating func reset() { measurements = [] }
+    public mutating func reset() { measurements = []; lastObservedAt = -.infinity }
     public mutating func append(_ measurement: LaneModelMeasurement) {
         let time = measurement.lane.capturedAt
-        guard measurements.last.map({ time > $0.lane.capturedAt }) ?? true else { return }
-        measurements.removeAll { time - $0.lane.capturedAt > 1.2 }
-        measurements.append(measurement)
+        guard time > lastObservedAt else { return }
+        lastObservedAt = time
+        measurements.removeAll { time - $0.measurement.lane.capturedAt > 1.2 }
+        measurements.append(Entry(measurement: measurement))
         if measurements.count > 6 { measurements.removeFirst(measurements.count - 6) }
     }
+
+    /// A new observed loss of lane support ends earlier measurements at that
+    /// capture time. Keep their preceding validity for older vehicle frames;
+    /// a future negative observation must not erase their historical evidence.
+    public mutating func invalidate(at time: TimeInterval) {
+        guard time.isFinite else { return }
+        lastObservedAt = max(lastObservedAt, time)
+        for index in measurements.indices where measurements[index].measurement.lane.capturedAt <= time {
+            measurements[index].invalidatedAt = min(measurements[index].invalidatedAt ?? time, time)
+        }
+    }
+
     public func latest(at time: TimeInterval) -> LaneModelMeasurement? {
         guard time.isFinite else { return nil }
-        return measurements.last { time >= $0.lane.capturedAt && time - $0.lane.capturedAt <= 1.0 }
+        return measurements.last {
+            let capturedAt = $0.measurement.lane.capturedAt
+            return time >= capturedAt && time - capturedAt <= 1.0
+                && ($0.invalidatedAt.map { time < $0 } ?? true)
+        }?.measurement
     }
 }
 
@@ -321,11 +343,69 @@ public struct LaneMeasurementBuffer {
 public enum LaneVisualTracker {
     private struct Match { let y: Double; let x: Double; let newY: Double; let error: Double }
 
+    public struct VerifiedProjection {
+        public let lane: LanePath
+        public let cycleError: Double
+    }
+
+    /// Successive-frame tracking requires that image matches also return to
+    /// the original boundaries when run backward. No timestamp is fabricated.
+    public static func cycleCheckedProject(_ lane: LanePath, from source: LaneLumaFrame,
+                                           to current: LaneLumaFrame, excluding boxes: [CGRect] = [],
+                                           maximumSourceAge: TimeInterval = 0.35) -> VerifiedProjection? {
+        guard (0...3).contains(maximumSourceAge), current.capturedAt > source.capturedAt,
+              current.capturedAt - source.capturedAt <= maximumSourceAge,
+              let projected = project(lane, from: source, to: current, excluding: boxes,
+                  maximumSourceAge: max(1, maximumSourceAge)) else { return nil }
+        let left = matches(projected, left: true, from: current, to: source, excluding: boxes)
+        let right = matches(projected, left: false, from: current, to: source, excluding: boxes)
+        guard left.count >= 5, right.count >= 5,
+              let a = left.first, let b = right.first, let c = left.last, let d = right.last else { return nil }
+        let bottom = max(a.newY, b.newY), top = min(c.newY, d.newY)
+        guard top - bottom >= 0.10 else { return nil }
+        let errors = (0..<12).compactMap { index -> Double? in
+            let y = bottom + (top - bottom) * Double(index) / 11
+            guard let original = lane.bounds(at: y), let l = interpolate(left, at: y), let r = interpolate(right, at: y) else { return nil }
+            return max(abs(l - original.left), abs(r - original.right))
+        }
+        guard errors.count >= 8, let worst = errors.max(), worst <= 0.018 else { return nil }
+        let mean = errors.reduce(0, +) / Double(errors.count)
+        guard mean <= 0.008 else { return nil }
+        // Repeatedly replacing a keyframe with only its matched subspan would
+        // erode the visible corridor on every capture. When both boundaries
+        // agree on a common image translation, move the original support as a
+        // whole instead. Uneven motion retains the conservative matched span.
+        let forwardLeft = matches(lane, left: true, from: source, to: current, excluding: boxes)
+        let forwardRight = matches(lane, left: false, from: source, to: current, excluding: boxes)
+        let flows = [(forwardLeft, true), (forwardRight, false)].flatMap { values, isLeft in
+            values.compactMap { value -> (dx: Double, dy: Double)? in
+                guard let bounds = lane.bounds(at: value.y) else { return nil }
+                return (value.x - (isLeft ? bounds.left : bounds.right), value.newY - value.y)
+            }
+        }
+        if forwardLeft.count >= 5, forwardRight.count >= 5, flows.count >= 12 {
+            let dx = flows.map(\.dx).sorted()[flows.count / 2]
+            let dy = flows.map(\.dy).sorted()[flows.count / 2]
+            let residuals = flows.map { max(abs($0.dx - dx), abs($0.dy - dy)) }.sorted()
+            if abs(dx) <= 0.035, abs(dy) <= 0.025,
+               residuals[Int(Double(residuals.count - 1) * 0.9)] <= 0.006 {
+                let preserved = LanePath(bands: lane.bands.map {
+                    LaneBand(y: $0.y + dy, left: $0.left + dx, right: $0.right + dx)
+                }, confidence: projected.confidence, capturedAt: current.capturedAt, source: .neural)
+                if preserved.isUsable(at: current.capturedAt) {
+                    return VerifiedProjection(lane: preserved, cycleError: mean)
+                }
+            }
+        }
+        return VerifiedProjection(lane: projected, cycleError: mean)
+    }
+
     public static func project(_ lane: LanePath, from source: LaneLumaFrame, to current: LaneLumaFrame,
-                               excluding boxes: [CGRect] = []) -> LanePath? {
+                               excluding boxes: [CGRect] = [], maximumSourceAge: TimeInterval = 1) -> LanePath? {
         let age = current.capturedAt - source.capturedAt
         guard lane.source == .neural, source.width == current.width, source.height == current.height,
-              abs(lane.capturedAt - source.capturedAt) < 0.001, age >= 0, age <= 1.0,
+              (0...3).contains(maximumSourceAge),
+              abs(lane.capturedAt - source.capturedAt) < 0.001, age >= 0, age <= maximumSourceAge,
               lane.isUsable(at: source.capturedAt) else { return nil }
         if age == 0 { return lane }
         let exclusions = boxes.map { $0.insetBy(dx: -0.012, dy: -0.012) }

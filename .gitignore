@@ -28,6 +28,8 @@ DerivedData/
 weights/
 !ios/Sources/BrakeCheck/Resources/**/weights/
 !ios/Sources/BrakeCheck/Resources/**/weights/**
+!model_candidates/**/weights/
+!model_candidates/**/weights/**
 yolo11n.pt
 tools/model_migration/artifacts/
 # Generated on CI by .github/workflows/ios-screens.yml (ios/scripts/generate_app_project.sh)

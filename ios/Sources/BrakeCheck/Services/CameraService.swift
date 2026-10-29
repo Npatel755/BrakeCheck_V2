@@ -10,6 +10,8 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                                      autoreleaseFrequency: .workItem)
     private var output = AVCaptureVideoDataOutput()
     private var configured = false
+    private var geometryAvailable = false
+    private var captureTimestamp = CaptureTimestamp()
     private var recovery = CameraSessionRecovery()
     private var wantsRunning: Bool { recovery.wantsRunning }
     private var recoveryWork: DispatchWorkItem?
@@ -111,6 +113,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         framesEligibleAfter = ProcessInfo.processInfo.systemUptime + 0.15
         visionCadence.reset(); lastFramePTS = nil; measuredFPS = nil
         lastDiagnosticsTime = 0
+        resetFrameTiming(notBefore: framesEligibleAfter)
         tracker.clear()
         onTrackingReset?(reason)
     }
@@ -143,16 +146,17 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             return
         }
         do {
+            tracker.prepare()
             let wasConfigured = configured
             try configureIfNeeded()
             if wasConfigured { applyGeometry() }
-            guard wantsRunning else { return }
+            guard wantsRunning, geometryAvailable else { return }
             runRevision += 1
             let revision = runRevision
             recorder.start { [weak self] in
                 guard let self else { return }
                 self.queue.async {
-                    guard self.wantsRunning, self.runRevision == revision else { return }
+                    guard self.wantsRunning, self.geometryAvailable, self.runRevision == revision else { return }
                     if !self.session.isRunning { self.session.startRunning() }
                     guard self.session.isRunning, !self.session.isInterrupted else {
                         self.scheduleRecovery()
@@ -196,6 +200,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     private func applyGeometry() {
         guard let connection = output.connection(with: .video), connection.isVideoOrientationSupported else {
+            geometryAvailable = false
             recovery.stop()
             watchdog?.cancel(); watchdog = nil
             recoveryWork?.cancel(); recoveryWork = nil
@@ -212,9 +217,10 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         recorder.beginOrientationSegment()
         connection.videoOrientation = desiredOrientation
         if connection.isVideoMirroringSupported { connection.isVideoMirrored = false }
+        geometryAvailable = true
         geometry = .preview(orientation: desiredOrientation, landscapeFOV: nativeHorizontalFOV)
-        visionCadence.reset()
         framesEligibleAfter = ProcessInfo.processInfo.systemUptime + 0.15
+        resetFrameTiming(notBefore: framesEligibleAfter)
         let applied = geometry
         tracker.configureFrameGeometry(horizontalFOV: applied.horizontalFieldOfView) { [weak self] in
             guard let self else { return }
@@ -228,6 +234,13 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     func refreshIncidents() { queue.async { self.recorder.refresh() } }
     func applyRecordingPreferences() { queue.async { self.recorder.applyStoragePreferences() } }
+
+    private func resetFrameTiming(notBefore time: TimeInterval) {
+        captureTimestamp.reset(notBefore: time)
+        visionCadence.reset()
+        lastFramePTS = nil
+        measuredFPS = nil
+    }
 
     func start() {
         queue.async {
@@ -316,6 +329,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             configured = true
             applyGeometry()
         } catch {
+            geometryAvailable = false
             captureDevice = nil
             session.inputs.forEach(session.removeInput)
             session.outputs.forEach(session.removeOutput)
@@ -345,6 +359,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             let revision = geometryRevision
             let actual = geometry
             geometryChanging = true
+            resetFrameTiming(notBefore: uptime)
             recorder.beginOrientationSegment()
             tracker.configureFrameGeometry(horizontalFOV: actual.horizontalFieldOfView) { [weak self] in
                 guard let self else { return }
@@ -363,7 +378,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         reportCaptureHealth(sampleBuffer, buffer: buffer, at: uptime)
         guard let capturedAt, capturedAt >= framesEligibleAfter else { return }
         var cadence = visionCadence
-        guard cadence.shouldRun(at: uptime, interval: visionInterval) else { return }
+        guard cadence.shouldRun(at: capturedAt, interval: visionInterval) else { return }
         // A busy worker did not consume this time slot. Offer the next fresh
         // capture instead of adding another full interval after it becomes free.
         if tracker.submit(buffer, uptime: capturedAt, captureISO: captureDevice.map { Double($0.iso) },
@@ -377,10 +392,13 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         guard pts.isNumeric, let clock = session.synchronizationClock else { return nil }
         let hostClock = CMClockGetHostTimeClock()
         let captured = CMSyncConvertTime(pts, from: clock, to: hostClock)
-        let now = CMClockGetTime(hostClock)
-        guard captured.isNumeric, now.isNumeric else { return nil }
-        return CaptureFrameTiming.captureUptime(frameHostTime: CMTimeGetSeconds(captured),
-            hostNow: CMTimeGetSeconds(now), uptimeNow: ProcessInfo.processInfo.systemUptime, maximumAge: maximumAge)
+        let receivedAt = ProcessInfo.processInfo.systemUptime
+        let hostNow = CMTimeGetSeconds(CMClockGetTime(hostClock))
+        guard captured.isNumeric,
+              let capturedAt = captureTimestamp.uptime(hostTimestamp: CMTimeGetSeconds(captured),
+                  hostNow: hostNow, receivedAt: receivedAt),
+              receivedAt - capturedAt <= maximumAge else { return nil }
+        return capturedAt
     }
 
     private var visionInterval: TimeInterval {

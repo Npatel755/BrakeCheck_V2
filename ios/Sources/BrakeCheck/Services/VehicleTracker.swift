@@ -54,7 +54,7 @@ final class VehicleTracker {
     private var lastLightingReport: TimeInterval = -.infinity
     private var prepared = false
     private var vehicleStatus = "YOLO waiting"
-    private var laneStatus = "YOLOP lanes waiting"
+    private var laneStatus = "UFLDv2 lanes waiting"
     private var headingStatus = "Vehicle front/rear model waiting"
     private var leadStatus = "Road + motion confirmation ready"
     private var lastLeadReport: TimeInterval = -.infinity
@@ -86,6 +86,26 @@ final class VehicleTracker {
     private var automaticRequest: VNTrackObjectRequest?
     private var automaticSequence = VNSequenceRequestHandler()
     var onLane: ((LanePath?) -> Void)?
+    var onLanePredictions: ((LanePredictionObservation?) -> Void)?
+    var onLeadLaneStatus: ((String) -> Void)?
+    private var lastLeadLaneStatus: String?
+    var onLaneDiagnostic: ((String) -> Void)?
+    private var lastPublishedLanePredictions: LanePredictionObservation?
+    private var lastPublishedLaneDiagnostic: String?
+    private func publishLanePredictions() {
+        let leadStatus = laneTracker.leadLaneDiagnostic(at: ProcessInfo.processInfo.systemUptime)
+        if lastLeadLaneStatus != leadStatus {
+            lastLeadLaneStatus = leadStatus; onLeadLaneStatus?(leadStatus)
+        }
+        let raw = laneTracker.lanePredictions
+        if raw != lastPublishedLanePredictions {
+            lastPublishedLanePredictions = raw; onLanePredictions?(raw)
+        }
+        let diagnostic = laneTracker.laneDiagnostic
+        if diagnostic != lastPublishedLaneDiagnostic {
+            lastPublishedLaneDiagnostic = diagnostic; onLaneDiagnostic?(diagnostic)
+        }
+    }
     var onTrafficSignal: ((TrafficSignalObservation?, TimeInterval) -> Void)?
     private var trafficSignalEnabled = false
     private lazy var trafficSignalSampler = TrafficSignalSampler()
@@ -141,6 +161,7 @@ final class VehicleTracker {
             guard let self else { return }
             self.queue.async {
                 self.laneStatus = status
+                self.publishLanePredictions()
                 self.onStatus?("\(self.vehicleStatus) · \(status) · \(self.headingStatus) · \(self.leadStatus)")
                 print("[BrakeCheck lanes] \(status)")
             }
@@ -157,6 +178,15 @@ final class VehicleTracker {
     /// Runs model loading off the camera callback thread.
     func prepare() {
         queue.async {
+            // Called at initialization and on live starts/resumes, never per
+            // frame. A ready vehicle detector must not prevent retrying an
+            // auxiliary component whose previous load failed.
+            if self.standardDetector != nil {
+                self.headingTracker.prepare()
+                self.laneTracker.prepare()
+                if !self.lowLightLoading { self.lowLightError = nil }
+                return
+            }
             guard !self.prepared else { return }
             self.prepared = true
             self.onDetectorReady?(false)
@@ -434,6 +464,8 @@ final class VehicleTracker {
         automaticRequest = nil
         automaticSequence = VNSequenceRequestHandler()
         onLane?(nil)
+        lastPublishedLanePredictions = nil; onLanePredictions?(nil)
+        lastPublishedLaneDiagnostic = nil; publishLanePredictions()
         onARScene?(nil); lastObstacleBoxes = []; lastObstacleTime = -.infinity
         targetID = nil
         previousBox = nil
@@ -481,12 +513,14 @@ final class VehicleTracker {
                     guard self.isCurrentFrame(submittedGeneration) else { return }
                     self.lastLane = lane
                     self.onLane?(lane)
+                    self.publishLanePredictions()
                     self.publishARScene()
                     return
                 }
                 var trackedBox: CGRect?
                 let imageAspect = Double(CVPixelBufferGetWidth(buffer)) / Double(CVPixelBufferGetHeight(buffer))
-                let guidance = self.lastLane.flatMap { $0.isUsable(at: uptime) ? $0 : nil }
+                let guidance = self.laneTracker.validatedGuidance(self.lastLane, at: uptime)
+                let leadGuidance = self.laneTracker.leadGuidance(self.lastLane, at: uptime)
                 var vehicles: [VehicleDetection] = []
                 if self.detector != nil {
                     let detectorStarted = ProcessInfo.processInfo.systemUptime
@@ -525,7 +559,9 @@ final class VehicleTracker {
                     if self.manualRequest == nil, let crop = self.recovery.propose(input, at: uptime,
                         preferredBox: self.targetID == nil ? nil : self.previousBox,
                         lastDetectedAt: self.lastLeadDetectionAt, trackedBox: trackedBox,
-                        lane: guidance, imageAspect: imageAspect, interval: policy.recoveryInterval,
+                        lane: leadGuidance, imageAspect: imageAspect,
+                        boundaries: self.laneTracker.leadBoundaryGuidance(at: uptime),
+                        interval: policy.recoveryInterval,
                         captureAge: ProcessInfo.processInfo.systemUptime - uptime,
                         vehicleLatency: self.vehicleLatency) {
                         do {
@@ -560,7 +596,9 @@ final class VehicleTracker {
                     self.onDetections?(vehicles, uptime)
                     self.laneTracker.submit(buffer, at: uptime)
                     let lane = self.laneTracker.update(buffer, excluding: vehicles.map { $0.box }, at: uptime)
+                    guard self.isCurrentFrame(submittedGeneration) else { return }
                     self.lastLane = lane; self.onLane?(lane)
+                    self.publishLanePredictions()
                     self.publishARScene()
                     try self.sequence.perform([request], on: buffer, orientation: .up)
                     guard
@@ -595,7 +633,10 @@ final class VehicleTracker {
                                                    detectorGeneration: self.detectorGeneration))
                     return
                 }
-                let classified = self.headingTracker.update(vehicles, buffer: buffer, lane: guidance,
+                let currentGuidance = self.laneTracker.validatedGuidance(guidance, at: uptime)
+                let currentLeadGuidance = self.laneTracker.leadGuidance(currentGuidance, at: uptime)
+                let classified = self.headingTracker.update(vehicles, buffer: buffer, lane: currentLeadGuidance,
+                    boundaries: self.laneTracker.leadBoundaryGuidance(at: uptime),
                     at: uptime,
                     preferredID: self.targetID, trackedBox: trackedBox,
                     allowNightClassAliases: self.activeProfile == .night)
@@ -624,7 +665,10 @@ final class VehicleTracker {
                     self.motionGuard.reset(); candidates = classified
                 }
                 guard self.isCurrentFrame(submittedGeneration) else { return }
-                self.selectAutomatic(candidates, at: uptime, lane: guidance, road: self.laneTracker.roadRegion,
+                self.selectAutomatic(candidates, at: uptime,
+                                     lane: self.laneTracker.validatedGuidance(currentGuidance, at: uptime),
+                                     leadLane: self.laneTracker.leadGuidance(currentGuidance, at: uptime),
+                                     road: self.laneTracker.roadRegion,
                                      trackedBox: trackedBox, imageAspect: imageAspect, ranges: ranges)
                 // Publish risk before lane paint/projection spends the rest of
                 // this capture's freshness budget. Lane display still updates.
@@ -632,6 +676,7 @@ final class VehicleTracker {
                 let lane = self.laneTracker.update(buffer, excluding: vehicles.map { $0.box }, at: uptime)
                 guard self.isCurrentFrame(submittedGeneration) else { return }
                 self.lastLane = lane; self.onLane?(lane)
+                self.publishLanePredictions()
                 self.publishARScene()
             } catch {
                 if let id = self.targetID { self.lose(id, "Vision error: \(error.localizedDescription)") }
@@ -781,7 +826,7 @@ final class VehicleTracker {
             iso: iso, exposureSeconds: exposure)
     }
     private func selectAutomatic(_ detections: [LeadVehicle], at time: TimeInterval,
-                                 lane: LanePath?, road: RoadRegion?, trackedBox: CGRect?,
+                                 lane: LanePath?, leadLane: LanePath?, road: RoadRegion?, trackedBox: CGRect?,
                                  imageAspect: Double, ranges: [UUID: VehicleRangeCapture]) {
         guard let fov = horizontalFOV else {
             automaticSelector.reset()
@@ -794,8 +839,8 @@ final class VehicleTracker {
         let rejected = candidates.filter { $0.travel?.vetoesLead(at: time) == true }.count
         // A clipped range cannot erase the confirmed object identity. It can
         // still supply a fresh box; its numbers remain unavailable until whole.
-        let lead = automaticSelector.update(detections, at: time, lane: lane,
-            trackedBox: trackedBox, road: road, imageAspect: imageAspect)
+        let lead = automaticSelector.update(detections, at: time, lane: leadLane,
+            trackedBox: trackedBox, road: road, boundaries: laneTracker.leadBoundaryGuidance(at: time), imageAspect: imageAspect)
         let hazard = hazardSelector.update(candidates, at: time, lane: lane, road: road, imageAspect: imageAspect)
         let chosen: LeadSelection?
         let leadClosingTime = lead.flatMap { selection -> Double? in
@@ -860,8 +905,11 @@ final class VehicleTracker {
         }
         else if selection.isCameraProjectedPath { rangeSource = "APPROX. RANGE · camera-projected path · lane position uncertain" }
         else if selection.isCollisionHazard { rangeSource = "APPROX. RANGE · closing vehicle in measured/projected driving path" }
-        else if lane?.isUsable(at: time) != true || lane?.bounds(at: Double(selection.vehicle.box.minY)) == nil {
+        else if leadLane?.isUsable(at: time) != true || leadLane?.bounds(at: Double(selection.vehicle.box.minY)) == nil {
             rangeSource = "APPROX. RANGE · road area + forward motion"
+        }
+        else if lane?.isUsable(at: time) != true {
+            rangeSource = "APPROX. RANGE · confirmed temporal lane pair + rear identity"
         }
         else { rangeSource = String(format: "APPROX. RANGE · assumed %.1f m vehicle width", selection.vehicle.assumedWidthMeters) }
         reportLead(rangeSource)

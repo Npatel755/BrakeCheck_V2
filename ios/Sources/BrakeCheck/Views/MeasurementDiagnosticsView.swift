@@ -35,6 +35,10 @@ struct MeasurementDiagnosticsView: View {
                         .font(.brake(.caption))
                     Label(model.cameraStatus, systemImage: "video")
                     Label(model.detectorStatus, systemImage: "viewfinder")
+                    Label(model.laneDiagnostic, systemImage: "road.lanes")
+                    Label(model.leadLaneStatus, systemImage: "car.front.waves.up")
+                    Text("Lane guides show fresh model predictions, including a single visible boundary. Those display traces do not establish a driving corridor or supply collision, calibration or AR evidence.")
+                        .font(.brake(.caption)).foregroundStyle(.secondary)
                     Label(model.recorderStatus, systemImage: "record.circle")
                     Text(model.trackingStatus)
                 }

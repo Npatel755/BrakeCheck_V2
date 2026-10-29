@@ -67,6 +67,10 @@ final class NavigationService: NSObject, ObservableObject {
         guard let activeRoute, activeRoute.distance > 0, let remainingDistance else { return nil }
         return min(1, max(0, 1 - remainingDistance / activeRoute.distance))
     }
+    /// Last reliable measured progress only. Estimates and geographic proximity
+    /// cannot choose a later branch of the route for along-route place searches.
+    var placeSearchProgressFraction: Double? { isNavigating ? measuredPlaceSearchProgress : nil }
+    private var measuredPlaceSearchProgress: Double?
     @Published private(set) var alternatives: [MKRoute] = []
     @Published private(set) var selectedRouteIndex = 0
     var alternativeTravelTimes: [TimeInterval] { plannedAlternatives.map(\.expectedTravelTime) }
@@ -749,6 +753,7 @@ final class NavigationService: NSObject, ObservableObject {
         etaEstimator.reset()
         trafficTimeMultiplier = 1
         routeGeometryReady = false; preparedProgress = nil; routeProgress = nil
+        measuredPlaceSearchProgress = nil
         activeHistoryKey = nil; historicalPatternHour = nil
         cameraRouteCoordinates = saved.coordinates
         cameraRouteGeometry = CameraRouteGeometry(route: [])
@@ -764,6 +769,7 @@ final class NavigationService: NSObject, ObservableObject {
         if isNavigating, hasFreshLocation, let fix = location { updateProgress(fix) }
     }
     private func resetProgress() {
+        measuredPlaceSearchProgress = nil
         cameraMapMatchConfidence = 0; cameraMapMatchAmbiguous = true; routeConfidence = 0
         routeProgress = preparedProgress
     }
@@ -930,6 +936,9 @@ final class NavigationService: NSObject, ObservableObject {
         }
         isPaused = false
         remainingDistance = snapshot.remainingMeters
+        if let distance = activeRoute?.distance, distance > 0 {
+            measuredPlaceSearchProgress = min(1, max(0, snapshot.progressMeters / distance))
+        }
         isRejoiningRoute = false
         if recovery.retryAt != nil && !requiresNewPlan {
             needsRoute = false

@@ -34,8 +34,9 @@ implemented here.
 - Intel Open Model Zoo license: Apache-2.0. Preserve upstream notices and
   confirm rights for the exact checkpoint before release.
 
-The standard app bundle retains UFLD/SegFormer for testing. `LaneTracker` also
-supports a candidate-only bundle with comma.ai and Intel camera weights.
+The current app bundle uses the newer trained UFLDv2/SegFormer work from N71.
+The historical `origin/commercial-comma-intel` branch supports a candidate-only
+bundle with comma.ai and Intel camera weights.
 Neither model's license
 is a substitute for measured lane geometry, camera alignment or on-device
 testing.
@@ -45,8 +46,8 @@ testing.
 Run `python model_candidates/stage_candidate.py --output <new-folder>/LaneModelData`
 to copy complete candidate packages and generate their SHA-256 manifest. The
 output must be a new folder; the app's existing resources are preserved.
-In a separate trial checkout, replace `ios/Sources/BrakeCheck/Resources/LaneModelData`
-with that staged folder before building. The runtime selects the comma.ai decoder
+In a separate checkout of `origin/commercial-comma-intel`, replace `ios/Sources/BrakeCheck/Resources/LaneModelData`
+with that staged folder before building. That historical runtime selects the comma.ai decoder
 when `CommaLane.mlpackage` is bundled, and selects Intel for the matching road
 model. Keep the standard and candidate bundles separate.
 

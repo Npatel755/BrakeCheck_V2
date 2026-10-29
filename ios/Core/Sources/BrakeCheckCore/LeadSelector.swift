@@ -122,6 +122,7 @@ public struct LeadSelector {
     private var challenger: Track?
     private let requiresRearView: Bool
     private var pathPrior: LanePath?
+    private var observedBoundaries: LanePredictionObservation?
     private var imageAspect = 16.0 / 9.0
 
     private struct Track {
@@ -145,11 +146,12 @@ public struct LeadSelector {
     }
 
     public init(requiresRearView: Bool = false) { self.requiresRearView = requiresRearView }
-    public mutating func reset() { track = nil; challenger = nil; lastUpdate = nil; pathPrior = nil }
+    public mutating func reset() { track = nil; challenger = nil; lastUpdate = nil; pathPrior = nil; observedBoundaries = nil }
 
     public mutating func update(_ detections: [LeadVehicle], at time: TimeInterval,
                                 lane: LanePath? = nil, trackedBox: CGRect? = nil,
                                 road: RoadRegion? = nil,
+                                boundaries: LanePredictionObservation? = nil,
                                 imageAspect: Double = 16.0 / 9.0) -> LeadSelection? {
         guard time.isFinite, imageAspect.isFinite, (0.1...10).contains(imageAspect) else {
             reset(); return nil
@@ -179,6 +181,7 @@ public struct LeadSelector {
             }
         }
         lastUpdate = time
+        observedBoundaries = LanePredictionDisplay.visible(boundaries, at: time)
         let freshLane = lane.flatMap { $0.isUsable(at: time) ? $0 : nil }
         let freshRoad = road.flatMap { $0.isUsable(at: time) ? $0 : nil }
         if let freshLane { pathPrior = freshLane }
@@ -387,6 +390,7 @@ public struct LeadSelector {
         return hasPathSupport(vehicle.box, lane: lane) || LeadVehicleGeometry.supportsBlindLead(vehicle)
     }
     private func clearlyOutside(_ box: CGRect, lane: LanePath?) -> Bool {
+        if let time = lastUpdate, LeadLaneRelevance.excludes(box, boundaries: observedBoundaries, at: time) { return true }
         let position = support(box, lane: lane)
         if !requiresRearView { return position.offset > 1.40 }
         if !LeadVehicle.validBox(box) { return true }
@@ -398,13 +402,16 @@ public struct LeadSelector {
         return support(box, lane: lane).overlap >= 0.35
     }
     private func pathSupported(_ vehicle: LeadVehicle, lane: LanePath?, road: RoadRegion?, at time: TimeInterval) -> Bool {
+        if LeadLaneRelevance.excludes(vehicle.box, boundaries: observedBoundaries, at: time) { return false }
         if let lane, lane.bounds(at: Double(vehicle.box.minY)) != nil {
             return hasPathSupport(vehicle.box, lane: lane)
         }
         if !requiresRearView { return true }
-        // Pavement alone must never turn an oncoming/parked car into a lead.
-        // Unmarked-road support requires independent, fresh forward evidence.
-        return vehicle.travel?.supportsForwardTravel(at: time) == true
+        // Retaining a known ID does not keep it in our forward footprint after
+        // it moves into another lane. Broad road membership is not ego identity.
+        // Unmarked-road support requires both current geometry and fresh motion.
+        return LeadVehicleGeometry.supportsBlindLead(vehicle)
+            && vehicle.travel?.supportsForwardTravel(at: time) == true
             && (road?.overlap(with: vehicle.box, at: time) ?? 0) >= 0.50
     }
     private func priority(_ v: LeadVehicle, lane: LanePath?, road: RoadRegion? = nil) -> Double {

@@ -42,6 +42,46 @@ final class DrivingAssistTests: XCTestCase {
         }
     }
 
+    func testDuplicateLeadCallbacksPreserveHistoryWithoutCountingAsNewEvidence() {
+        var engine = DrivingAssistEngine()
+        let id = UUID()
+        var alerts: [DrivingAssistAlert] = []
+        for step in 0...20 {
+            let time = Double(step) * 0.2
+            let moving = step >= 13
+            for _ in 0...1 {
+                if let alert = engine.updateLead(id: id, distance: moving ? 11 + time - 2.6 : 10,
+                    rangeRate: moving ? 1 : 0, confidence: 0.95, rearConfirmed: true,
+                    stationary: true, enabled: true, capturedAt: time, now: time) {
+                    alerts.append(alert)
+                }
+            }
+        }
+        XCTAssertEqual(alerts.map(\.feature), [.trafficStart])
+    }
+
+    func testLeadEvidenceLossOrBackwardTimeRequiresRearming() {
+        for mode in 0...3 {
+            var engine = DrivingAssistEngine()
+            let id = UUID()
+            for step in 0...12 {
+                let time = Double(step) * 0.2
+                _ = engine.updateLead(id: id, distance: 10, rangeRate: 0, confidence: 0.95,
+                    rearConfirmed: true, stationary: true, enabled: true, capturedAt: time, now: time)
+            }
+            let interrupted = mode == 0 ? 2.0 : 2.6
+            XCTAssertNil(engine.updateLead(id: id, distance: 10, rangeRate: 0, confidence: 0.95,
+                rearConfirmed: mode != 1, stationary: true, enabled: mode != 2,
+                capturedAt: interrupted, now: mode == 3 ? interrupted + 1 : interrupted))
+            for step in 14...20 {
+                let time = Double(step) * 0.2
+                XCTAssertNil(engine.updateLead(id: id, distance: 11 + time, rangeRate: 1,
+                    confidence: 0.95, rearConfirmed: true, stationary: true, enabled: true,
+                    capturedAt: time, now: time))
+            }
+        }
+    }
+
     private func lane(at time: Double, center: Double = 0.5, source: LaneSource = .neural) -> LanePath {
         LanePath(bands: (1...6).map { index in
             LaneBand(y: Double(index) * 0.1, left: center - 0.2, right: center + 0.2)

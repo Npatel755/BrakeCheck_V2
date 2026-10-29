@@ -70,6 +70,8 @@ struct NavigationMapView: UIViewRepresentable {
         map.overrideUserInterfaceStyle = style
         let coordinator = context.coordinator
         coordinator.displayLink?.isPaused = !isVisible
+        let locationStateChanged = coordinator.locationIsCurrent != locationIsCurrent
+            || coordinator.positionIsEstimated != positionIsEstimated
         coordinator.locationIsCurrent = locationIsCurrent
         // Navigation used to be capped at 30 Hz even on a healthy 60/120 Hz display.
         // Keep the fluid 60 Hz target while respecting system power/thermal pressure.
@@ -81,12 +83,8 @@ struct NavigationMapView: UIViewRepresentable {
             coordinator.displayLink?.preferredFrameRateRange = CAFrameRateRange(
                 minimum: constrained ? 15 : 30, maximum: preferredRate, preferred: preferredRate)
         }
-        // Service estimates have their own four-second horizon. Never carry one
-        // forward through interpolation after the service returns to a cached fix.
-        if coordinator.positionIsEstimated != positionIsEstimated {
-            coordinator.smoother = NavigationMapSmoother()
-            coordinator.lastLocationTimestamp = nil
-        }
+        // The smoother retains continuity through short estimate handovers and
+        // cancels its target when the service falls back to an expired cached fix.
         coordinator.positionIsEstimated = positionIsEstimated
         coordinator.estimatedAccuracy = location?.horizontalAccuracy ?? 5
         coordinator.cameraPitch = threeDimensional ? 45 : 0
@@ -100,6 +98,10 @@ struct NavigationMapView: UIViewRepresentable {
         let routeChanged = coordinator.path !== path
         let recenter = coordinator.recenterTrigger != recenterTrigger
         let followChanged = coordinator.wasFollowing != followsLocation
+        if followChanged {
+            coordinator.smoother = NavigationMapSmoother()
+            coordinator.lastLocationTimestamp = nil
+        }
         if recenter {
             coordinator.userPanned = false
             coordinator.manualZoom = false
@@ -168,7 +170,7 @@ struct NavigationMapView: UIViewRepresentable {
                 coordinator.userPosition = annotation
                 map.addAnnotation(annotation)
             }
-            if coordinator.lastLocationTimestamp != location.timestamp {
+            if coordinator.lastLocationTimestamp != location.timestamp || locationStateChanged {
                 let accepted = coordinator.smoother.ingest(NavigationCoordinate(latitude: location.coordinate.latitude,
                     longitude: location.coordinate.longitude), accuracy: positionIsEstimated ? min(100, max(0, location.horizontalAccuracy)) : location.horizontalAccuracy,
                     speed: location.speed, timestamp: location.timestamp.timeIntervalSince1970,
@@ -315,12 +317,13 @@ struct NavigationMapView: UIViewRepresentable {
             guard following, !userZooming, !userPanned else { return }
             let factor = 1 - exp(-dt / 0.65)
             let current = map.camera
-            let longitudeDelta = (coordinate.longitude - current.centerCoordinate.longitude + 540).truncatingRemainder(dividingBy: 360) - 180
-            let center = CLLocationCoordinate2D(latitude: current.centerCoordinate.latitude + (coordinate.latitude - current.centerCoordinate.latitude) * factor,
-                longitude: (current.centerCoordinate.longitude + longitudeDelta * factor + 540).truncatingRemainder(dividingBy: 360) - 180)
+            // Position has already passed the single display filter. Following
+            // that point directly keeps the map centered on its marker without
+            // adding another vehicle-length of positional lag.
+            let center = coordinate
             let desiredHeading = headingUp ? targetHeading : 0
-            let turn = (desiredHeading - followHeading + 540).truncatingRemainder(dividingBy: 360) - 180
-            followHeading = (followHeading + turn * factor + 360).truncatingRemainder(dividingBy: 360)
+            followHeading = NavigationMapSmoother.interpolatedHeading(from: followHeading,
+                toward: desiredHeading, seconds: dt)
             let distance = current.centerCoordinateDistance + (followDistance - current.centerCoordinateDistance) * factor
             let displacement = MapOverlayCoalescer.distance(
                 NavigationCoordinate(latitude: current.centerCoordinate.latitude, longitude: current.centerCoordinate.longitude),

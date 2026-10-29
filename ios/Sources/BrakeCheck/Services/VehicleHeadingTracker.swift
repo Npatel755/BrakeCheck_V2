@@ -90,6 +90,7 @@ final class VehicleHeadingTracker {
     }
 
     func update(_ vehicles: [VehicleDetection], buffer: CVPixelBuffer, lane: LanePath?,
+                boundaries: LanePredictionObservation? = nil,
                 at time: TimeInterval, preferredID: UUID? = nil,
                 trackedBox: CGRect? = nil, allowNightClassAliases: Bool = false) -> [LeadVehicle] {
         guard time.isFinite else { reset(); return [] }
@@ -129,7 +130,7 @@ final class VehicleHeadingTracker {
                 // lane or road-plus-motion support before authorizing metrics.
                 return VehicleViewpointEligibility.canClassify(vehicle, sourceWidth: width, sourceHeight: height)
             }
-            if let vehicle = scheduler.choose(eligible, at: time, preferredID: preferredID, lane: lane),
+            if let vehicle = scheduler.choose(eligible, at: time, preferredID: preferredID, lane: lane, boundaries: boundaries),
                let id = vehicle.trackID {
                 lastPrediction = time
                 schedule(classifier, vehicle: vehicle, trackID: id, buffer: buffer, at: time)

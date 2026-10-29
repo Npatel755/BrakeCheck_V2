@@ -16,7 +16,7 @@ final class DriveModel {
     let safety = SafetyService()
     let navigation = NavigationService()
     let replay = ReplayService()
-    private let speedLog = SpeedLogWriter()
+    private let speedLog = AppSpeedLogWriter()
     private let tripMetricsStore = TripMetricsStore(url: FileManager.default.urls(for: .documentDirectory,
         in: .userDomainMask)[0].appendingPathComponent("TripMetrics/trip-history.json"))
     private(set) var savedTrips: [TripMetrics] = []
@@ -69,6 +69,9 @@ final class DriveModel {
     private var assistLane: LanePath?
     @ObservationIgnored private var assistSubscriptions = Set<AnyCancellable>()
     private(set) var drivingAssistAlert: DrivingAssistAlert?
+    private(set) var drivingAssistStatuses: [DrivingAssistFeature: String] = [:]
+    private var assistSignalTime: TimeInterval = -.infinity
+    private var assistRearVehicleTime: TimeInterval = -.infinity
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -209,6 +212,31 @@ final class DriveModel {
 
     var trackingBox: CGRect?
     var lanePath: LanePath?
+    /// Display-only model traces. Never supplies calibration, AR or collision evidence.
+    private(set) var lanePredictions: LanePredictionObservation?
+    private(set) var laneDiagnostic = "Loading lanes"
+    private(set) var leadLaneStatus = "Lead lane · waiting for lane pair"
+
+    func laneGuideStatus(at now: TimeInterval) -> String {
+        guard foreground, tripActive || replaying, !demo else { return "Lane guides inactive" }
+        guard !changingCameraGeometry else { return "Updating lanes after rotation" }
+        let operational = ["Loading lanes", "Lanes paused for performance", "Lane prediction delayed", "Lane model error"]
+        if operational.contains(laneDiagnostic) { return laneDiagnostic }
+        if let visible = LanePredictionDisplay.visible(lanePredictions, at: now) {
+            let slots = Set(visible.boundaries.map(\.laneSlot))
+            if slots.count == 1 { return "1 predicted boundary" }
+            return "\(slots.count) predicted boundaries"
+        }
+        return laneDiagnostic == "Lane predictions ready" ? "Waiting for fresh lanes"
+            : laneDiagnostic == "Lane model ready" ? "Looking for painted lines" : laneDiagnostic
+    }
+
+    private func resetLanePredictionDisplay() {
+        lanePredictions = nil
+        if ["Lane predictions ready", "Looking for painted lines", "Lane prediction delayed"].contains(laneDiagnostic) {
+            laneDiagnostic = "Lane model ready"
+        }
+    }
     let arPresentation = CameraARPresentation()
     var arScene: CameraARScene? { arPresentation.scene }
     var cameraCalibrationEstimate: CameraCalibrationEstimate? { arPresentation.calibrationEstimate }
@@ -351,6 +379,7 @@ final class DriveModel {
                 self?.cameraStatus = status
 
                 self?.cameraReady = ready
+                if let self, !ready, !self.replaying { self.resetLanePredictionDisplay() }
 
             }
 
@@ -441,6 +470,33 @@ final class DriveModel {
             }
         }
 
+        camera.tracker.onLaneDiagnostic = { [weak self] status in
+            DispatchQueue.main.async {
+                guard let self, self.laneDiagnostic != status else { return }
+                self.laneDiagnostic = status
+                if ["Loading lanes", "Lanes paused for performance", "Lane model error"].contains(status) {
+                    self.lanePredictions = nil
+                    self.laneDisplayContinuity.reset(); self.lanePath = nil
+                }
+            }
+        }
+        camera.tracker.onLeadLaneStatus = { [weak self] status in
+            DispatchQueue.main.async { self?.leadLaneStatus = status }
+        }
+        camera.tracker.onLanePredictions = { [weak self] observation in
+            DispatchQueue.main.async {
+                guard let self, self.foreground, self.tripActive || self.replaying, !self.demo,
+                      !self.changingCameraGeometry else { return }
+                guard UserDefaults.standard.bool(forKey: "display.laneGuides") else {
+                    if self.lanePredictions != nil { self.lanePredictions = nil }
+                    return
+                }
+                let cutoff = max(self.latestGeometryChangeUptime, self.latestTrackingResetUptime)
+                guard observation.map({ $0.capturedAt >= cutoff }) ?? true else { return }
+                let visible = LanePredictionDisplay.visible(observation, at: ProcessInfo.processInfo.systemUptime)
+                if self.lanePredictions != visible { self.lanePredictions = visible }
+            }
+        }
         camera.tracker.onLane = { [weak self] lane in
             // Perception guides are optional diagnostics. Safety and AR use
             // the tracker's lane directly, so hidden guides need no UI work.
@@ -449,7 +505,7 @@ final class DriveModel {
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo else { return }
                 guard !self.changingCameraGeometry,
-                      lane.map({ $0.capturedAt >= self.latestGeometryChangeUptime }) ?? true else { return }
+                      lane.map({ $0.capturedAt >= max(self.latestGeometryChangeUptime, self.latestTrackingResetUptime) }) ?? true else { return }
                 self.processAssistLane(lane)
                 guard UserDefaults.standard.bool(forKey: "display.laneGuides") else { return }
                 let path = self.laneDisplayContinuity.update(lane,
@@ -463,6 +519,7 @@ final class DriveModel {
                 let now = ProcessInfo.processInfo.systemUptime
                 let stationary = self.hasStationaryGPS(at: now)
                     && self.speedService.reading(at: capturedAt)?.isFreshStationary(at: capturedAt) == true
+                self.assistSignalTime = observation?.capturedAt ?? -.infinity
                 let alert = self.drivingAssist.updateSignal(observation, stationary: stationary,
                     enabled: self.assistAllowed(.greenLight), now: now)
                 self.deliverAssist(alert)
@@ -633,8 +690,20 @@ final class DriveModel {
         if navigation.isNavigating && !tripActive { startTrip() }
     }
 
+    /// Retry a failed live capture without discarding the trip or its GPS log.
+    /// Repeated taps stop being eligible as soon as the status becomes starting.
+    var canRetryCamera: Bool {
+        guard tripActive, foreground, !stopping, !demo, !replaying,
+              !cameraReady, !permissionPending else { return false }
+        return cameraStatus.hasPrefix("Camera: ")
+            || cameraStatus.localizedCaseInsensitiveContains("could not")
+            || cameraStatus == "Camera rotation unavailable"
+    }
+
     func retryCamera() {
-        guard tripActive, foreground, !stopping, !demo, !replaying, !cameraReady else { return }
+        guard canRetryCamera else { return }
+        cameraStatus = "Starting the camera…"
+        clearTarget("Camera restarting · acquiring the lead")
         requestCameraIfNeeded()
     }
 
@@ -689,8 +758,10 @@ final class DriveModel {
                         hardBrakes: hardBrakes, closeCalls: closeCalls, maxSpeedMPH: maxSpeedMPH)
 
         stopping = true
-
-        speedLog.stop()
+        beginFinalizationTask()
+        let finalization = DispatchGroup()
+        finalization.enter()
+        speedLog.stop { finalization.leave() }
         speedService.stop()
         clearFusionDisplay()
 
@@ -709,18 +780,11 @@ final class DriveModel {
 
         UIApplication.shared.isIdleTimerDisabled = false
 
-        beginFinalizationTask()
-
-        camera.stop { [weak self] in
-
-            DispatchQueue.main.async {
-
-                self?.stopping = false
-
-                self?.finishBackgroundTask()
-
-            }
-
+        finalization.enter()
+        camera.stop { finalization.leave() }
+        finalization.notify(queue: .main) { [weak self] in
+            self?.stopping = false
+            self?.finishBackgroundTask()
         }
 
     }
@@ -861,6 +925,7 @@ final class DriveModel {
         frameAlignmentStatus = "Waiting for camera and GPS"
         laneDisplayContinuity.reset()
         lanePath = nil
+        resetLanePredictionDisplay()
         arPresentation.reset(); cameraCalibrationAssistant = CameraCalibrationAssistant()
 
         trackingStatus = reason
@@ -894,6 +959,8 @@ final class DriveModel {
 
         demo = enabled
         demoHardBrake = enabled && hardBrake
+        resetLanePredictionDisplay()
+        laneDisplayContinuity.reset(); lanePath = nil
         gpsSpeedEstimated = false
         gpsEstimateLeadEligible = false
         estimatedLeadSpeed = nil
@@ -954,6 +1021,7 @@ final class DriveModel {
             targetID = reading.targetID; estimator.reset(); cameraRangeEstimator.reset()
         }
         if detectorMeasurementGeneration != reading.detectorGeneration {
+            resetLanePredictionDisplay()
             detectorMeasurementGeneration = reading.detectorGeneration
             estimator.reset(); cameraRangeEstimator.reset()
         }
@@ -1280,6 +1348,10 @@ final class DriveModel {
         if !detections.isEmpty, !TrackingFreshness.measurementIsFresh(capturedAt: lastDetectionsUptime, now: now) {
             detections = []
         }
+        if lanePredictions != nil,
+           LanePredictionDisplay.visible(lanePredictions, at: now) == nil {
+            lanePredictions = nil
+        }
         if UserDefaults.standard.bool(forKey: "display.laneGuides") {
             let displayedLane = laneDisplayContinuity.current(at: now)
             if lanePath?.capturedAt != displayedLane?.capturedAt { lanePath = displayedLane }
@@ -1363,6 +1435,7 @@ final class DriveModel {
         let next = DrivingAssistFeature.enabled(in: .standard, premium: PremiumStore.shared.isSubscribed)
         if next != assistFeatures {
             assistFeatures = next; drivingAssist.reset(); drivingAssistAlert = nil; assistLane = nil
+            assistSignalTime = -.infinity; assistRearVehicleTime = -.infinity
         }
         let now = ProcessInfo.processInfo.systemUptime
         camera.tracker.setTrafficSignalEnabled(assistAllowed(.greenLight) && hasStationaryGPS(at: now))
@@ -1370,6 +1443,44 @@ final class DriveModel {
            !assistAllowed(alert.feature) || now - alert.capturedAt > 3 {
             drivingAssistAlert = nil
         }
+        refreshDrivingAssistStatuses(at: now)
+    }
+
+    private func refreshDrivingAssistStatuses(at now: TimeInterval) {
+        var state = DrivingAssistReadiness()
+        state.premium = PremiumStore.shared.isSubscribed
+        state.liveTrip = tripActive; state.replayOrDemo = replaying || demo
+        state.foreground = foreground
+        state.cameraReady = cameraReady && !changingCameraGeometry
+        state.detectorReady = detectorReady
+        state.priorityAlert = brakeWarningActive || risk.level == .critical || safety.checkinPresented
+        state.aligned = cameraAlignmentVerified
+        state.maneuver = navigation.isNavigating && ((navigation.maneuverDistance ?? .infinity) < 100
+            || navigation.isRejoiningRoute)
+        state.freshStationaryGPS = hasStationaryGPS(at: now)
+        if let fix = speedReading, fix.isConfidentlyMoving(at: now), fix.accuracy <= 2 {
+            state.freshMovingSpeed = fix.metersPerSecond
+        }
+        state.lane = assistLane; state.now = now
+        state.freshLeadRange = leadTargetID != nil && currentLeadConfidence >= 0.8
+            && TrackingFreshness.measurementIsFresh(capturedAt: lastTrackingUptime, now: now)
+            && cameraRange.distance != nil && cameraRange.rangeRate != nil && !trackingCoasting
+        state.freshRearVehicle = (0...0.5).contains(now - assistRearVehicleTime)
+        state.freshSignal = (0...0.5).contains(now - assistSignalTime)
+        var statuses: [DrivingAssistFeature: String] = [:]
+        for feature in DrivingAssistFeature.allCases {
+            state.enabled = assistFeatures.contains(feature)
+            statuses[feature] = state.message(for: feature)
+        }
+        if statuses != drivingAssistStatuses { drivingAssistStatuses = statuses }
+    }
+
+    func showsDrivingAssistAlert(selecting: Bool = false) -> Bool {
+        guard let alert = drivingAssistAlert else { return false }
+        return DrivingAssistPresentation.showsAlert(premium: PremiumStore.shared.isSubscribed,
+            liveTrip: tripActive, foreground: foreground, replayOrDemo: replaying || demo,
+            critical: brakeWarningActive || risk.level == .critical, checkin: safety.checkinPresented,
+            selecting: selecting, capturedAt: alert.capturedAt, now: ProcessInfo.processInfo.systemUptime)
     }
 
     private func processAssistLead(_ reading: TrackingReading) {
@@ -1416,6 +1527,8 @@ final class DriveModel {
             LeadVehicle(box: $0.box, label: $0.label, confidence: $0.confidence,
                         viewpoint: $0.viewpoint, trackID: $0.id)
         }
+        assistRearVehicleTime = vehicles.contains { $0.confidence >= 0.8 && $0.trackID != nil
+            && $0.viewpoint?.isRearFacing(at: capturedAt) == true } ? capturedAt : -.infinity
         let alert = drivingAssist.updateVehicles(vehicles, lane: assistLane, speed: speed,
             enabled: assistAllowed(.cutIn) && cameraAlignmentVerified,
             capturedAt: capturedAt, now: now)

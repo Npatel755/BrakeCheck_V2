@@ -2,6 +2,7 @@ import BrakeCheckCore
 import SwiftUI
 
 struct DrivingAssistControls: View {
+    var model: DriveModel? = nil
     @ObservedObject private var premium = PremiumStore.shared
     @AppStorage("premium.drivingAssist.trafficStart") private var trafficStart = false
     @AppStorage("premium.drivingAssist.greenLight") private var greenLight = false
@@ -19,6 +20,12 @@ struct DrivingAssistControls: View {
                         Label(feature.title, systemImage: feature.icon)
                             .font(.brake(.subheadline, weight: .semibold))
                         Text(feature.detail).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+                        if let model {
+                            Text(model.drivingAssistStatuses[feature] ?? "Checking alert status")
+                                .font(.brake(.caption, weight: .semibold))
+                                .foregroundStyle(BrakeTheme.muted)
+                                .accessibilityIdentifier(feature.preferenceKey + ".status")
+                        }
                     }
                 }
                 .disabled(!premium.isSubscribed)
@@ -29,7 +36,7 @@ struct DrivingAssistControls: View {
                 Label("Premium required · alerts are off", systemImage: "lock.fill")
                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 if offerUpgrade {
-                    NavigationLink("View Premium") { PremiumView() }
+                    NavigationLink("View Premium") { PremiumView(model: model) }
                 }
             }
             Text("These reminders can miss a change or fire when nothing changed. Green Light only reads a single, clear vertical signal and can't tell arrows apart. Check that the signal is yours and look at the road before you move.")
