@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BrakeSense Privacy Policy</title>
+  <meta name="description" content="What BrakeSense keeps on your iPhone, what reaches our server if you add emergency contacts, who else handles it, and how to delete it.">
+  <link rel="canonical" href="https://brakesense.app/privacy.html">
+  <meta name="theme-color" content="#eaf2fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#050a14" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="BrakeSense">
+  <meta property="og:title" content="BrakeSense Privacy Policy">
+  <meta property="og:url" content="https://brakesense.app/privacy.html">
+  <meta property="og:image" content="https://brakesense.app/assets/img/og.png">
+  <link rel="icon" href="favicon.ico" sizes="48x48">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+  <!-- Draft of 2026-10-28, written from main_v3 + claude/paywall and the current single-driver backend
+       (backend/, photon-agent/). Before publishing, settle the items in web/README.md, "Before going live":
+       the production backend keeps this data flow, deletes check-in records after 30 days (not in the code yet),
+       its host and region, whether trip summaries still reach the server, whether the ElevenLabs voice ships,
+       where the waitlist is stored, and that Photon's terms protect data at least as well as this policy. -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="lamp" viewBox="0 0 28 28">
+      <g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+        <circle cx="14" cy="14" r="7.5"/>
+        <path d="M4.6 7.5Q.6 14 4.6 20.5M23.4 7.5Q27.4 14 23.4 20.5"/>
+        <path d="M14 9.8V15" stroke-width="2.8"/>
+      </g>
+      <circle cx="14" cy="18.2" r="1.6" fill="currentColor"/>
+    </symbol>
+  </svg>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="logo" href="./" aria-label="BrakeSense home"><svg aria-hidden="true"><use href="#lamp"/></svg><span>Brake<span class="sense">Sense</span></span></a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="./#how">How it works</a>
+        <a href="privacy.html" aria-current="page">Privacy</a>
+        <a href="support.html">Support</a>
+        <a class="btn btn--small" href="./#join">Join the waitlist</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="doc">
+    <div class="wrap">
+      <div class="doc__head">
+        <h1>Privacy Policy</h1>
+        <p class="doc__meta">Last updated October 28, 2026. This policy covers the BrakeSense iPhone app and this website, brakesense.app.</p>
+      </div>
+
+      <section class="doc__summary" aria-labelledby="summary">
+        <h2 id="summary">The short version</h2>
+        <ul>
+          <li>Collision warnings, video, trips and routes are worked out and stored on your iPhone. You don’t need an account.</li>
+          <li>Our server is involved only if you add emergency contacts. It then keeps each contact’s first name and number, receives your location and speed when a crash check-in starts, and receives a short summary after each trip.</li>
+          <li>We don’t sell your data or use it for ads, and the app has no ad or analytics code in it.</li>
+          <li>You can delete all of it, in the app or by emailing <a href="mailto:support@brakesense.app">support@brakesense.app</a>.</li>
+        </ul>
+      </section>
+
+      <div class="doc__body">
+        <h2>Who we are</h2>
+        <p>BrakeSense is made by Harrison and Nick, two independent developers. It started as our team’s project at Hacklanta 2026, and the app is sold on the App Store under Harrison’s name. In this policy “we” and “us” means the two of us. We decide how the data described here is used, and we’re responsible for it. Email <a href="mailto:support@brakesense.app">support@brakesense.app</a> with any question about it.</p>
+
+        <h2>What stays on your iPhone</h2>
+        <p>BrakeSense does its main work on the phone. We never receive any of this:</p>
+        <ul>
+          <li><strong>Camera.</strong> During a trip, the rear camera looks for cars, trucks, buses and motorcycles ahead and estimates how far away they are. Frames are analysed in the phone’s memory.</li>
+          <li><strong>Video.</strong> While a trip runs, the app records video without sound and keeps the latest 15 minutes, deleting older footage as it goes. When you tap Save clip, or the motion sensors pick up a hard jolt, it keeps the 15 minutes before and the 15 minutes after. Saved footage stays until you delete it, or until the auto-delete period you can choose in Settings.</li>
+          <li><strong>Trips.</strong> For each trip, the app saves when you drove and for how long, your top speed, how many hard-braking events and close calls it noticed, and the route. The free version shows the last 7 days and Premium shows every trip. Trips that are hidden aren’t deleted.</li>
+          <li><strong>Location and speed.</strong> Used while BrakeSense is open on screen, to show your speed, estimate the speed of the car ahead, give directions and save trip routes.</li>
+          <li><strong>Motion.</strong> Used to notice a possible impact.</li>
+          <li><strong>Microphone and speech.</strong> After a possible impact, if you’ve allowed it, BrakeSense listens for about 6 seconds for a short answer such as “I’m okay.” Apple’s speech recognition turns it into text on the phone itself. The audio isn’t saved, and it isn’t sent to us or to Apple.</li>
+          <li><strong>Settings, saved places and recent searches.</strong></li>
+          <li><strong>Trial reminder.</strong> If you start the free trial and allow notifications, the phone schedules a reminder for two days before the trial ends.</li>
+        </ul>
+        <p>The detection models run on the phone as well. Your video never reaches us, so we can’t use it to train them or for anything else.</p>
+
+        <h2>Apple services the app uses</h2>
+        <ul>
+          <li><strong>Apple Maps.</strong> When you search for a place or ask for directions, your search, location and destination go to Apple so it can return results. <a href="https://www.apple.com/legal/privacy/">Apple’s privacy policy</a> covers that.</li>
+          <li><strong>The App Store.</strong> You buy Premium through your Apple Account. Apple takes the payment, and we never see your name or card. The app asks Apple which plan you have, if any, and Apple sends us sales reports that don’t identify you.</li>
+          <li><strong>Crash reports.</strong> If you share analytics with app developers (iPhone Settings › Privacy &amp; Security › Analytics &amp; Improvements), Apple sends us crash reports and usage statistics that don’t identify you. You can turn that off in the same place.</li>
+          <li><strong>Spoken alerts.</strong> The “Brake” alert, the check-in question and spoken directions use the iPhone’s built-in voices.</li>
+        </ul>
+
+        <h2>Emergency contacts and our server</h2>
+        <p>If you never add an emergency contact, the app sends nothing to our server. Once you add one, this is what happens.</p>
+
+        <h3>When you add a contact</h3>
+        <p>We store their first name and phone number, and the name you want them to see in messages. Our messaging provider, Photon, gets the same name and number so it can reach them. Our server also gives your phone a random key, so it knows which contacts are yours.</p>
+        <p>You send the invitation yourself, from your own Messages app. A contact gets messages from BrakeSense only after they reply YES, and they can reply STOP at any time. Only add people who are happy to hear from BrakeSense about you.</p>
+
+        <h3>During a crash check-in</h3>
+        <p>When a check-in starts, the app sends our server the time, your location if the phone has a GPS fix from the last 15 seconds, your speed and the app’s language. Your answer (“I’m okay” or “Send help”) follows.</p>
+        <p>If you ask for help, or don’t answer within about a minute, the server messages the contacts who replied YES. The message has your name, an Apple Maps link to where you were and your last GPS speed. Afterwards they can text “where” or “status” to get that location or your answer again.</p>
+
+        <h3>After each trip</h3>
+        <p>The app sends a short summary of the trip: how long you drove, your top speed, and how many hard-braking events and close calls it noticed. A contact who replied YES can text “drive” to get your latest summary. The server keeps only the most recent summary and replaces it after your next trip.</p>
+
+        <h3>Test messages and the optional voice</h3>
+        <p>A test message goes only to the contact you pick, and has no location in it. If you switch on the alternate brake voice in Settings, our server asks ElevenLabs, an AI voice service, to read out a few fixed phrases such as “Brake.” Nothing about you goes with them.</p>
+
+        <h2>How long we keep things</h2>
+        <table>
+          <thead>
+            <tr><th scope="col">What</th><th scope="col">Where</th><th scope="col">How long</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Trip video</td><td>Your iPhone</td><td>The latest 15 minutes, while a trip runs</td></tr>
+            <tr><td>Saved clips</td><td>Your iPhone</td><td>Until you delete them, or the auto-delete period you set</td></tr>
+            <tr><td>Trip history and routes</td><td>Your iPhone</td><td>Until you delete the app. Routes can be deleted sooner in Settings.</td></tr>
+            <tr><td>Emergency contacts</td><td>Our server and Photon</td><td>Until you remove them</td></tr>
+            <tr><td>Check-in records, including your location</td><td>Our server</td><td>30 days, unless you ask us to keep one longer, for example for an insurance claim</td></tr>
+            <tr><td>Latest trip summary</td><td>Our server</td><td>Until your next trip</td></tr>
+            <tr><td>Waitlist email address</td><td>Cloudflare</td><td>Until the launch email has gone out</td></tr>
+            <tr><td>Support emails</td><td>Our Gmail inbox</td><td>As long as we need them to help you</td></tr>
+          </tbody>
+        </table>
+
+        <h2>This website</h2>
+        <p>The site is hosted by Cloudflare, which handles your IP address and browser details to deliver the pages and block attacks, under <a href="https://www.cloudflare.com/privacypolicy/">its own privacy policy</a>. We don’t use cookies or analytics. The fonts are served from this site, so visiting it sends nothing to Google. Cloudflare may set a strictly necessary cookie if it has to check that a visitor isn’t a bot.</p>
+        <ul>
+          <li><strong>Waitlist.</strong> If you join, we store your email address and the date in our Cloudflare account. We use it for one email, when BrakeSense is on the App Store, and delete the list once that email has gone out. The email has an unsubscribe link, and you can ask us to remove you sooner.</li>
+          <li><strong>Email.</strong> Messages to support@brakesense.app are forwarded by Cloudflare to our Gmail inbox, so Google stores them for us.</li>
+        </ul>
+
+        <h2>Who else handles your data</h2>
+        <p>A few services help us run BrakeSense, and each handles data only to provide its service to us:</p>
+        <ul>
+          <li>Apple: Maps, the App Store, and crash reports if you share them</li>
+          <li><a href="https://app.photon.codes/privacy-policy">Photon</a>: delivers emergency-contact messages</li>
+          <li>Our cloud host: runs our server</li>
+          <li><a href="https://elevenlabs.io/privacy-policy">ElevenLabs</a>: reads the optional brake voice, and gets no personal data</li>
+          <li>Cloudflare: hosts this site, forwards our email and stores the waitlist</li>
+          <li><a href="https://policies.google.com/privacy">Google</a>: stores our support email</li>
+        </ul>
+        <p>We only use providers whose terms require them to protect data at least as well as this policy does. We may also disclose information when the law requires it, such as for a valid court order. If BrakeSense becomes part of a company we start, or is ever sold, this policy goes with the data, and we’ll tell you before anything in it changes.</p>
+        <p>We don’t sell personal data or share it for advertising, and we don’t track you across other companies’ apps or websites.</p>
+
+        <h2>Your choices and rights</h2>
+        <ul>
+          <li>Delete saved footage from the Clips screen, and saved trip routes in Settings.</li>
+          <li>Remove an emergency contact on the Emergency contacts screen. That deletes them from our server and from Photon.</li>
+          <li>Deleting the app removes everything stored on your phone. It doesn’t remove your contacts from our server, so remove them in the app first or email us.</li>
+          <li>Turn permissions on or off in iPhone Settings › BrakeSense. Collision warnings need the camera, and your speed needs location.</li>
+          <li>To see, correct, copy or delete what our server holds about you, email us. We reply within 30 days, and we may ask you to confirm the request so we don’t act on someone else’s data.</li>
+          <li>If someone added you as their emergency contact, text STOP to stop all messages, or email us to have your number deleted.</li>
+        </ul>
+        <p>Depending on where you live, including California, other US states, the EU and the UK, the law gives you rights over your data, such as access, deletion and objecting to how it’s used. We honor these requests from everyone, wherever they live. In the EU or UK you can also complain to your data protection authority.</p>
+        <p>For people in the EU and UK: we rely on your consent for emergency contacts, check-ins and trip summaries, and you can withdraw it by removing your contacts. Contacts give their own consent by replying YES. We rely on our legitimate interests to keep the website secure and to answer support email.</p>
+
+        <h2>Do Not Track</h2>
+        <p>Some browsers send a “Do Not Track” signal. This site doesn’t track visitors, so it works the same way whether the signal is on or off.</p>
+
+        <h2>Where your data is processed</h2>
+        <p>We’re based in the United States and run our server there. If you use BrakeSense from another country, the data that reaches our server is transferred to the US.</p>
+
+        <h2>Children</h2>
+        <p>BrakeSense is for drivers. It isn’t directed to children under 13, and we don’t knowingly collect their information. If you think a child under 13 has given us information, email us and we’ll delete it.</p>
+
+        <h2>Security</h2>
+        <p>The app talks to our server only over encrypted connections (HTTPS), and only the two of us can get into the server. No system is perfectly secure, which is one more reason we keep as little as we can.</p>
+
+        <h2>Changes</h2>
+        <p>If we change this policy, we’ll post the new version here with a new date. If a change affects data you’ve already given us, we’ll tell you in the app and ask first.</p>
+
+        <h2>Contact</h2>
+        <p><a href="mailto:support@brakesense.app">support@brakesense.app</a>. We read every message.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div>
+        <a class="logo" href="./" aria-label="BrakeSense home"><svg aria-hidden="true"><use href="#lamp"/></svg><span>Brake<span class="sense">Sense</span></span></a>
+        <p class="footer__tag">Forward-collision warning for iPhone.</p>
+      </div>
+      <nav aria-label="Footer">
+        <a href="privacy.html" aria-current="page">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="support.html">Support</a>
+        <a href="press.html">Press</a>
+      </nav>
+      <p class="footer__legal">BrakeSense is a driver aid, not a safety system. Keep your eyes on the road and follow traffic laws. © 2026 BrakeSense.</p>
+    </div>
+  </footer>
+</body>
+</html>

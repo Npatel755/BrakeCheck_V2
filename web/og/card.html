@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex">
+  <title>BrakeSense Social Card</title>
+  <!-- Source for assets/img/og.png (1200x630): the headline over a real frame of the drive on the home page, with
+       the camera screen at the High risk moment (the poster frame, 6.3 s). Re-render with the Hackathon Workflow tool:
+       .venv\Scripts\python.exe tools/html_shot.py --root <repo>/web --page og/card.html
+           --out <repo>/web/assets/img/og.png --size 1200x630 --reduced-motion -->
+  <link rel="stylesheet" href="../assets/css/site.css">
+  <link rel="stylesheet" href="card.css">
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="lamp" viewBox="0 0 28 28">
+        <g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+          <circle cx="14" cy="14" r="7.5"/>
+          <path d="M4.6 7.5Q.6 14 4.6 20.5M23.4 7.5Q27.4 14 23.4 20.5"/>
+          <path d="M14 9.8V15" stroke-width="2.8"/>
+        </g>
+        <circle cx="14" cy="18.2" r="1.6" fill="currentColor"/>
+      </symbol>
+      <symbol id="viewfinder" viewBox="0 0 16 16">
+        <path d="M1.5 5V2.5a1 1 0 0 1 1-1H5M11 1.5h2.5a1 1 0 0 1 1 1V5M14.5 11v2.5a1 1 0 0 1-1 1H11M5 14.5H2.5a1 1 0 0 1-1-1V11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </symbol>
+    </defs>
+  </svg>
+  <main class="card">
+    <div class="card__head">
+      <h1>Collision warning for cars that never got one.</h1>
+      <p class="logo"><svg aria-hidden="true"><use href="#lamp"/></svg><span>Brake<span class="sense">Sense</span></span></p>
+    </div>
+    <div class="drive card__drive">
+      <div class="drive__stage">
+        <img class="drive__video" src="../assets/video/drive-poster.webp" alt="">
+        <div class="hud" data-level="3" aria-hidden="true">
+          <div class="hud__top">
+            <span class="hud__brand"><svg><use href="#lamp"/></svg><span>Brake<span class="sense">Sense</span></span><span class="hud__live"><i></i>LIVE</span></span>
+            <span class="hud__setup"><svg><use href="#viewfinder"/></svg>Camera setup</span>
+          </div>
+          <div class="risk">
+            <span class="risk__dot"></span>
+            <span>High risk</span>
+            <span class="risk__steps"><i></i><i></i><i></i><i></i></span>
+          </div>
+          <div class="hud__speed"><span class="hud__key">SPEED</span><span class="hud__value"><b>14</b><span class="hud__unit">mph</span></span></div>
+          <dl class="hud__metrics">
+            <div><dt>Approx. gap</dt><dd><b>30</b><small>ft</small></dd><dd class="hud__note"></dd></div>
+            <div class="hud__extra"><dt>Their speed</dt><dd><b>5</b><small>mph</small></dd><dd class="hud__note"></dd></div>
+            <div class="hud__extra"><dt>Gap closing</dt><dd><b>9</b><small>mph</small></dd><dd class="hud__note"></dd></div>
+            <div><dt>Est. closing time</dt><dd><b>2.4</b><small>s</small></dd><dd class="hud__note"></dd></div>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

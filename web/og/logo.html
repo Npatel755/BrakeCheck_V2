@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex">
+  <title>BrakeSense Logo Export</title>
+  <!-- Source for the press-kit logo PNGs. Re-render each with tools/html_shot.py, for example:
+       --page og/logo.html --selector "#on-dark" --transparent --scale 2 --out <repo>/web/assets/press/brakesense-logo-on-dark.png -->
+  <link rel="stylesheet" href="../assets/css/site.css">
+  <link rel="stylesheet" href="logo.css">
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="lamp" viewBox="0 0 28 28">
+      <g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+        <circle cx="14" cy="14" r="7.5"/>
+        <path d="M4.6 7.5Q.6 14 4.6 20.5M23.4 7.5Q27.4 14 23.4 20.5"/>
+        <path d="M14 9.8V15" stroke-width="2.8"/>
+      </g>
+      <circle cx="14" cy="18.2" r="1.6" fill="currentColor"/>
+    </symbol>
+  </svg>
+  <p class="export" id="on-dark"><svg aria-hidden="true"><use href="#lamp"/></svg><span>Brake<span class="sense">Sense</span></span></p>
+  <p class="export" id="on-light"><svg aria-hidden="true"><use href="#lamp"/></svg><span>Brake<span class="sense">Sense</span></span></p>
+</body>
+</html>
