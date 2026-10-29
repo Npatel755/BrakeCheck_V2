@@ -21,6 +21,7 @@ class DeployStagingTests(unittest.TestCase):
             private = [
                 'backend/.env', 'backend/.env.production', 'backend/contacts.json', 'backend/contacts.tmp',
                 'backend/paired_devices.json', 'backend/paired_devices.tmp', 'backend/railway-variables.env',
+                'backend/crashes.json', 'backend/crashes.json.123.tmp',
                 'backend/voice_cache/audio.mp3', 'backend/.venv/secret.txt', 'backend/__pycache__/data.pyc',
                 'photon-agent/photon-optouts.json', 'photon-agent/photon-optouts.json.123.tmp',
                 'photon-agent/photon-alerts.json', 'photon-agent/photon-alerts.json.123.tmp',
