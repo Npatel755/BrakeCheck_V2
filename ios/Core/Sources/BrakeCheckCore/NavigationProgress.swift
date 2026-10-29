@@ -1,14 +1,22 @@
 import Foundation
 
-public struct NavigationCoordinate: Equatable, Sendable {
+public struct NavigationCoordinate: Codable, Hashable, Sendable {
     public let latitude: Double
     public let longitude: Double
     public init(latitude: Double, longitude: Double) {
         self.latitude = latitude; self.longitude = longitude
     }
-    fileprivate var isValid: Bool {
+    public var isValid: Bool {
         latitude.isFinite && longitude.isFinite
             && (-90...90).contains(latitude) && (-180...180).contains(longitude)
+    }
+
+    public func distance(to other: NavigationCoordinate) -> Double {
+        let latitudeDelta = (other.latitude - latitude) * .pi / 180
+        let longitudeDelta = (other.longitude - longitude) * .pi / 180
+        let h = pow(sin(latitudeDelta / 2), 2) + cos(latitude * .pi / 180)
+            * cos(other.latitude * .pi / 180) * pow(sin(longitudeDelta / 2), 2)
+        return 6_371_008.8 * 2 * asin(sqrt(min(1, max(0, h))))
     }
 }
 
@@ -22,6 +30,11 @@ public struct NavigationProgressSnapshot: Equatable, Sendable {
     public let distanceToStep: Double
     public let offRoute: Bool
     public let arrived: Bool
+    /// A measured route projection, never an extrapolated GPS fix.
+    public let snappedCoordinate: NavigationCoordinate?
+    public let snappedBearing: Double?
+    /// Presentation confidence in 0...1. Low confidence must not authorize arrival.
+    public let confidence: Double
 }
 
 /// Projects fresh GPS fixes onto a route without jumping between crossing
@@ -43,6 +56,8 @@ public struct NavigationProgressTracker {
     private struct Projection {
         let along: Double
         let distance: Double
+        let coordinate: NavigationCoordinate
+        let bearing: Double
     }
     private struct StepEnd {
         let meters: Double
@@ -107,7 +122,7 @@ public struct NavigationProgressTracker {
     }
 
     public mutating func update(coordinate: NavigationCoordinate, horizontalAccuracy: Double,
-                                timestamp: Double, now: Double) -> NavigationProgressSnapshot? {
+                                timestamp: Double, now: Double, course: Double? = nil) -> NavigationProgressSnapshot? {
         guard valid, coordinate.isValid, horizontalAccuracy.isFinite,
               (0...35).contains(horizontalAccuracy), timestamp.isFinite, now.isFinite,
               timestamp >= 0, timestamp <= now, now - timestamp <= 2.0,
@@ -122,9 +137,15 @@ public struct NavigationProgressTracker {
             let relative = Self.vector(from: segment.start, to: coordinate, longitudeScale: segment.longitudeScale)
             let fraction = min(1, max(0, (relative.x * segment.delta.x + relative.y * segment.delta.y)
                                      / (segment.length * segment.length)))
+            let longitude = segment.start.longitude + segment.delta.x / (6_371_008.8 * max(1e-12, segment.longitudeScale)) * 180 / .pi * fraction
             return Projection(along: segment.offset + fraction * segment.length,
                               distance: hypot(relative.x - fraction * segment.delta.x,
-                                              relative.y - fraction * segment.delta.y))
+                                              relative.y - fraction * segment.delta.y),
+                              coordinate: NavigationCoordinate(latitude: segment.start.latitude
+                                + segment.delta.y / 6_371_008.8 * 180 / .pi * fraction,
+                                longitude: (longitude + 540).truncatingRemainder(dividingBy: 360) - 180),
+                              bearing: (atan2(segment.delta.x, segment.delta.y) * 180 / .pi + 360)
+                                .truncatingRemainder(dividingBy: 360))
         }
         guard let nearest = projections.min(by: { $0.distance < $1.distance }) else { return nil }
         let onThreshold = max(20, min(45, horizontalAccuracy * 1.6))
@@ -137,11 +158,15 @@ public struct NavigationProgressTracker {
             reachable = projections.filter { $0.along >= along - reverse && $0.along <= along + advance }
         } else { reachable = projections }
         let closestDistance = reachable.map(\.distance).min() ?? .infinity
+        let validCourse = course.flatMap { $0.isFinite && (0..<360).contains($0) ? $0 : nil }
         let close = reachable.filter {
             $0.distance <= closestDistance + uncertainty
                 && (closestDistance > onThreshold || $0.distance <= onThreshold)
         }
-        let projected = close.min {
+        let directional = validCourse.map { heading in
+            close.filter { Self.bearingDifference($0.bearing, heading) <= 100 }
+        } ?? close
+        let projected = directional.min {
             if lastProjectionTime == nil { return $0.along < $1.along }
             let first = abs($0.along - along), second = abs($1.along - along)
             return abs(first - second) <= 1e-6 ? $0.distance < $1.distance : first < second
@@ -183,10 +208,23 @@ public struct NavigationProgressTracker {
         var instruction = min(stepCount - 1, (boundary?.index ?? 0) + 1)
         let headingDistance = min(15, (stepEnds.first?.meters ?? routeDistance) * 0.25)
         if progress <= headingDistance { instruction = 0 }
+        let acceptedProjection = isNear && !offRoute ? projected : nil
+        let alternatives = directional.filter { candidate in
+            guard let projected else { return false }
+            return abs(candidate.along - projected.along) > 40 && candidate.distance <= projected.distance + uncertainty
+        }
+        let confidence = acceptedProjection.map {
+            max(0, min(1, 1 - horizontalAccuracy / 70 - $0.distance / 70 - (alternatives.isEmpty ? 0 : 0.3)))
+        } ?? 0
         return NavigationProgressSnapshot(progressMeters: progress, remainingMeters: max(0, routeDistance - progress),
             distanceFromRoute: nearest.distance, stepIndex: instruction,
             distanceToStep: max(0, (boundary?.meters ?? routeDistance) - progress),
-            offRoute: offRoute, arrived: arrived)
+            offRoute: offRoute, arrived: arrived, snappedCoordinate: acceptedProjection?.coordinate,
+            snappedBearing: acceptedProjection?.bearing, confidence: confidence)
+    }
+
+    private static func bearingDifference(_ a: Double, _ b: Double) -> Double {
+        abs((a - b + 540).truncatingRemainder(dividingBy: 360) - 180)
     }
 
     private static func vector(from start: NavigationCoordinate, to end: NavigationCoordinate,

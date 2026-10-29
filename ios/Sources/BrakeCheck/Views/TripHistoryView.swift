@@ -84,7 +84,7 @@ private struct TripSummaryView: View {
     let trip: TripMetrics
     let useMPH: Bool
     private var incidents: [IncidentManifest] {
-        model.incidents.filter { $0.triggerTime >= trip.startedAt && $0.triggerTime <= trip.endedAt }
+        model.incidents.filter(trip.includes)
     }
     var body: some View {
         ScrollView {

@@ -142,6 +142,16 @@ struct HomeView: View {
                     .accessibilityHint("Keeps available footage from 15 minutes before and after this moment.")
                 }
             }
+            if model.tripActive && !model.cameraReady && !model.demo && !model.replaying {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(model.cameraStatus).font(.caption).foregroundStyle(BrakeTheme.warning)
+                    Button { model.retryCamera() } label: {
+                        Label("Retry camera", systemImage: "arrow.clockwise")
+                            .frame(minHeight: 44)
+                    }
+                    .disabled(model.stopping)
+                }
+            }
         }
         .brakePanel()
     }

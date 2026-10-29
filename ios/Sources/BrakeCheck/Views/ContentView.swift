@@ -175,6 +175,17 @@ struct ContentView: View {
             if showsPlaceholder { placeholder }
             scrims(portrait: portrait).ignoresSafeArea().allowsHitTesting(false)
             if portrait { portraitHUD } else { landscapeHUD }
+            if navigation.isNavigating && !critical && !selecting {
+                VStack {
+                    Spacer()
+                    NavigationCameraGuidanceView(navigation: navigation, useMPH: useMPH)
+                        .frame(maxWidth: portrait ? .infinity : 340)
+                        .padding(.horizontal, portrait ? 14 : 24)
+                        .padding(.bottom, portrait ? 100 : 64)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .allowsHitTesting(false)
+            }
         }
         .clipped()
     }
@@ -286,11 +297,17 @@ struct ContentView: View {
             VStack(spacing: 10) {
                 Image(systemName: model.demo ? "car.side.hill.up.fill" : "car.front.waves.up.fill")
                     .font(.system(size: 44, weight: .light)).foregroundStyle(BrakeTheme.accent.opacity(0.7))
-                Text(model.demo ? "Simulated drive" : "A clearer view ahead.")
+                Text(model.demo ? "Simulated drive" : model.tripActive ? "Waiting for the camera" : "A clearer view ahead.")
                     .font(.system(size: 22, weight: .semibold))
-                Text(model.demo ? "Practice numbers · no camera" : "Start a trip to see the road and track vehicles.")
+                Text(model.demo ? "Practice numbers · no camera" : model.tripActive ? model.cameraStatus
+                    : "Start a trip to see the road and track vehicles.")
                     .font(.system(size: 12)).foregroundStyle(BrakeTheme.muted).multilineTextAlignment(.center)
-                if !model.demo {
+                if model.tripActive && !model.demo {
+                    Button { model.retryCamera() } label: {
+                        Label("Retry camera", systemImage: "arrow.clockwise").frame(minHeight: 44)
+                    }
+                    .disabled(model.stopping)
+                } else if !model.demo {
                     Text("Swipe to Home for trip controls.")
                         .font(.system(size: 12)).foregroundStyle(BrakeTheme.accent)
                 }

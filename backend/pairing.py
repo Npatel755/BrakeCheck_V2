@@ -24,7 +24,7 @@ class PairingCodes:
         return hashlib.sha256(code.encode('utf-8')).hexdigest()
 
     def issue(self) -> str:
-        now = time.time()
+        now = time.monotonic()
         code = secrets.token_urlsafe(24)
         with self._lock:
             self._pending = {key: expires for key, expires in self._pending.items() if expires > now}
@@ -35,7 +35,7 @@ class PairingCodes:
         digest = self._hash(code)
         with self._lock:
             expires = self._pending.pop(digest, None)
-        return expires is not None and expires >= time.time()
+        return expires is not None and expires > time.monotonic()
 
 
 PAIRING_CODES = PairingCodes()

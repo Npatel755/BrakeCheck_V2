@@ -39,7 +39,7 @@ def _agent(path: str, payload: dict) -> dict:
 def _audio(kind: str, lang: str) -> Response:
     try:
         return Response(voice.say(kind, lang), media_type='audio/mpeg')
-    except (requests.RequestException, RuntimeError):
+    except (requests.RequestException, RuntimeError, OSError):
         raise HTTPException(502, 'Voice service unavailable. Use the on-screen check-in buttons.')
 
 
@@ -93,7 +93,7 @@ def _schedule(c: dict, seconds: int):
     if c.get('_timer'):
         c['_timer'].cancel()
     c['deadline'] = time.time() + seconds
-    timer = threading.Timer(seconds, lambda: _resolve(c, 'no_response'))
+    timer = threading.Timer(seconds, lambda: _resolve(c, 'no_response', expected_timer=timer))
     timer.daemon = True
     c['_timer'] = timer
     timer.start()
@@ -151,10 +151,14 @@ def _send_photon_alert(c: dict) -> dict:
         return _agent('/alert', payload)
 
 
-def _resolve(c: dict, status: str, transcript: str = '') -> dict:
+def _resolve(c: dict, status: str, transcript: str = '', *, expected_timer=None) -> dict:
     # The lock serializes manual buttons, transcription, and the server timer.
     # Once decided, a retry returns the same result and never sends another alert.
     with LOCK:
+        # Timer.cancel() cannot stop a callback that has already begun waiting
+        # for this lock. Only the current deadline may resolve the check-in.
+        if expected_timer is not None and c.get('_timer') is not expected_timer:
+            return _public(c)
         if c['status'] != 'pending':
             return _public(c)
         c['status'], c['transcript'] = status, transcript

@@ -9,7 +9,8 @@ public enum RecordingStoragePolicy {
     }
     public static func shouldDelete(_ event: IncidentManifest, now: Date, retentionDays: Int,
                                     protectedIDs: Set<UUID>) -> Bool {
-        guard allowedRetentionDays.contains(retentionDays), retentionDays > 0,
+        guard event.valid, now.timeIntervalSince1970.isFinite,
+              allowedRetentionDays.contains(retentionDays), retentionDays > 0,
               !protectedIDs.contains(event.id),
               !event.state.hasPrefix("Collecting"), event.requestedEnd < now else { return false }
         return event.triggerTime < now.addingTimeInterval(-Double(retentionDays) * 86_400)

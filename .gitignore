@@ -8,6 +8,10 @@ contacts.json
 contacts.tmp
 paired_devices.json
 paired_devices.tmp
+photon-optouts.json
+photon-optouts.json.*.tmp
+photon-alerts.json
+photon-alerts.json.*.tmp
 node_modules/
 *.log
 .venv/
@@ -22,3 +26,8 @@ DerivedData/
 weights/
 yolo11n.pt
 tools/model_migration/artifacts/
+BrakeCheck_Dataset/
+tools/dataset_pipeline/.venv/
+tools/dataset_pipeline/.gpu-venv/
+tools/dataset_pipeline/test-results/
+tools/dataset_pipeline/vendor/

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Security
+import BrakeCheckCore
 
 // Scan the complete JSON string from the QR code and pass it to pair(qrString:deviceName:).
 // QR format: {"app":"BrakeCheck","version":1,"backend_url":"http://10.x.x.x:8000","code":"..."}
@@ -55,26 +56,7 @@ final class ConnectionSettings: ObservableObject {
     var credentialForSignature: String { isPaired ? deviceToken : appKey }
 
     private static func validatedURL(_ raw: String) -> URL? {
-        guard let parts = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let scheme = parts.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              let host = parts.host, !host.isEmpty,
-              parts.user == nil, parts.password == nil,
-              parts.query == nil, parts.fragment == nil,
-              parts.path.isEmpty || parts.path == "/",
-              let url = parts.url else { return nil }
-
-        if scheme == "http" {
-            // Unencrypted HTTP is allowed only for LAN testing, not cloud hosts.
-            let octets = host.split(separator: ".").compactMap { Int($0) }
-            let isPrivate = octets.count == 4 &&
-                octets.allSatisfy { (0...255).contains($0) } &&
-                (octets[0] == 10 ||
-                 (octets[0] == 192 && octets[1] == 168) ||
-                 (octets[0] == 172 && (16...31).contains(octets[1])))
-            guard isPrivate else { return nil }
-        }
-        return url
+        BackendAddress.validatedURL(raw)
     }
 
     var client: BackendClient? {

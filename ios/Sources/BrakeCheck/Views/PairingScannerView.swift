@@ -1,5 +1,6 @@
 import AVFoundation
 import SwiftUI
+import BrakeCheckCore
 import UIKit
 
 struct QRCodeScanner: UIViewControllerRepresentable {
@@ -185,14 +186,8 @@ struct PairingScannerSheet: View {
               let payload = try? JSONDecoder().decode(PairingScannerPayload.self, from: data),
               payload.app == "BrakeCheck", payload.version == 1,
               (32...128).contains(payload.code.count),
-              let url = URL(string: payload.backend_url),
-              let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              let host = url.host, !host.isEmpty,
-              url.user == nil, url.password == nil,
-              url.query == nil, url.fragment == nil,
-              url.path.isEmpty || url.path == "/" else {
-            scanError = "Invalid BrakeCheck pairing QR code. Generate a fresh QR code with `python pair.py`; for a hosted backend, include its HTTPS URL with `--backend-url`."
+              BackendAddress.validatedURL(payload.backend_url) != nil else {
+            scanError = "This pairing QR code is invalid. Create a fresh code on your backend computer. Hosted backends must use HTTPS."
             return
         }
 

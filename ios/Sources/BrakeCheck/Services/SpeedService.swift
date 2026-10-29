@@ -23,7 +23,7 @@ final class SpeedService: NSObject, CLLocationManagerDelegate {
     private var lastStatus = ""
 
     private var lastAcceptedUptime: TimeInterval?
-    private var lastProcessedFixTime: Date?
+    private var observationOrder = GPSObservationOrder()
     private var speedHistory = FrameAlignedSpeedHistory()
 
     // MARK: - Configuration
@@ -220,23 +220,18 @@ final class SpeedService: NSObject, CLLocationManagerDelegate {
             return
         }
 
-        // Select the newest GPS measurement.
-        guard let location = locations.max(
-            by: { $0.timestamp < $1.timestamp }
-        ) else {
-            return
-        }
-
-        // Reject duplicate or out-of-order GPS fixes.
-        if let previous = lastProcessedFixTime,
-           location.timestamp <= previous {
-            return
-        }
-
-        lastProcessedFixTime = location.timestamp
-
+        // Preserve measurement history when Core Location delivers a batch.
+        // Camera captures can precede the newest GPS point in that batch.
         let now = Date()
         let uptime = ProcessInfo.processInfo.systemUptime
+        for location in locations.sorted(by: { $0.timestamp < $1.timestamp }) {
+            acceptLocation(location, now: now, uptime: uptime)
+        }
+    }
+
+    private func acceptLocation(_ location: CLLocation, now: Date, uptime: TimeInterval) {
+        guard observationOrder.accept(timestamp: location.timestamp.timeIntervalSinceReferenceDate,
+                                      now: now.timeIntervalSinceReferenceDate) else { return }
 
         let age = now.timeIntervalSince(location.timestamp)
 
@@ -247,7 +242,8 @@ final class SpeedService: NSObject, CLLocationManagerDelegate {
         let simulated =
             location.sourceInformation?.isSimulatedBySoftware ?? false
         // A valid location can exist even when iOS cannot estimate speed.
-        if age >= -0.5, age <= 15, horizontalAccuracy >= 0, horizontalAccuracy <= 100, !simulated {
+        if age >= -0.5, age <= 15, horizontalAccuracy >= 0, horizontalAccuracy <= 100,
+           CLLocationCoordinate2DIsValid(location.coordinate), !simulated {
             latestLocation = CrashLocation(latitude: location.coordinate.latitude,
                 longitude: location.coordinate.longitude, measuredAt: location.timestamp)
         }
@@ -416,7 +412,7 @@ final class SpeedService: NSObject, CLLocationManagerDelegate {
         speedHistory.reset()
 
         lastAcceptedUptime = nil
-        lastProcessedFixTime = nil
+        observationOrder.reset()
 
         onSpeed?(nil)
     }

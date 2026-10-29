@@ -6,30 +6,20 @@ import Foundation
 final class SegmentRecorder {
     private let queue: DispatchQueue
     private let files = FileManager.default
-    private let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
-    }()
-    private let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }()
+    private let encoder = RecordingMetadataCodec.encoder()
     private var ringURL: URL
     let incidentsURL: URL
     private var ring: [VideoSegment] = []
     private var incidents: [UUID: IncidentManifest] = [:]
     private var pendingEvents = Set<UUID>()
+    private var recovery = RecordingLibrarySnapshotState()
     private var prepared = false
     private var enabled = false
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
     private var segmentURL: URL?
-    private var segmentStart: Date?
-    private var startPTS: CMTime = .invalid
-    private var lastPTS: CMTime = .invalid
+    private var timeline: RecordingSegmentTimeline?
+    private var segmentStart: Date? { timeline?.start }
     private var encoderWidth = 0
     private var encoderHeight = 0
     private var finishGroup = DispatchGroup()
@@ -44,6 +34,12 @@ final class SegmentRecorder {
     var onStatus: ((String) -> Void)?
     var onIncidents: (([IncidentManifest]) -> Void)?
     var onStorage: ((Int64?) -> Void)?
+    var onRecovery: (([UnindexedRecording], [String]) -> Void)?
+
+    private struct RecordingLibrarySnapshotState {
+        var preserveRing = false
+        var protectedIDs = Set<UUID>()
+    }
 
     init(queue: DispatchQueue) {
         self.queue = queue
@@ -62,28 +58,14 @@ final class SegmentRecorder {
             values.isExcludedFromBackup = true
             try url.setResourceValues(values)
         }
-        ring.removeAll()
+        let snapshot = try RecordingLibraryRecovery.load(ringDirectory: ringURL, incidentsDirectory: incidentsURL)
+        ring = snapshot.ring
         incidents.removeAll()
         pendingEvents.removeAll()
-        for url in try files.contentsOfDirectory(at: ringURL, includingPropertiesForKeys: nil)
-        where url.pathExtension == "json" {
-            if let data = try? Data(contentsOf: url),
-               let segment = try? decoder.decode(VideoSegment.self, from: data),
-               files.fileExists(atPath: ringURL.appendingPathComponent(segment.filename).path) {
-                ring.append(segment)
-            }
-        }
-        ring.sort { $0.start < $1.start }
-        // An unfinalized movie after force-quit cannot be promised as recoverable.
-        let known = Set(ring.map(\.filename))
-        for url in try files.contentsOfDirectory(at: ringURL, includingPropertiesForKeys: nil)
-        where url.pathExtension == "mp4" && !known.contains(url.lastPathComponent) {
-            try? files.removeItem(at: url)
-        }
-        for directory in try files.contentsOfDirectory(at: incidentsURL, includingPropertiesForKeys: nil) {
-            let manifestURL = directory.appendingPathComponent("manifest.json")
-            guard let data = try? Data(contentsOf: manifestURL),
-                  var event = try? decoder.decode(IncidentManifest.self, from: data) else { continue }
+        recovery.preserveRing = snapshot.preserveRing
+        recovery.protectedIDs = snapshot.protectedIncidentIDs
+        onRecovery?(snapshot.unindexed, snapshot.warnings)
+        for var event in snapshot.incidents {
             if event.state == "Collecting available footage" {
                 event.notes.append("App restarted. Video is unavailable during the interruption.")
                 if Date() < event.requestedEnd { pendingEvents.insert(event.id) }
@@ -100,8 +82,27 @@ final class SegmentRecorder {
     }
 
     func refresh() {
-        do { try prepareIfNeeded(); applyStoragePreferences(); publishIncidents(); refreshStorageUsage() }
+        do {
+            try prepareIfNeeded()
+            refreshRecoverySummary()
+            applyStoragePreferences()
+            publishIncidents()
+            refreshStorageUsage()
+        }
         catch { onStatus?("Storage unavailable: \(error.localizedDescription)") }
+    }
+
+    private func refreshRecoverySummary() {
+        guard prepared, !enabled, writer == nil, pendingFinalizations == 0 else { return }
+        do {
+            let snapshot = try RecordingLibraryRecovery.load(ringDirectory: ringURL, incidentsDirectory: incidentsURL)
+            recovery.preserveRing = snapshot.preserveRing
+            recovery.protectedIDs = snapshot.protectedIncidentIDs
+            onRecovery?(snapshot.unindexed, snapshot.warnings)
+        } catch {
+            recovery.preserveRing = true
+            onStatus?("Recording recovery could not finish. Original clips were kept.")
+        }
     }
 
     func applyStoragePreferences() {
@@ -110,7 +111,8 @@ final class SegmentRecorder {
         if !enabled, writer == nil, pendingFinalizations == 0, pendingEvents.isEmpty {
             let days = UserDefaults.standard.integer(forKey: "recording.retentionDays")
             let expired = incidents.values.filter {
-                RecordingStoragePolicy.shouldDelete($0, now: Date(), retentionDays: days, protectedIDs: pendingEvents)
+                RecordingStoragePolicy.shouldDelete($0, now: Date(), retentionDays: days,
+                    protectedIDs: pendingEvents.union(recovery.protectedIDs))
             }.map(\.id)
             for id in expired { deleteIncident(id) }
         }
@@ -171,14 +173,16 @@ final class SegmentRecorder {
         } catch { onStatus?("Recorder: \(error.localizedDescription)") }
     }
 
-    func append(_ sample: CMSampleBuffer) {
+    func append(_ sample: CMSampleBuffer, capturedAt: Date) {
         guard enabled, CMSampleBufferDataIsReady(sample),
               let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         if writer != nil, (CVPixelBufferGetWidth(buffer) != encoderWidth || CVPixelBufferGetHeight(buffer) != encoderHeight) {
             finishSegment()
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
-        guard pts.isValid, !pts.isIndefinite else { return }
+        guard pts.isNumeric, capturedAt.timeIntervalSince1970.isFinite else { return }
+        let presentationTime = CMTimeGetSeconds(pts)
+        guard presentationTime.isFinite, presentationTime >= 0 else { return }
         let now = Date()
         if now.timeIntervalSince(lastStorageCheck) > 5 {
             lastStorageCheck = now
@@ -188,12 +192,15 @@ final class SegmentRecorder {
                 return
             }
         }
-        if writer != nil, lastPTS.isValid, CMTimeCompare(pts, lastPTS) <= 0 { return }
-        if writer != nil, CMTimeGetSeconds(CMTimeSubtract(pts, startPTS)) >= RetentionPolicy.segmentSeconds {
-            finishSegment()
+        if let timeline {
+            switch timeline.decision(presentationTime: presentationTime, capturedAt: capturedAt) {
+            case .skip: return
+            case .split: finishSegment()
+            case .append: break
+            }
         }
         if writer == nil {
-            do { try beginSegment(sample, at: now) }
+            do { try beginSegment(sample) }
             catch {
                 enabled = false
                 onStatus?("Recording failed: \(error.localizedDescription)")
@@ -207,7 +214,19 @@ final class SegmentRecorder {
             return
         }
         if input.isReadyForMoreMediaData {
-            if input.append(sample) { lastPTS = pts }
+            let sampleDuration = CMSampleBufferGetDuration(sample)
+            let duration = sampleDuration.isNumeric ? CMTimeGetSeconds(sampleDuration) : nil
+            // Anchor only when the first frame can actually enter the writer.
+            if timeline == nil { writer.startSession(atSourceTime: pts) }
+            if input.append(sample) {
+                if var current = timeline {
+                    current.append(presentationTime: presentationTime, capturedAt: capturedAt, frameDuration: duration)
+                    timeline = current
+                } else {
+                    timeline = RecordingSegmentTimeline(presentationTime: presentationTime,
+                        capturedAt: capturedAt, frameDuration: duration)
+                }
+            }
             else {
                 pause(reason: "Video frame write failed.")
                 onStatus?("Recording stopped: video write failed.")
@@ -224,7 +243,7 @@ final class SegmentRecorder {
         completeExpiredEvents(now: now)
     }
 
-    private func beginSegment(_ sample: CMSampleBuffer, at now: Date) throws {
+    private func beginSegment(_ sample: CMSampleBuffer) throws {
         guard let buffer = CMSampleBufferGetImageBuffer(sample) else { throw RecorderError.noFrame }
         let url = ringURL.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
         let nextWriter = try AVAssetWriter(outputURL: url, fileType: .mp4)
@@ -243,15 +262,12 @@ final class SegmentRecorder {
         guard nextWriter.canAdd(nextInput) else { throw RecorderError.cannotWrite }
         nextWriter.add(nextInput)
         guard nextWriter.startWriting() else { throw nextWriter.error ?? RecorderError.cannotWrite }
-        startPTS = CMSampleBufferGetPresentationTimeStamp(sample)
-        nextWriter.startSession(atSourceTime: startPTS)
         writer = nextWriter
         input = nextInput
         encoderWidth = CVPixelBufferGetWidth(buffer)
         encoderHeight = CVPixelBufferGetHeight(buffer)
         segmentURL = url
-        segmentStart = now
-        lastPTS = .invalid
+        timeline = nil
     }
 
     /// Keeps incident windows open and begins a new encoder for the next upright frame.
@@ -259,21 +275,20 @@ final class SegmentRecorder {
 
     private func finishSegment() {
         guard let currentWriter = writer, let currentInput = input,
-              let url = segmentURL, let start = segmentStart else { return }
-        let duration = lastPTS.isValid ? max(0, CMTimeGetSeconds(CMTimeSubtract(lastPTS, startPTS))) : 0
-        let segment = VideoSegment(filename: url.lastPathComponent, start: start,
-                                   end: start.addingTimeInterval(duration + 1.0 / 30.0))
+              let url = segmentURL else { return }
+        let completedTimeline = timeline
         writer = nil
         input = nil
         segmentURL = nil
-        segmentStart = nil
-        startPTS = .invalid
-        lastPTS = .invalid
-        guard currentWriter.status == .writing, duration > 0 else {
+        timeline = nil
+        guard currentWriter.status == .writing, let completedTimeline else {
             currentWriter.cancelWriting()
             try? files.removeItem(at: url)
             return
         }
+        let segment = completedTimeline.segment(filename: url.lastPathComponent)
+        currentWriter.endSession(atSourceTime: CMTime(seconds: completedTimeline.endPresentationTime,
+            preferredTimescale: 1_000_000_000))
         currentInput.markAsFinished()
         pendingFinalizations += 1
         finishGroup.enter()
@@ -304,11 +319,11 @@ final class SegmentRecorder {
         }
     }
 
-    func markIncident(reason: String) {
+    func markIncident(reason: String, tripID: UUID) {
         do {
             try prepareIfNeeded()
             let now = Date()
-            var event = IncidentManifest(at: now, reason: reason)
+            var event = IncidentManifest(at: now, reason: reason, tripID: tripID)
             let oldest = ring.first?.start ?? segmentStart ?? now
             let preEventSeconds = min(RetentionPolicy.preEventSeconds, max(0, now.timeIntervalSince(oldest)))
             if preEventSeconds < RetentionPolicy.preEventSeconds - 1 {
@@ -348,11 +363,13 @@ final class SegmentRecorder {
             }
             self.pendingEvents.removeAll()
             // Only event footage survives an explicit End Trip.
-            let removable = self.ring.filter { !self.hasUnarchivedEventCopy($0) }
-            for segment in removable { self.removeFromRing(segment) }
-            self.ring.removeAll { !self.hasUnarchivedEventCopy($0) }
+            if !self.recovery.preserveRing {
+                let removable = self.ring.filter { !self.hasUnarchivedEventCopy($0) }
+                let removed = Set(removable.filter(self.removeFromRing).map(\.filename))
+                self.ring.removeAll { removed.contains($0.filename) }
+            }
             if !self.ring.isEmpty {
-                self.onStatus?("Some incident copies failed; original clips were kept for recovery.")
+                self.onStatus?("Original clips were kept because incident recovery is incomplete.")
             }
             self.publishIncidents()
             if self.ring.isEmpty { self.onStatus?("Recorder stopped") }
@@ -371,6 +388,7 @@ final class SegmentRecorder {
             storageGeneration += 1
             storageBytes = nil
             incidents.removeValue(forKey: id)
+            refreshRecoverySummary()
             publishIncidents()
             refreshStorageUsage(force: true)
         } catch { onStatus?("Delete failed: \(error.localizedDescription)") }
@@ -378,16 +396,18 @@ final class SegmentRecorder {
 
     private func copyToMatchingEvents(_ segment: VideoSegment) throws {
         for id in Array(incidents.keys) {
-            guard var event = incidents[id], RetentionPolicy.overlaps(segment, event),
-                  !event.segments.contains(where: { $0.filename == segment.filename }) else { continue }
+            guard var event = incidents[id], RetentionPolicy.overlaps(segment, event) else { continue }
             let destination = incidentsURL.appendingPathComponent(id.uuidString).appendingPathComponent(segment.filename)
+            let indexed = event.segments.contains(where: { $0.filename == segment.filename })
+            if indexed && RecordingLibraryRecovery.isRegularFile(destination) { continue }
             if !files.fileExists(atPath: destination.path) {
                 let source = ringURL.appendingPathComponent(segment.filename)
                 // Hard-link if possible: pruning the ring won't delete the incident's data.
                 do { try files.linkItem(at: source, to: destination) }
                 catch { try files.copyItem(at: source, to: destination) }
             }
-            event.segments.append(segment)
+            guard RecordingLibraryRecovery.isRegularFile(destination) else { throw RecorderError.cannotWrite }
+            if !indexed { event.segments.append(segment) }
             event.segments.sort { $0.start < $1.start }
             try persist(event)
             incidents[id] = event
@@ -417,6 +437,7 @@ final class SegmentRecorder {
     }
 
     private func persist(_ event: IncidentManifest) throws {
+        guard event.valid else { throw RecorderError.invalidMetadata }
         let directory = incidentsURL.appendingPathComponent(event.id.uuidString, isDirectory: true)
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
         try encoder.encode(event).write(to: directory.appendingPathComponent("manifest.json"), options: .atomic)
@@ -428,24 +449,35 @@ final class SegmentRecorder {
     }
 
     private func prune(now: Date) {
+        guard !recovery.preserveRing else { return }
         let expired = ring.filter { RetentionPolicy.shouldDeleteFromRing($0, now: now) && !hasUnarchivedEventCopy($0) }
-        expired.forEach(removeFromRing)
-        let expiredNames = Set(expired.map(\.filename))
+        let expiredNames = Set(expired.filter(removeFromRing).map(\.filename))
         ring.removeAll { expiredNames.contains($0.filename) }
     }
 
     private func hasUnarchivedEventCopy(_ segment: VideoSegment) -> Bool {
         incidents.values.contains { event in
-            RetentionPolicy.overlaps(segment, event) && !event.segments.contains(where: { $0.filename == segment.filename })
+            RetentionPolicy.overlaps(segment, event) &&
+                (!event.segments.contains(where: { $0.filename == segment.filename }) ||
+                 !RecordingLibraryRecovery.isRegularFile(incidentsURL.appendingPathComponent(event.id.uuidString)
+                    .appendingPathComponent(segment.filename)))
         }
     }
 
-    private func removeFromRing(_ segment: VideoSegment) {
+    private func removeFromRing(_ segment: VideoSegment) -> Bool {
+        guard segment.valid else { return false }
         storageGeneration += 1
         storageBytes = nil
         let url = ringURL.appendingPathComponent(segment.filename)
-        try? files.removeItem(at: url)
+        if files.fileExists(atPath: url.path) {
+            do { try files.removeItem(at: url) }
+            catch {
+                onStatus?("A rolling clip could not be removed; it was kept for retry.")
+                return false
+            }
+        }
         try? files.removeItem(at: url.appendingPathExtension("json"))
+        return true
     }
 
     private func storageAvailable() -> Bool {
@@ -468,5 +500,5 @@ final class SegmentRecorder {
         onIncidents?(incidents.values.sorted { $0.triggerTime > $1.triggerTime })
     }
 
-    enum RecorderError: Error { case noFrame, cannotWrite }
+    enum RecorderError: Error { case noFrame, cannotWrite, invalidMetadata }
 }

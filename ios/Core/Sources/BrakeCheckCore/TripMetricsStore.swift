@@ -17,9 +17,17 @@ public struct TripMetrics: Codable, Identifiable {
         self.estimatedCloseCalls = estimatedCloseCalls
     }
     fileprivate var valid: Bool {
-        startedAt.timeIntervalSince1970.isFinite && endedAt.timeIntervalSince1970.isFinite
-            && durationSeconds >= 0 && estimatedLeadHardBrakes >= 0 && estimatedCloseCalls >= 0
+        [startedAt, endedAt].allSatisfy { (-62_135_596_800...253_402_300_799).contains($0.timeIntervalSince1970) }
+            && durationSeconds.isFinite && durationSeconds >= 0 && estimatedLeadHardBrakes >= 0 && estimatedCloseCalls >= 0
             && (maxSpeedMPH.map { $0.isFinite && $0 >= 0 } ?? true)
+    }
+
+    /// Explicit identity is authoritative for new incidents, even if the
+    /// phone clock changed mid-drive. Older manifests keep timestamp matching.
+    public func includes(_ incident: IncidentManifest) -> Bool {
+        guard valid, incident.valid else { return false }
+        if let tripID = incident.tripID { return tripID == id }
+        return incident.triggerTime >= startedAt && incident.triggerTime <= endedAt
     }
 }
 
@@ -31,7 +39,7 @@ public struct TripMetricsStore {
     public enum StoreError: Error { case invalidMetrics }
     public func load() throws -> [TripMetrics] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let decoder = RecordingMetadataCodec.decoder()
         let trips = try decoder.decode([TripMetrics].self, from: Data(contentsOf: url))
         guard trips.allSatisfy(\.valid), Set(trips.map(\.id)).count == trips.count else {
             throw StoreError.invalidMetrics
@@ -43,8 +51,7 @@ public struct TripMetricsStore {
         var trips = try load()
         trips.removeAll { $0.id == trip.id }
         trips.append(trip); trips.sort { $0.startedAt > $1.startedAt }
-        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let encoder = RecordingMetadataCodec.encoder()
         let data = try encoder.encode(trips)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)

@@ -5,10 +5,12 @@ from contextlib import asynccontextmanager
 
 import config  # Loads backend/.env before importing services.
 from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 import contacts
 import crash
 import pairing
 from discovery import BonjourAdvertiser
+from pairing_store import DeviceStoreError
 
 
 @asynccontextmanager
@@ -30,6 +32,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title='BrakeCheck', version='0.4.0', lifespan=lifespan)
+
+
+@app.exception_handler(DeviceStoreError)
+async def unavailable_device_store(request, exc):
+    return JSONResponse(status_code=503, content={
+        'detail': 'Paired-device storage is unavailable or damaged. Restore it on the backend before pairing again.'
+    })
+
+
 app.include_router(crash.router)
 app.include_router(contacts.router)
 app.include_router(pairing.router)

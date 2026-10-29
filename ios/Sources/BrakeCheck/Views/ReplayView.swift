@@ -16,10 +16,13 @@ struct ReplayView: View {
     @State private var importKind: ImportKind = .video
     @State private var showImporter = false
     @State private var error: String?
+    @State private var importing = false
+    @State private var importTask: Task<Void, Never>?
+    @State private var importGeneration = UUID()
 
     enum VideoChoice: Equatable { case incident(UUID), file(URL) }
     enum SpeedChoice: Hashable { case automatic, saved(URL), imported, assumed }
-    enum ImportKind { case video, speedLog }
+    enum ImportKind: Sendable, Equatable { case video, speedLog }
 
     private var replayable: [IncidentManifest] { model.incidents.filter { !$0.segments.isEmpty } }
     private var savedLogs: [URL] { SpeedLogReader.savedLogs() }
@@ -51,6 +54,7 @@ struct ReplayView: View {
                                 if video == .incident(incident.id) { Image(systemName: "checkmark") }
                             }
                         }
+                        .disabled(importing)
                     }
                     if case .incident = video {
                         Stepper(String(format: "Start %.0f s before the marked moment", leadSeconds),
@@ -65,6 +69,7 @@ struct ReplayView: View {
                             Label("Import a video from Files…", systemImage: "folder")
                         }
                     }
+                    .disabled(importing)
                 }
 
                 Section("2 · Speed during that drive") {
@@ -80,12 +85,14 @@ struct ReplayView: View {
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
+                    .disabled(importing)
 
                     Button {
                         importKind = .speedLog; showImporter = true
                     } label: {
                         Label("Import GPX or CSV from a GPS logger app…", systemImage: "square.and.arrow.down")
                     }
+                    .disabled(importing)
 
                     if speedChoice == .assumed {
                         Stepper(String(format: "%.0f mph", assumedMPH), value: $assumedMPH, in: 5...80, step: 5)
@@ -99,8 +106,9 @@ struct ReplayView: View {
                 }
 
                 Section {
+                    if importing { ProgressView("Importing file…") }
                     Button("Start replay") { start() }
-                        .disabled(video == nil || model.replaying || model.tripActive || model.demo)
+                        .disabled(importing || video == nil || model.replaying || model.tripActive || model.demo)
                     if let error {
                         Text(error).font(.caption).foregroundStyle(.orange)
                     }
@@ -116,6 +124,11 @@ struct ReplayView: View {
         .fileImporter(isPresented: $showImporter, allowedContentTypes: allowedTypes) { result in
             handleImport(result, kind: importKind)
         }
+        .onDisappear {
+            importGeneration = UUID()
+            importTask?.cancel()
+            importing = false
+        }
         .tint(BrakeTheme.accent)
     }
 
@@ -128,30 +141,45 @@ struct ReplayView: View {
     }
 
     private func handleImport(_ result: Result<URL, Error>, kind: ImportKind) {
-        do {
-            let local = try copyIn(try result.get())
-            switch kind {
-            case .video:
-                video = .file(local)
-            case .speedLog:
-                importedTrack = try SpeedLogReader.load(local)
-                speedChoice = .imported
-            }
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
+        guard case .success(let source) = result else {
+            if case .failure(let failure) = result { error = failure.localizedDescription }
+            return
         }
-    }
-
-    private func copyIn(_ url: URL) throws -> URL {
-        let access = url.startAccessingSecurityScopedResource()
-        defer { if access { url.stopAccessingSecurityScopedResource() } }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ReplayImports", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let destination = directory.appendingPathComponent(url.lastPathComponent)
-        try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.copyItem(at: url, to: destination)
-        return destination
+        importTask?.cancel()
+        let generation = UUID()
+        importGeneration = generation
+        importing = true
+        error = nil
+        importTask = Task { @MainActor in
+            defer { if importGeneration == generation { importing = false } }
+            do {
+                let (local, track) = try await Task.detached(priority: .userInitiated) {
+                    let access = source.startAccessingSecurityScopedResource()
+                    defer { if access { source.stopAccessingSecurityScopedResource() } }
+                    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ReplayImports", isDirectory: true)
+                    let local = try ReplayImportStore.copy(source, to: directory)
+                    do {
+                        return (local, kind == .speedLog ? try SpeedLogReader.load(local) : nil)
+                    } catch {
+                        try? FileManager.default.removeItem(at: local.deletingLastPathComponent())
+                        throw error
+                    }
+                }.value
+                guard !Task.isCancelled, importGeneration == generation else {
+                    try? FileManager.default.removeItem(at: local.deletingLastPathComponent())
+                    return
+                }
+                switch kind {
+                case .video: video = .file(local)
+                case .speedLog:
+                    importedTrack = track
+                    speedChoice = .imported
+                }
+            } catch {
+                guard !Task.isCancelled, importGeneration == generation else { return }
+                self.error = error.localizedDescription
+            }
+        }
     }
 
     private func clips() -> [ReplayService.Clip] {
@@ -183,7 +211,8 @@ struct ReplayView: View {
                     error = "An imported video has no BrakeCheck clock time. Pick its speed log or an assumed speed."
                     return
                 }
-                track = savedLogs.lazy.compactMap { try? SpeedLogReader.load($0) }.first(where: { $0.covers(recordedAt) })
+                track = savedLogs.lazy.compactMap { try? SpeedLogReader.load($0) }
+                    .first(where: { $0.covers(recordedAt.addingTimeInterval(offset)) })
                 guard track != nil else {
                     error = "No saved trip log covers this recording. Import the logger file or assume a speed."
                     return

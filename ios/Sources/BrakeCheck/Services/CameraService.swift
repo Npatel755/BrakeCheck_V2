@@ -10,7 +10,10 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                                      autoreleaseFrequency: .workItem)
     private var output = AVCaptureVideoDataOutput()
     private var configured = false
-    private var wantsRunning = false
+    private var recovery = CameraSessionRecovery()
+    private var wantsRunning: Bool { recovery.wantsRunning }
+    private var recoveryWork: DispatchWorkItem?
+    private var watchdog: DispatchSourceTimer?
     private var lastVisionTime: TimeInterval = 0
     private var desiredOrientation: AVCaptureVideoOrientation = .portrait
     private var nativeHorizontalFOV: Double?
@@ -28,12 +31,14 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         result.onStatus = { [weak self] message in self?.onRecorderStatus?(message) }
         result.onIncidents = { [weak self] events in self?.onIncidents?(events) }
         result.onStorage = { [weak self] bytes in self?.onRecordingStorage?(bytes) }
+        result.onRecovery = { [weak self] clips, warnings in self?.onRecordingRecovery?(clips, warnings) }
         return result
     }()
     var onCameraStatus: ((String, Bool) -> Void)?
     var onRecorderStatus: ((String) -> Void)?
     var onIncidents: (([IncidentManifest]) -> Void)?
     var onRecordingStorage: ((Int64?) -> Void)?
+    var onRecordingRecovery: (([UnindexedRecording], [String]) -> Void)?
     var onTrackingReset: ((String) -> Void)?
     var onGeometry: ((CaptureFrameGeometry) -> Void)?
 
@@ -44,9 +49,12 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                                              object: session, queue: nil) { [weak self] _ in
             guard let self else { return }
             self.queue.async {
-                self.tracker.clear()
+                guard self.wantsRunning else { return }
+                self.watchdog?.cancel(); self.watchdog = nil
+                self.recoveryWork?.cancel(); self.recoveryWork = nil
+                self.recovery.beginInterruption()
+                self.resetCaptureMeasurements("Camera interrupted. Tracking will reacquire when it returns.")
                 self.recorder.pause(reason: "Camera interrupted; video has a gap.")
-                self.onTrackingReset?("Camera interrupted. Recalibrate when it returns.")
                 self.onCameraStatus?("Camera interrupted", false)
             }
         })
@@ -54,26 +62,107 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                                              object: session, queue: nil) { [weak self] _ in
             guard let self else { return }
             self.queue.async {
-                guard self.wantsRunning else { return }
-                if !self.session.isRunning { self.session.startRunning() }
-                self.recorder.start()
-                self.onCameraStatus?("Camera active · reselect target", self.session.isRunning)
+                guard self.recovery.endInterruption() else { return }
+                self.restartCapture()
             }
         })
         observers.append(center.addObserver(forName: AVCaptureSession.runtimeErrorNotification,
                                              object: session, queue: nil) { [weak self] note in
             guard let self else { return }
-            let description = (note.userInfo?[AVCaptureSessionErrorKey] as? NSError)?.localizedDescription ?? "Unknown camera error"
+            let error = note.userInfo?[AVCaptureSessionErrorKey] as? NSError
+            let description = error?.localizedDescription ?? "Unknown camera error"
+            let recoverable = error?.domain == AVFoundationErrorDomain && error?.code == AVError.mediaServicesWereReset.rawValue
             self.queue.async {
-                self.tracker.clear()
+                guard self.wantsRunning else { return }
+                self.watchdog?.cancel(); self.watchdog = nil
+                self.resetCaptureMeasurements("Camera reset. Tracking measurements were cleared.")
                 self.recorder.pause(reason: "Camera error; recording interrupted.")
-                self.onTrackingReset?("Camera error. End and restart the trip.")
-                self.onCameraStatus?("Camera: \(description)", false)
+                if recoverable { self.scheduleRecovery() }
+                else {
+                    self.recoveryWork?.cancel(); self.recoveryWork = nil
+                    self.recovery.stop()
+                    if self.session.isRunning { self.session.stopRunning() }
+                    self.onCameraStatus?("Camera: \(description). Use Retry camera when ready.", false)
+                }
             }
         })
     }
 
-    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+    deinit { watchdog?.cancel(); recoveryWork?.cancel(); observers.forEach(NotificationCenter.default.removeObserver) }
+
+    private func monitorFrames() {
+        watchdog?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1, repeating: 1, leeway: .milliseconds(100))
+        timer.setEventHandler { [weak self] in
+            guard let self, self.recovery.needsRestart(at: ProcessInfo.processInfo.systemUptime) else { return }
+            self.watchdog?.cancel(); self.watchdog = nil
+            self.resetCaptureMeasurements("Camera frames stopped. Tracking measurements were cleared.")
+            self.recorder.pause(reason: "Camera frames stopped; recording has a gap.")
+            if self.session.isRunning { self.session.stopRunning() }
+            self.scheduleRecovery()
+        }
+        watchdog = timer
+        timer.resume()
+    }
+
+    private func resetCaptureMeasurements(_ reason: String) {
+        geometryRevision += 1
+        geometryChanging = false
+        framesEligibleAfter = ProcessInfo.processInfo.systemUptime + 0.15
+        lastVisionTime = 0; lastFramePTS = nil; measuredFPS = nil
+        lastDiagnosticsTime = 0
+        tracker.clear()
+        onTrackingReset?(reason)
+    }
+
+    private func scheduleRecovery() {
+        let previous = recovery.pendingRetry
+        guard let retry = recovery.failed(at: ProcessInfo.processInfo.systemUptime) else {
+            if recovery.interrupted { onCameraStatus?("Camera interrupted · waiting to resume", false) }
+            else if wantsRunning { onCameraStatus?("Camera could not recover. Use Retry camera when ready.", false) }
+            return
+        }
+        guard retry != previous else { return }
+        recoveryWork?.cancel()
+        onCameraStatus?("Camera reset · reconnecting…", false)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.recovery.take(retry, at: ProcessInfo.processInfo.systemUptime) else { return }
+            self.recoveryWork = nil
+            self.restartCapture()
+        }
+        recoveryWork = work
+        queue.asyncAfter(deadline: .now() + max(0, retry.at - ProcessInfo.processInfo.systemUptime), execute: work)
+    }
+
+    private func restartCapture() {
+        guard wantsRunning else { return }
+        watchdog?.cancel(); watchdog = nil
+        if session.isInterrupted {
+            recovery.beginInterruption()
+            onCameraStatus?("Camera interrupted · waiting to resume", false)
+            return
+        }
+        do {
+            let wasConfigured = configured
+            try configureIfNeeded()
+            if wasConfigured { applyGeometry() }
+            guard wantsRunning else { return }
+            if !session.isRunning { session.startRunning() }
+            guard session.isRunning, !session.isInterrupted else {
+                scheduleRecovery()
+                return
+            }
+            recovery.sessionStarted(at: ProcessInfo.processInfo.systemUptime)
+            monitorFrames()
+            recorder.start()
+            onCameraStatus?("Camera starting · waiting for frames", false)
+        } catch {
+            recovery.stop()
+            if session.isRunning { session.stopRunning() }
+            onCameraStatus?("Camera: \(error.localizedDescription). Use Retry camera when ready.", false)
+        }
+    }
 
     static func requestPermission(_ completion: @escaping (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -101,8 +190,11 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     private func applyGeometry() {
         guard let connection = output.connection(with: .video), connection.isVideoOrientationSupported else {
-            wantsRunning = false
+            recovery.stop()
+            watchdog?.cancel(); watchdog = nil
+            recoveryWork?.cancel(); recoveryWork = nil
             recorder.pause(reason: "Camera rotation unavailable; capture paused.")
+            tracker.clear()
             onTrackingReset?("Camera rotation unavailable. Tracking paused.")
             onCameraStatus?("Camera rotation unavailable", false)
             return
@@ -133,22 +225,18 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     func start() {
         queue.async {
-            self.wantsRunning = true
-            do {
-                try self.configureIfNeeded()
-                guard self.wantsRunning else { return }
-                self.recorder.start()
-                if !self.session.isRunning { self.session.startRunning() }
-                self.onCameraStatus?(self.session.isRunning ? "Rear camera · 720p" : "Camera could not start", self.session.isRunning)
-            } catch {
-                self.onCameraStatus?("Camera: \(error.localizedDescription)", false)
-            }
+            self.recoveryWork?.cancel(); self.recoveryWork = nil
+            self.recovery.start()
+            self.resetCaptureMeasurements("Camera starting · reacquiring the lead")
+            self.restartCapture()
         }
     }
 
     func pause(completion: @escaping () -> Void) {
         queue.async {
-            self.wantsRunning = false
+            self.recovery.stop()
+            self.watchdog?.cancel(); self.watchdog = nil
+            self.recoveryWork?.cancel(); self.recoveryWork = nil
             self.tracker.clear()
             if self.session.isRunning { self.session.stopRunning() }
             self.recorder.pause(reason: "Background: camera tracking and recording are paused. Return to BrakeCheck to resume.", completion: completion)
@@ -158,7 +246,9 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     func stop(completion: @escaping () -> Void) {
         queue.async {
-            self.wantsRunning = false
+            self.recovery.stop()
+            self.watchdog?.cancel(); self.watchdog = nil
+            self.recoveryWork?.cancel(); self.recoveryWork = nil
             self.tracker.clear()
             if self.session.isRunning { self.session.stopRunning() }
             self.recorder.stop(completion: completion)
@@ -166,7 +256,9 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
     }
 
-    func markIncident(reason: String) { queue.async { self.recorder.markIncident(reason: reason) } }
+    func markIncident(reason: String, tripID: UUID) {
+        queue.async { self.recorder.markIncident(reason: reason, tripID: tripID) }
+    }
     func deleteIncident(_ id: UUID) { queue.async { self.recorder.deleteIncident(id) } }
 
     private func configureIfNeeded() throws {
@@ -226,8 +318,11 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         let uptime = ProcessInfo.processInfo.systemUptime
-        guard wantsRunning, !geometryChanging, uptime >= framesEligibleAfter,
+        guard recovery.acceptsFrames, CMSampleBufferDataIsReady(sampleBuffer),
               let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let capturedAt = captureUptime(sampleBuffer, maximumAge: 3)
+        if let capturedAt { recovery.frameReceived(at: capturedAt) }
+        guard !geometryChanging, uptime >= framesEligibleAfter else { return }
         let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
         // Discard a queued frame from the previous orientation.
         guard (width < height) == CaptureFrameGeometry.isPortrait(desiredOrientation) else { return }
@@ -250,12 +345,27 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             }
             return
         }
-        recorder.append(sampleBuffer)
+        if let capturedAt, let date = CaptureFrameTiming.captureDate(capturedAt: capturedAt,
+            uptimeNow: ProcessInfo.processInfo.systemUptime, wallNow: Date()) {
+            recorder.append(sampleBuffer, capturedAt: date)
+        }
         reportCaptureHealth(sampleBuffer, buffer: buffer, at: uptime)
         guard uptime - lastVisionTime >= visionInterval else { return }
+        guard let capturedAt, capturedAt >= framesEligibleAfter else { return }
         lastVisionTime = uptime
-        tracker.submit(buffer, uptime: uptime, captureISO: captureDevice.map { Double($0.iso) },
+        tracker.submit(buffer, uptime: capturedAt, captureISO: captureDevice.map { Double($0.iso) },
             exposureSeconds: captureDevice.map { CMTimeGetSeconds($0.exposureDuration) })
+    }
+
+    private func captureUptime(_ sample: CMSampleBuffer, maximumAge: TimeInterval) -> TimeInterval? {
+        let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+        guard pts.isNumeric, let clock = session.synchronizationClock else { return nil }
+        let hostClock = CMClockGetHostTimeClock()
+        let captured = CMSyncConvertTime(pts, from: clock, to: hostClock)
+        let now = CMClockGetTime(hostClock)
+        guard captured.isNumeric, now.isNumeric else { return nil }
+        return CaptureFrameTiming.captureUptime(frameHostTime: CMTimeGetSeconds(captured),
+            hostNow: CMTimeGetSeconds(now), uptimeNow: ProcessInfo.processInfo.systemUptime, maximumAge: maximumAge)
     }
 
     private var visionInterval: TimeInterval {
