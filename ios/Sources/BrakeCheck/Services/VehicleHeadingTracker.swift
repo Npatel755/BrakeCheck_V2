@@ -173,6 +173,8 @@ final class VehicleHeadingTracker {
                     // never start a prediction or count as current evidence.
                     self.lock.lock(); let current = self.generation == submittedGeneration; self.lock.unlock()
                     guard current, ProcessInfo.processInfo.systemUptime - time <= 0.40 else { return nil as MLFeatureProvider? }
+                    let trace = PerformanceTrace.begin(.viewpointInference)
+                    defer { PerformanceTrace.end(trace) }
                     let input = try self.makeInput(buffer, vehicle: vehicle.box)
                     let provider = try MLDictionaryFeatureProvider(dictionary: ["image": MLFeatureValue(pixelBuffer: input)])
                     didPredict = true

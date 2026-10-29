@@ -70,6 +70,8 @@ public struct NavigationProgressTracker {
         let index: Int
     }
     private let segments: [Segment]
+    private let spatialIndex: NavigationSpatialIndex
+    private let minimumLongitudeScale: Double
     private let geometryDistance: Double
     private let routeDistance: Double
     private let stepEnds: [StepEnd]
@@ -112,6 +114,8 @@ public struct NavigationProgressTracker {
             }
         }
         segments = built; geometryDistance = distance
+        spatialIndex = NavigationSpatialIndex(bounds: built.map { .init(coordinates: [$0.start, $0.end]) })
+        minimumLongitudeScale = built.map { abs($0.longitudeScale) }.min() ?? 1
         self.routeDistance = inputsValid ? routeDistance : 0
         destination = inputsValid ? coordinates.last : nil
         valid = inputsValid && distance.isFinite && distance > 0.01
@@ -156,7 +160,20 @@ public struct NavigationProgressTracker {
         let observedHeading = stationary ? nil : course ?? movement.flatMap {
             $0.length >= max(4, horizontalAccuracy) ? atan2($0.x, $0.y) : nil
         }
-        let projections = segments.map { segment -> Projection in
+        let onThreshold = max(20, min(45, horizontalAccuracy * 1.6))
+        let outsideThreshold = max(35, horizontalAccuracy * 2 + 10)
+        let uncertainty = max(4, horizontalAccuracy * 0.5)
+        let reachableRange: ClosedRange<Double>?
+        if let lastProjectionTime {
+            let speedLimit = speed.flatMap { $0.isFinite && (0...65).contains($0) ? max(8, $0 + 8) : nil } ?? 65
+            let advance = speedLimit * (timestamp - lastProjectionTime) + max(20, horizontalAccuracy + lastAccuracy)
+            reachableRange = (along - max(15, horizontalAccuracy * 1.5))...(along + advance)
+        } else { reachableRange = nil }
+        func isReachable(_ projection: Projection) -> Bool {
+            (reachableRange?.contains(projection.along) ?? true)
+                && (observedHeading == nil || projection.headingError < .pi / 3)
+        }
+        func project(_ segment: Segment) -> Projection {
             let relative = Self.vector(from: segment.start, to: coordinate, longitudeScale: segment.longitudeScale)
             let fraction = min(1, max(0, (relative.x * segment.delta.x + relative.y * segment.delta.y)
                                      / (segment.length * segment.length)))
@@ -174,18 +191,17 @@ public struct NavigationProgressTracker {
                               bearing: (atan2(segment.delta.x, segment.delta.y) * 180 / .pi + 360)
                                 .truncatingRemainder(dividingBy: 360))
         }
+        // All candidates relevant to a reliable match are within onThreshold.
+        // If no reachable close match exists, retain the exhaustive path for
+        // off-route distance/recovery and discontinuous/ambiguous route behavior.
+        let nearby = spatialIndex.candidates(near: coordinate, radius: max(outsideThreshold, onThreshold + uncertainty),
+            minimumLongitudeScale: minimumLongitudeScale)
+        var projections = nearby.map { project(segments[$0]) }
+        if !projections.contains(where: { $0.distance <= onThreshold && isReachable($0) }) {
+            projections = segments.map(project)
+        }
         guard let nearest = projections.min(by: { $0.distance < $1.distance }) else { return nil }
-        let onThreshold = max(20, min(45, horizontalAccuracy * 1.6))
-        let outsideThreshold = max(35, horizontalAccuracy * 2 + 10)
-        let uncertainty = max(4, horizontalAccuracy * 0.5)
-        let reachable: [Projection]
-        if let lastProjectionTime {
-            let speedLimit = speed.flatMap { $0.isFinite && (0...65).contains($0) ? max(8, $0 + 8) : nil } ?? 65
-            let advance = speedLimit * (timestamp - lastProjectionTime) + max(20, horizontalAccuracy + lastAccuracy)
-            let reverse = max(15, horizontalAccuracy * 1.5)
-            reachable = projections.filter { $0.along >= along - reverse && $0.along <= along + advance
-                && (observedHeading == nil || $0.headingError < .pi / 3) }
-        } else { reachable = projections.filter { observedHeading == nil || $0.headingError < .pi / 3 } }
+        let reachable = projections.filter(isReachable)
         let closestDistance = reachable.map(\.distance).min() ?? .infinity
         let close = reachable.filter {
             $0.distance <= closestDistance + uncertainty

@@ -8,7 +8,7 @@ struct CameraNavigationOverlay: View {
 
     @ObservedObject var navigation: NavigationService
 
-    @ObservedObject var presentation: CameraARPresentation
+    let presentation: CameraARPresentation
 
     private var scene: CameraARScene? { presentation.scene }
 
@@ -120,7 +120,9 @@ struct CameraNavigationOverlay: View {
 
         if projectionCache.key == key { return projectionCache.groups }
 
-        let result = CameraRouteProjection.project(route: navigation.cameraRouteCoordinates,
+        let trace = PerformanceTrace.begin(.arProjection)
+        defer { PerformanceTrace.end(trace) }
+        let result = CameraRouteProjection.project(geometry: navigation.cameraRouteGeometry,
 
             progressFraction: progress, courseDegrees: fix.course,
 
@@ -165,9 +167,11 @@ struct CameraNavigationOverlay: View {
 
                     var support = Path()
 
+                    let roadGeometry = scene?.road.map { LanePath(bands: $0.bands, confidence: $0.confidence,
+                        capturedAt: $0.capturedAt, source: .neural) }
                     let corridor = scene?.lane?.bands.compactMap { band -> LaneBand? in
 
-                        guard let road = scene?.road?.bounds(at: band.y) else { return nil }
+                        guard let road = roadGeometry?.bounds(at: band.y) else { return nil }
 
                         let left = max(band.left, road.left), right = min(band.right, road.right)
 

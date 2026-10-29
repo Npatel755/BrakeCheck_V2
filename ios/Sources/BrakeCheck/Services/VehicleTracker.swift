@@ -68,7 +68,7 @@ final class VehicleTracker {
     private let inference: VisionInferenceCoordinator
     private let laneTracker: LaneTracker
     private let headingTracker: VehicleHeadingTracker
-    private var lastVehicleCapture: TimeInterval = -.infinity
+    private var vehicleCadence = FrameCadence()
     private var vehicleLatency = 0.0
     private var recovery = VehicleDetectionRecovery()
     private let recoveryRenderer = VehicleRecoveryRenderer()
@@ -426,7 +426,7 @@ final class VehicleTracker {
         motionGuard.reset()
         rangeHistory.reset()
         egoSamples = []
-        lastVehicleCapture = -.infinity
+        vehicleCadence.reset()
         vehicleLatency = 0
         recovery.reset(); lastLane = nil; lastLeadDetectionAt = nil; recoveryCount = 0
         detectionPresentation.reset()
@@ -441,13 +441,14 @@ final class VehicleTracker {
         referenceWidth = 0
         sequence = VNSequenceRequestHandler()
     }
+    @discardableResult
     func submit(_ buffer: CVPixelBuffer, uptime: TimeInterval,
-                captureISO: Double? = nil, exposureSeconds: Double? = nil) {
-        guard uptime.isFinite, uptime <= ProcessInfo.processInfo.systemUptime else { return }
+                captureISO: Double? = nil, exposureSeconds: Double? = nil) -> Bool {
+        guard uptime.isFinite, uptime <= ProcessInfo.processInfo.systemUptime else { return false }
         lock.lock()
         guard !busy else {
             lock.unlock()
-            return
+            return false
         }
         busy = true
         let submittedGeneration = frameGeneration
@@ -469,7 +470,7 @@ final class VehicleTracker {
                 self.laneTracker.configureBudget(minimum: laneInterval, heat: self.currentHeat,
                     vehicleLatency: self.vehicleLatency, stationary: stationary)
                 self.headingTracker.setMinimumInterval(policy.viewpointInterval)
-                if uptime - self.lastVehicleCapture < policy.vehicleInterval - 1e-6 {
+                if !self.vehicleCadence.shouldRun(at: uptime, interval: policy.vehicleInterval) {
                     self.laneTracker.submit(buffer, at: uptime)
                     // Keep paint/visual lane updates responsive on captures
                     // skipped by the heavier detector's night cadence.
@@ -482,7 +483,6 @@ final class VehicleTracker {
                     self.publishARScene()
                     return
                 }
-                self.lastVehicleCapture = uptime
                 var trackedBox: CGRect?
                 let imageAspect = Double(CVPixelBufferGetWidth(buffer)) / Double(CVPixelBufferGetHeight(buffer))
                 let guidance = self.lastLane.flatMap { $0.isUsable(at: uptime) ? $0 : nil }
@@ -637,6 +637,7 @@ final class VehicleTracker {
                 self.report("Vision error: \(error.localizedDescription)")
             }
         }
+        return true
     }
 
     private func decodedVehicles(_ objects: [VNRecognizedObjectObservation], imageAspect: Double,
@@ -674,6 +675,8 @@ final class VehicleTracker {
     private func recognizedObjects(_ request: VNCoreMLRequest, buffer: CVPixelBuffer) throws -> [VNRecognizedObjectObservation] {
         // Capture and replay already supply physically upright buffers.
         try inference.vehicle {
+            let trace = PerformanceTrace.begin(.vehicleInference)
+            defer { PerformanceTrace.end(trace) }
             try VNImageRequestHandler(cvPixelBuffer: buffer, orientation: .up).perform([request])
         }
         guard let objects = request.results as? [VNRecognizedObjectObservation] else {

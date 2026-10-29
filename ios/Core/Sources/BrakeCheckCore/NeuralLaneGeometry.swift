@@ -328,8 +328,9 @@ public enum LaneVisualTracker {
               abs(lane.capturedAt - source.capturedAt) < 0.001, age >= 0, age <= 1.0,
               lane.isUsable(at: source.capturedAt) else { return nil }
         if age == 0 { return lane }
-        let left = matches(lane, left: true, from: source, to: current, excluding: boxes)
-        let right = matches(lane, left: false, from: source, to: current, excluding: boxes)
+        let exclusions = boxes.map { $0.insetBy(dx: -0.012, dy: -0.012) }
+        let left = matches(lane, left: true, from: source, to: current, excluding: exclusions)
+        let right = matches(lane, left: false, from: source, to: current, excluding: exclusions)
         guard left.count >= 5, right.count >= 5, let firstLeft = left.first, let firstRight = right.first,
               let lastLeft = left.last, let lastRight = right.last else { return nil }
         let bottom = max(firstLeft.newY, firstRight.newY), top = min(lastLeft.newY, lastRight.newY)
@@ -356,8 +357,7 @@ public enum LaneVisualTracker {
             let px = Int((x * Double(old.width - 1)).rounded())
             let py = Int(((1 - band.y) * Double(old.height - 1)).rounded())
             guard px >= 4, px < old.width - 4, py >= 4, py < old.height - 4,
-                  !boxes.contains(where: { $0.insetBy(dx: -0.012, dy: -0.012)
-                    .contains(CGPoint(x: CGFloat(x), y: CGFloat(band.y))) }) else { continue }
+                  !boxes.contains(where: { $0.contains(CGPoint(x: CGFloat(x), y: CGFloat(band.y))) }) else { continue }
             var patch: [Double] = []
             for dy in -3...3 { for dx in -3...3 {
                 patch.append(Double(old.pixels[(py + dy) * old.width + px + dx]))
@@ -375,12 +375,12 @@ public enum LaneVisualTracker {
             } }
             let sparseMean = sparse.reduce(0, +) / 9
             var costs: [(dx: Int, dy: Int, cost: Double)] = []
+            costs.reserveCapacity(13 * 37)
             for dy in -6...6 { for dx in -18...18 {
                 let cx = px + dx, cy = py + dy
                 guard cx >= 3, cx < new.width - 3, cy >= 3, cy < new.height - 3 else { continue }
                 let nx = Double(cx) / Double(new.width - 1), ny = 1 - Double(cy) / Double(new.height - 1)
-                guard !boxes.contains(where: { $0.insetBy(dx: -0.012, dy: -0.012)
-                    .contains(CGPoint(x: CGFloat(nx), y: CGFloat(ny))) }) else { continue }
+                guard !boxes.contains(where: { $0.contains(CGPoint(x: CGFloat(nx), y: CGFloat(ny))) }) else { continue }
                 var total = 0.0
                 for ry in sampleOffsets { for rx in sampleOffsets {
                     total += Double(new.pixels[(cy + ry) * new.width + cx + rx])
@@ -393,7 +393,7 @@ public enum LaneVisualTracker {
                 } }
                 costs.append((dx, dy, error / 9 + 0.04 * Double(abs(dx) + abs(dy))))
             } }
-            let ranked = costs.sorted { $0.cost < $1.cost }
+            let ranked = StableTopK.smallest(costs, count: 12) { $0.cost < $1.cost }
             func verified(_ candidate: (dx: Int, dy: Int, cost: Double)) -> (dx: Int, dy: Int, cost: Double) {
                 let cx = px + candidate.dx, cy = py + candidate.dy
                 var total = 0.0
@@ -405,9 +405,10 @@ public enum LaneVisualTracker {
                 } }
                 return (candidate.dx, candidate.dy, error / 49 + 0.04 * Double(abs(candidate.dx) + abs(candidate.dy)))
             }
-            let verifiedCandidates = ranked.prefix(12).map(verified)
+            let verifiedCandidates = ranked.map(verified)
             guard let best = verifiedCandidates.min(by: { $0.cost < $1.cost }), best.cost < 18 else { continue }
-            let alternatives = ranked.filter { abs($0.dx - best.dx) >= 4 }.prefix(4).map(verified)
+            let alternatives = StableTopK.smallest(costs.filter { abs($0.dx - best.dx) >= 4 },
+                count: 4, by: { $0.cost < $1.cost }).map(verified)
             guard let alternative = (verifiedCandidates + alternatives).filter({ abs($0.dx - best.dx) >= 4 })
                     .map({ $0.cost }).min(), alternative > best.cost + 3 else { continue }
             let newY = band.y - Double(best.dy) / Double(new.height - 1)

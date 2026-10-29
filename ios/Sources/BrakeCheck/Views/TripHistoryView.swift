@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 struct TripHistoryView: View {
-    @ObservedObject var model: DriveModel
+    let model: DriveModel
     @ObservedObject private var premium = PremiumStore.shared
     let useMPH: Bool
     @State private var csvURL: URL?

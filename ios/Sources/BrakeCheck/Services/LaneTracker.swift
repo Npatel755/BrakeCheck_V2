@@ -244,6 +244,8 @@ final class LaneTracker {
             let started = ProcessInfo.processInfo.systemUptime
             do {
                 guard let prediction = try self.inference.auxiliary({
+                    let trace = PerformanceTrace.begin(.laneInference)
+                    defer { PerformanceTrace.end(trace) }
                     let input = try self.makeInput(buffer, width: 800, height: 288, pool: &self.inputPool)
                     guard let frame = self.lumaFrame(buffer, at: time) else { throw LaneModelError.frame }
                     let provider = try MLDictionaryFeatureProvider(dictionary: ["image": MLFeatureValue(pixelBuffer: input)])
@@ -342,6 +344,8 @@ final class LaneTracker {
                         return nil as MLFeatureProvider?
                     }
                     attempted = true
+                    let trace = PerformanceTrace.begin(.roadInference)
+                    defer { PerformanceTrace.end(trace) }
                     let input = try self.makeInput(buffer, width: 640, height: 384, pool: &self.roadInputPool)
                     let provider = try MLDictionaryFeatureProvider(dictionary: ["image": MLFeatureValue(pixelBuffer: input)])
                     return try roadModel.prediction(from: provider)

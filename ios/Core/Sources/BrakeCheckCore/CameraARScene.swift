@@ -5,27 +5,81 @@ import CoreGraphics
 
 /// Raw semantic road membership, before span closing/vehicle-hole bridging.
 /// This mask is exclusively for AR rendering, never collision eligibility.
+/// A horizontal run in the original mask's top-left pixel coordinates.
+public struct RoadVisibilitySpan: Equatable {
+    public let row: Int
+    public let firstColumn: Int
+    public let endColumn: Int
+}
+
 public struct RoadVisibilityMask {
     public let width: Int
     public let height: Int
     public let pixels: [UInt8]
+    /// Copies share a render identity; a newly warped mask receives a new one.
+    public let renderIdentity: UUID
+    public let occupiedPixelCount: Int
+    public let rawSpans: [RoadVisibilitySpan]
+    /// The exact 3x3 contraction used by contains(), prepared off the UI thread.
+    public let visibilitySpans: [RoadVisibilitySpan]
+    private let visiblePixels: [UInt8]
+
     public init?(width: Int, height: Int, pixels: [UInt8]) {
         guard width >= 8, height >= 8, width <= 640, height <= 640,
               pixels.count == width * height else { return nil }
         self.width = width; self.height = height; self.pixels = pixels
+        renderIdentity = UUID()
+        // Separable contraction avoids nine neighbor lookups for every later
+        // projected sample and keeps pixel scanning out of SwiftUI's Canvas.
+        var horizontal = [UInt8](repeating: 0, count: pixels.count)
+        for row in 0..<height {
+            let base = row * width
+            for column in 1..<(width - 1) {
+                let index = base + column
+                if pixels[index - 1] != 0 && pixels[index] != 0 && pixels[index + 1] != 0 {
+                    horizontal[index] = 1
+                }
+            }
+        }
+        var visible = [UInt8](repeating: 0, count: pixels.count)
+        for row in 1..<(height - 1) {
+            let base = row * width
+            for column in 1..<(width - 1) {
+                let index = base + column
+                if horizontal[index - width] != 0 && horizontal[index] != 0 && horizontal[index + width] != 0 {
+                    visible[index] = 1
+                }
+            }
+        }
+        visiblePixels = visible
+        rawSpans = Self.spans(pixels, width: width, height: height)
+        visibilitySpans = Self.spans(visible, width: width, height: height)
+        occupiedPixelCount = rawSpans.reduce(0) { $0 + $1.endColumn - $1.firstColumn }
     }
+
+    private static func spans(_ pixels: [UInt8], width: Int, height: Int) -> [RoadVisibilitySpan] {
+        var spans: [RoadVisibilitySpan] = []
+        spans.reserveCapacity(height)
+        for row in 0..<height {
+            var start: Int?
+            for column in 0...width {
+                let visible = column < width && pixels[row * width + column] != 0
+                if visible && start == nil { start = column }
+                if !visible, let first = start {
+                    spans.append(RoadVisibilitySpan(row: row, firstColumn: first, endColumn: column))
+                    start = nil
+                }
+            }
+        }
+        return spans
+    }
+
     public func contains(x: Double, y: Double) -> Bool {
         guard x.isFinite, y.isFinite, (0...1).contains(x), (0...1).contains(y) else { return false }
         let column = min(width - 1, Int(x * Double(width)))
         let row = min(height - 1, Int((1 - y) * Double(height)))
-        // Require neighboring pixels too: low-resolution mask edges must not
-        // leak a cyan stripe onto a foreground obstacle or the sidewalk.
-        for dy in -1...1 { for dx in -1...1 {
-            let xx = column + dx, yy = row + dy
-            guard xx >= 0, xx < width, yy >= 0, yy < height,
-                  pixels[yy * width + xx] != 0 else { return false }
-        } }
-        return true
+        // Border pixels and holes retain the original conservative contraction.
+        return visiblePixels[row * width + column] != 0
     }
 }
 

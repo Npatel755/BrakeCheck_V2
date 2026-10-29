@@ -9,7 +9,7 @@ struct NavigationBanner: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     @ObservedObject var navigation: NavigationService
-    @ObservedObject var presentation: CameraARPresentation
+    let presentation: CameraARPresentation
     /// During a brake warning the card drops to one line so the alert reads first.
     var compact = false
     var large = false
