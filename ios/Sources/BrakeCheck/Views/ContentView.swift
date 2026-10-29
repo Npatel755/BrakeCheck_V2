@@ -7,6 +7,7 @@ import UIKit
 /// Both pages share one model, so swiping never restarts the trip or tracker.
 struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     private enum Page: Int, CaseIterable {
         case home, camera, navigation
         var title: String {
@@ -58,6 +59,8 @@ struct ContentView: View {
     @State private var reviewAfterSummary = false
     @State private var showFirstTripPremium = false
     @State private var completedTripID: UUID?
+    @State private var completedTripPreviousCount: Int?
+    @State private var firstTripPresentationTask: Task<Void, Never>?
     @AppStorage("review.firstTripPrompted") private var firstTripPrompted = false
 
     init(model: DriveModel) {
@@ -89,7 +92,7 @@ struct ContentView: View {
         case .incidents: IncidentListView(model: model)
         case .tripHistory: TripHistoryView(model: model, useMPH: useMPH)
         case .replay: ReplayView(model: model)
-        case .premium: PremiumView()
+        case .premium: PremiumView(model: model)
         case .trip(let id):
             if let trip = model.savedTrips.first(where: { $0.id == id }) {
                 TripDetailView(model: model, trip: trip, useMPH: useMPH)
@@ -152,9 +155,14 @@ struct ContentView: View {
         .tint(BrakeTheme.accentColor(named: accentChoice))
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
-        .fullScreenCover(isPresented: $showCheckin) { CrashCheckinView(service: safety) }
-        .fullScreenCover(isPresented: $showFirstTripPremium, onDismiss: openCompletedTrip) {
-            PremiumView(onContinue: { showFirstTripPremium = false })
+        .fullScreenCover(isPresented: $showCheckin, onDismiss: presentFinalizedTripSummary) {
+            CrashCheckinView(service: safety)
+        }
+        .fullScreenCover(isPresented: $showFirstTripPremium, onDismiss: {
+            presentPendingCheckin()
+            presentFinalizedTripSummary()
+        }) {
+            PremiumView(model: model, onContinue: { showFirstTripPremium = false })
         }
         .alert("BrakeSense", isPresented: messageShown) {
             Button("OK", role: .cancel) { model.message = nil }
@@ -194,7 +202,12 @@ struct ContentView: View {
         content
         .onChange(of: safety.checkinPresented) { _, presented in
             if !presented { showCheckin = false }
-            else { destinationPath = []; showCheckin = true }
+            else {
+                firstTripPresentationTask?.cancel()
+                firstTripPresentationTask = nil
+                destinationPath = []
+                presentPendingCheckin()
+            }
         }
         .onChange(of: requestDemo) { _, requested in
             if requested { destinationPath = [] }
@@ -202,7 +215,10 @@ struct ContentView: View {
         .onChange(of: destinationPath) { _, destinations in
             updateARDemand()
             navigation.setPageVisible(destinations.isEmpty && page == .navigation && !selecting)
-            if destinations.isEmpty { presentPendingCheckin() }
+            if destinations.isEmpty {
+                presentPendingCheckin()
+                presentFinalizedTripSummary()
+            }
             // Back from the first trip summary: a calm moment for the system's own review prompt,
             // which decides by itself whether to show (App Review 5.6.1: no custom review prompts).
             if destinations.isEmpty && reviewAfterSummary && !safety.checkinPresented && !model.tripActive {
@@ -231,6 +247,18 @@ struct ContentView: View {
         .onChange(of: model.tripActive) { _, active in
             if active { page = navigation.isNavigating ? .navigation : .camera }
         }
+        .onChange(of: model.stopping) { _, finishing in
+            if !finishing { presentFinalizedTripSummary() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                presentPendingCheckin()
+                presentFinalizedTripSummary()
+            } else {
+                firstTripPresentationTask?.cancel()
+                firstTripPresentationTask = nil
+            }
+        }
     }
 
     private func observingNavigation<Content: View>(_ content: Content) -> some View {
@@ -255,7 +283,11 @@ struct ContentView: View {
         .onChange(of: navigation.isNavigating) { _, _ in updateARDemand() }
         .onChange(of: cameraAR) { _, _ in updateARDemand() }
         .onChange(of: selecting) { _, _ in updateARDemand() }
-        .onDisappear { model.setARCameraVisible(false) }
+        .onDisappear {
+            model.setARCameraVisible(false)
+            firstTripPresentationTask?.cancel()
+            firstTripPresentationTask = nil
+        }
     }
     private func updateARDemand() {
         model.setARCameraVisible(page == .camera && cameraAR && !selecting && destinationPath.isEmpty)
@@ -359,9 +391,22 @@ struct ContentView: View {
         page = .home
         guard model.savedTrips.count > previousCount, let trip = model.savedTrips.first else { return }
         completedTripID = trip.id
+        completedTripPreviousCount = previousCount
+        presentFinalizedTripSummary()
+    }
+
+    /// Keep replay/history behind the final recording and speed-log flush.
+    /// A safety check-in retains presentation priority while that work ends.
+    private var canPresentCompletedTrip: Bool {
+        scenePhase == .active && !model.stopping && !model.tripActive
+            && !safety.checkinPresented && !showCheckin && !showFirstTripPremium
+            && destinationPath.isEmpty && !showCameraSetup
+    }
+
+    private func presentFinalizedTripSummary() {
+        guard canPresentCompletedTrip, completedTripID != nil,
+              let previousCount = completedTripPreviousCount else { return }
         if previousCount == 0 && !firstTripPrompted {
-            firstTripPrompted = true
-            reviewAfterSummary = true
             presentFirstTripPremium()
         } else {
             openCompletedTrip()
@@ -369,14 +414,23 @@ struct ContentView: View {
     }
 
     private func openCompletedTrip() {
-        guard let id = completedTripID else { return }
+        guard canPresentCompletedTrip, let id = completedTripID else { return }
         completedTripID = nil
+        completedTripPreviousCount = nil
         destinationPath = [.trip(id)]
     }
 
     private func presentFirstTripPremium() {
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(300))
+        guard firstTripPresentationTask == nil else { return }
+        firstTripPresentationTask = Task { @MainActor in
+            do { try await Task.sleep(for: .milliseconds(300)) }
+            catch { return }
+            firstTripPresentationTask = nil
+            // A check-in or a new trip may have started during the transition.
+            // Keep the summary pending until a safe presentation opportunity.
+            guard !Task.isCancelled, canPresentCompletedTrip, completedTripID != nil else { return }
+            firstTripPrompted = true
+            reviewAfterSummary = true
             showFirstTripPremium = true
         }
     }
@@ -396,7 +450,10 @@ struct ContentView: View {
 
     private func presentPendingCheckin() {
         if requestDemo { requestDemo = false; model.simulateCheckin() }
-        if safety.checkinPresented { showCheckin = true }
+        if safety.checkinPresented {
+            if showFirstTripPremium { showFirstTripPremium = false }
+            else { showCheckin = true }
+        }
     }
 
 }

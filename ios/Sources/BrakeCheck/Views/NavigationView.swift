@@ -551,12 +551,14 @@ struct NavigationView: View {
         case .preferences: NavigationRoutingPreferencesSheet(navigation: navigation)
         case .itinerary: NavigationItinerarySheet(navigation: navigation)
         case .places:
-            NavigationPlaceSearchSheet(route: navigation.route, origin: navigation.mapLocation,
+            NavigationPlaceSearchSheet(route: navigation.route, origin: navigation.location ?? navigation.lastKnownLocation,
                 initialCategory: placeCategory, actionTitle: navigation.hasPlannedRoute && !navigation.hasArrived ? "Add stop" : "Route here",
                 select: { result in
                     if navigation.hasPlannedRoute && !navigation.hasArrived { navigation.addStop(result: result) }
                     else { navigation.chooseDestination(result) }
-                }, routePath: navigation.routePath)
+                }, routePath: navigation.routePath,
+                measuredRouteProgressFraction: navigation.placeSearchProgressFraction,
+                projectsPlanningOrigin: !navigation.isNavigating)
         case .map: NavigationMapOptions()
         case .coordinates: NavigationCoordinateDestinationSheet(navigation: navigation)
         case .trafficHistory: trafficHistorySheet

@@ -2,11 +2,13 @@ import StoreKit
 import SwiftUI
 
 struct PremiumView: View {
+    let model: DriveModel?
     @ObservedObject private var store = PremiumStore.shared
     @AppStorage("display.premiumCompactBanner") private var compactBanner = false
     var onContinue: (() -> Void)? = nil
 
-    init(onContinue: (() -> Void)? = nil) {
+    init(model: DriveModel? = nil, onContinue: (() -> Void)? = nil) {
+        self.model = model
         self.onContinue = onContinue
     }
 
@@ -29,13 +31,27 @@ struct PremiumView: View {
                                    startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 28))
 
+                if PremiumStore.localTestingAvailable {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Enable Premium for testing", isOn: Binding(
+                            get: { store.localTestingEnabled },
+                            set: { store.setLocalTestingEnabled($0) }))
+                            .font(.brake(.headline))
+                            .accessibilityIdentifier("premiumLocalTestingToggle")
+                        Text("Unlock Premium features on this device without a purchase. This switch is available in the test build only.")
+                            .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+                    }
+                    .padding(18)
+                    .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 20))
+                }
+
                 Text("AVAILABLE WITH PREMIUM")
                     .font(.brake(size: 12, weight: .bold))
                     .tracking(1.2)
                     .foregroundStyle(BrakeTheme.muted)
                 benefit("Deeper trip insights", detail: "See approximate route distance and average speed for saved trips.", icon: "chart.xyaxis.line")
                 benefit("Compact camera directions", detail: "Choose a smaller turn banner to reveal more of the road.", icon: "rectangle.compress.vertical")
-                DrivingAssistControls(offerUpgrade: false)
+                DrivingAssistControls(model: model, offerUpgrade: false)
                     .padding(18)
                     .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 20))
                 if store.isSubscribed {
@@ -49,8 +65,11 @@ struct PremiumView: View {
                     .font(.brake(.caption))
                     .foregroundStyle(BrakeTheme.muted)
                 if store.isSubscribed {
-                    Label("Premium active", systemImage: "checkmark.seal.fill")
+                    Label(store.localTestingEnabled ? "Premium test access active" : "Premium active", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(BrakeTheme.accentText)
+                } else if PremiumStore.localTestingAvailable {
+                    Text("Turn on Premium testing above to try the optional features.")
+                        .font(.brake(.subheadline)).foregroundStyle(BrakeTheme.muted)
                 } else if let product = store.product {
                     Text("\(product.displayPrice) per month. Auto-renews until cancelled in Apple Account settings.")
                         .font(.brake(.subheadline))
@@ -71,8 +90,10 @@ struct PremiumView: View {
                     Button("Try again") { Task { await store.load() } }
                         .font(.brake(.subheadline, weight: .semibold))
                 }
-                Button("Restore purchases") { Task { await store.restore() } }
-                    .disabled(store.isBusy)
+                if !PremiumStore.localTestingAvailable {
+                    Button("Restore purchases") { Task { await store.restore() } }
+                        .disabled(store.isBusy)
+                }
                 if let message = store.message {
                     Text(message).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
                 }

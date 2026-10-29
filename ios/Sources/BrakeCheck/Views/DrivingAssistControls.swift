@@ -2,6 +2,7 @@ import BrakeCheckCore
 import SwiftUI
 
 struct DrivingAssistControls: View {
+    var model: DriveModel? = nil
     @ObservedObject private var premium = PremiumStore.shared
     @AppStorage("premium.drivingAssist.trafficStart") private var trafficStart = false
     @AppStorage("premium.drivingAssist.laneDeparture") private var laneDeparture = false
@@ -21,6 +22,12 @@ struct DrivingAssistControls: View {
                         Label(feature.title, systemImage: feature.icon)
                             .font(.brake(.subheadline, weight: .semibold))
                         Text(feature.detail).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+                        if let model {
+                            Text(model.drivingAssistStatuses[feature] ?? "Checking alert status")
+                                .font(.brake(.caption, weight: .semibold))
+                                .foregroundStyle(BrakeTheme.muted)
+                                .accessibilityIdentifier(feature.preferenceKey + ".status")
+                        }
                     }
                 }
                 .disabled(!premium.isSubscribed)
@@ -31,7 +38,7 @@ struct DrivingAssistControls: View {
                 Label("Premium required · alerts are off", systemImage: "lock.fill")
                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                 if offerUpgrade {
-                    NavigationLink("View Premium") { PremiumView() }
+                    NavigationLink("View Premium") { PremiumView(model: model) }
                 }
             }
             Text("These previews can miss events or give false reminders. Lane Departure cannot identify intentional lane changes. Green-light reminders only support a single clear vertical signal and cannot distinguish arrows; confirm the signal applies to your lane and check the road yourself.")

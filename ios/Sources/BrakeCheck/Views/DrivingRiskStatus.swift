@@ -8,7 +8,6 @@ struct DrivingRiskStatus: View {
     let large: Bool
     var selecting = false
     private var critical: Bool { model.brakeWarningActive }
-    private var running: Bool { model.tripActive || model.replaying || model.demo }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -16,17 +15,8 @@ struct DrivingRiskStatus: View {
                  meter: model.dangerMeter, large: large,
                  unavailableTitle: !model.demo && !model.replaying && !model.detectorReady
                     ? (model.detectorStatus.contains("could not load") ? "Detection unavailable" : "Preparing detection") : nil)
-            if let alert = model.drivingAssistAlert, premiumStore.isSubscribed,
-               !critical && !safety.checkinPresented && running && !selecting {
-                Label(alert.feature.alertText, systemImage: alert.feature.icon)
-                    .font(.brake(size: large ? 14 : 12, weight: .semibold))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .foregroundStyle(BrakeTheme.text)
-                    .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
-                    .accessibilityIdentifier("drivingAssistAlert")
-                    .allowsHitTesting(false)
-            }
+            DrivingAssistBanner(model: model, safety: safety, premium: premiumStore,
+                                large: large, selecting: selecting)
             if !critical && !model.demo && !model.replaying && !model.detectorReady && model.detectorStatus.contains("could not load") {
                 Button("Detection failed · tap for details") { model.message = model.detectorStatus }
                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.caution)
@@ -42,8 +32,11 @@ struct DrivingRiskStatus: View {
 struct NavigationRiskStatus: View {
     let model: DriveModel
     var body: some View {
-        RiskPill(risk: model.risk, critical: model.brakeWarningActive,
-                 meter: model.dangerMeter, large: false, unavailableTitle: riskUnavailableTitle)
+        VStack(spacing: 4) {
+            RiskPill(risk: model.risk, critical: model.brakeWarningActive,
+                     meter: model.dangerMeter, large: false, unavailableTitle: riskUnavailableTitle)
+            DrivingAssistBanner(model: model, safety: model.safety, premium: .shared, large: false)
+        }
     }
 
     /// While the camera isn't tracking, the risk pill says why instead of "No reading".
@@ -65,4 +58,27 @@ struct NavigationRiskStatus: View {
         return nil
     }
 
+}
+
+/// Camera and Navigate share the same visibility and expiry rules.
+struct DrivingAssistBanner: View {
+    let model: DriveModel
+    @ObservedObject var safety: SafetyService
+    @ObservedObject var premium: PremiumStore
+    let large: Bool
+    var selecting = false
+
+    var body: some View {
+        if let alert = model.drivingAssistAlert, premium.isSubscribed,
+           !safety.checkinPresented, model.showsDrivingAssistAlert(selecting: selecting) {
+            Label(alert.feature.alertText, systemImage: alert.feature.icon)
+                .font(.brake(size: large ? 14 : 12, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .foregroundStyle(BrakeTheme.text)
+                .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityIdentifier("drivingAssistAlert")
+                .allowsHitTesting(false)
+        }
+    }
 }

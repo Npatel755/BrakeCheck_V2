@@ -1,4 +1,5 @@
 import CoreLocation
+import BrakeCheckCore
 import MapKit
 import SwiftUI
 
@@ -42,6 +43,8 @@ struct NavigationPlaceSearchSheet: View {
     var actionTitle = "Add stop"
     var select: (NavigationSearchResult) -> Void
     var routePath: MKPolyline?
+    var measuredRouteProgressFraction: Double?
+    var projectsPlanningOrigin = true
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var category: NavigationPlaceCategory?
@@ -156,8 +159,9 @@ struct NavigationPlaceSearchSheet: View {
         var centers: [CLLocationCoordinate2D] = []
         if alongRoute, !points.isEmpty {
             // At most three sequential requests limit network work on long trips.
-            for fraction in [0.0, 0.45, 0.85] {
-                let coordinate = points[min(points.count - 1, Int(Double(points.count - 1) * fraction))].coordinate
+            let coordinates = points.map { NavigationCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+            for point in NavigationRemainingRouteGeometry.searchCenters(coordinates) {
+                let coordinate = CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
                 if centers.allSatisfy({ MKMapPoint($0).distance(to: MKMapPoint(coordinate)) > 5_000 }) { centers.append(coordinate) }
             }
         } else if let origin { centers = [origin.coordinate] }
@@ -209,11 +213,16 @@ struct NavigationPlaceSearchSheet: View {
 
     private func remainingRoutePoints() -> [MKMapPoint] {
         guard let line = routePath ?? route?.polyline, line.pointCount > 1 else { return [] }
-        let points = Array(UnsafeBufferPointer(start: line.points(), count: line.pointCount))
-        guard let origin else { return points }
-        let position = MKMapPoint(origin.coordinate)
-        let closest = points.indices.min { points[$0].distance(to: position) < points[$1].distance(to: position) } ?? 0
-        return Array(points.dropFirst(closest))
+        let coordinates = UnsafeBufferPointer(start: line.points(), count: line.pointCount).map {
+            NavigationCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+        }
+        let measuredOrigin = projectsPlanningOrigin ? origin.map {
+            NavigationCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+        } : nil
+        return NavigationRemainingRouteGeometry.remainingRoute(coordinates,
+            measuredProgressFraction: measuredRouteProgressFraction, origin: measuredOrigin).map {
+                MKMapPoint(CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude))
+            }
     }
 
     private func distanceToRoute(_ point: MKMapPoint, points: [MKMapPoint]) -> Double {

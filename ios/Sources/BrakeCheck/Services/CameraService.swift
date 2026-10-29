@@ -10,9 +10,11 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                                      autoreleaseFrequency: .workItem)
     private var output = AVCaptureVideoDataOutput()
     private var configured = false
+    private var geometryAvailable = false
     private var wantsRunning = false
     private var runRevision = 0
     private var visionCadence = FrameCadence()
+    private var captureTimestamp = CaptureTimestamp()
     private var desiredOrientation: AVCaptureVideoOrientation = .portrait
     private var nativeHorizontalFOV: Double?
     private var geometry = CaptureFrameGeometry.standby
@@ -42,6 +44,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                                              object: session, queue: nil) { [weak self] _ in
             guard let self else { return }
             self.queue.async {
+                self.resetFrameTiming(notBefore: ProcessInfo.processInfo.systemUptime)
                 self.tracker.clear()
                 self.recorder.pause(reason: "Camera interrupted; video has a gap.")
                 self.onTrackingReset?("Camera interrupted. Recalibrate when it returns.")
@@ -57,7 +60,10 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 self.recorder.start { [weak self] in
                     guard let self else { return }
                     self.queue.async {
-                        guard self.wantsRunning, self.runRevision == revision else { return }
+                        guard self.wantsRunning, self.geometryAvailable,
+                              self.runRevision == revision else { return }
+                        self.resetFrameTiming(notBefore: ProcessInfo.processInfo.systemUptime)
+                        self.tracker.prepare()
                         if !self.session.isRunning { self.session.startRunning() }
                         self.onCameraStatus?("Camera active · reselect target", self.session.isRunning)
                     }
@@ -69,6 +75,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             guard let self else { return }
             let description = (note.userInfo?[AVCaptureSessionErrorKey] as? NSError)?.localizedDescription ?? "Unknown camera error"
             self.queue.async {
+                self.resetFrameTiming(notBefore: ProcessInfo.processInfo.systemUptime)
                 self.tracker.clear()
                 self.recorder.pause(reason: "Camera error; recording interrupted.")
                 self.onTrackingReset?("Camera error. End and restart the trip.")
@@ -105,6 +112,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     private func applyGeometry() {
         guard let connection = output.connection(with: .video), connection.isVideoOrientationSupported else {
+            geometryAvailable = false
             wantsRunning = false
             recorder.pause(reason: "Camera rotation unavailable; capture paused.")
             onTrackingReset?("Camera rotation unavailable. Tracking paused.")
@@ -118,9 +126,10 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         recorder.beginOrientationSegment()
         connection.videoOrientation = desiredOrientation
         if connection.isVideoMirroringSupported { connection.isVideoMirrored = false }
+        geometryAvailable = true
         geometry = .preview(orientation: desiredOrientation, landscapeFOV: nativeHorizontalFOV)
-        visionCadence.reset()
         framesEligibleAfter = ProcessInfo.processInfo.systemUptime + 0.15
+        resetFrameTiming(notBefore: framesEligibleAfter)
         let applied = geometry
         tracker.configureFrameGeometry(horizontalFOV: applied.horizontalFieldOfView) { [weak self] in
             guard let self else { return }
@@ -135,20 +144,37 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     func refreshIncidents() { queue.async { self.recorder.refresh() } }
     func applyRecordingPreferences() { queue.async { self.recorder.applyStoragePreferences() } }
 
+    private func resetFrameTiming(notBefore time: TimeInterval) {
+        captureTimestamp.reset(notBefore: time)
+        visionCadence.reset()
+        lastFramePTS = nil
+        measuredFPS = nil
+    }
+
     func start() {
         queue.async {
             self.wantsRunning = true
             self.runRevision += 1
             let revision = self.runRevision
+            self.resetFrameTiming(notBefore: ProcessInfo.processInfo.systemUptime)
+            // A new live start may retry failed components. Their own loading
+            // guards retain successful models and reject duplicate compilation.
+            self.tracker.prepare()
             do {
+                let retryGeometry = self.configured && !self.geometryAvailable
                 try self.configureIfNeeded()
-                guard self.wantsRunning else { return }
+                // A previous rotation failure can leave the inputs configured.
+                // Retry its connection explicitly; do not report a usable camera
+                // solely because configureIfNeeded has nothing left to install.
+                if retryGeometry { self.applyGeometry() }
+                guard self.wantsRunning, self.geometryAvailable else { return }
                 // Prepare storage before starting the camera so the bounded
                 // handoff preserves the very first recording frames as before.
                 self.recorder.start { [weak self] in
                     guard let self else { return }
                     self.queue.async {
-                        guard self.wantsRunning, self.runRevision == revision else { return }
+                        guard self.wantsRunning, self.geometryAvailable,
+                              self.runRevision == revision else { return }
                         if !self.session.isRunning { self.session.startRunning() }
                         self.onCameraStatus?(self.session.isRunning ? "Rear camera · 720p" : "Camera could not start", self.session.isRunning)
                     }
@@ -163,6 +189,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         queue.async {
             self.wantsRunning = false
             self.runRevision += 1
+            self.resetFrameTiming(notBefore: ProcessInfo.processInfo.systemUptime)
             self.tracker.clear()
             if self.session.isRunning { self.session.stopRunning() }
             self.recorder.pause(reason: "Background: camera tracking and recording are paused. Return to BrakeSense to resume.", completion: completion)
@@ -174,6 +201,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         queue.async {
             self.wantsRunning = false
             self.runRevision += 1
+            self.resetFrameTiming(notBefore: ProcessInfo.processInfo.systemUptime)
             self.tracker.clear()
             if self.session.isRunning { self.session.stopRunning() }
             self.recorder.stop(completion: completion)
@@ -231,6 +259,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             configured = true
             applyGeometry()
         } catch {
+            geometryAvailable = false
             captureDevice = nil
             session.inputs.forEach(session.removeInput)
             session.outputs.forEach(session.removeOutput)
@@ -257,6 +286,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             let revision = geometryRevision
             let actual = geometry
             geometryChanging = true
+            resetFrameTiming(notBefore: uptime)
             recorder.beginOrientationSegment()
             tracker.configureFrameGeometry(horizontalFOV: actual.horizontalFieldOfView) { [weak self] in
                 guard let self else { return }
@@ -270,11 +300,27 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
         recorder.append(sampleBuffer)
         reportCaptureHealth(sampleBuffer, buffer: buffer, at: uptime)
+        // Output PTS belongs to the session clock, not to callback delivery.
+        // Convert to host time first, then map its measured age onto uptime.
+        // Missing/invalid clocks pause inference; recording retains the original
+        // sample and its timestamps. No fallback may make an old frame fresh.
+        guard let sessionClock = session.masterClock else { return }
+        let hostClock = CMClockGetHostTimeClock()
+        let hostPTS = CMSyncConvertTime(CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
+                                       from: sessionClock, to: hostClock)
+        // Sample uptime first: preemption between these reads can only make
+        // the mapped frame older, never newer than its real capture.
+        let receivedAt = ProcessInfo.processInfo.systemUptime
+        let hostNow = CMTimeGetSeconds(CMClockGetTime(hostClock))
+        guard let capturedAt = captureTimestamp.uptime(hostTimestamp: CMTimeGetSeconds(hostPTS),
+            hostNow: hostNow, receivedAt: receivedAt),
+            TrackingFreshness.measurementIsFresh(capturedAt: capturedAt,
+                now: ProcessInfo.processInfo.systemUptime) else { return }
         var cadence = visionCadence
-        guard cadence.shouldRun(at: uptime, interval: visionInterval) else { return }
+        guard cadence.shouldRun(at: capturedAt, interval: visionInterval) else { return }
         // A busy worker did not consume this time slot. Offer the next fresh
         // capture instead of adding another full interval after it becomes free.
-        if tracker.submit(buffer, uptime: uptime, captureISO: captureDevice.map { Double($0.iso) },
+        if tracker.submit(buffer, uptime: capturedAt, captureISO: captureDevice.map { Double($0.iso) },
             exposureSeconds: captureDevice.map { CMTimeGetSeconds($0.exposureDuration) }) {
             visionCadence = cadence
         }

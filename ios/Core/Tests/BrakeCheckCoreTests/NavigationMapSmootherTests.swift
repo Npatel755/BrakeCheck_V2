@@ -27,8 +27,7 @@ final class NavigationMapSmootherTests: XCTestCase {
         XCTAssertLessThan(first, 3)
         for _ in 0..<150 { _ = smoother.advance(seconds: 1 / 30.0) }
         let settled = smoother.coordinate!.longitude * 111_195
-        XCTAssertGreaterThan(settled, 10)
-        XCTAssertLessThan(settled, 20)
+        XCTAssertEqual(settled, 20, accuracy: 0.01)
     }
     func testSingleLargeJumpExpandsCircleInsteadOfMovingDot() {
         var smoother = NavigationMapSmoother()
@@ -81,5 +80,87 @@ final class NavigationMapSmootherTests: XCTestCase {
         _ = smoother.ingest(NavigationCoordinate(latitude: 0, longitude: 179.9999), accuracy: 5, speed: 30, timestamp: 100, now: 100, isCurrent: true)
         XCTAssertTrue(smoother.ingest(NavigationCoordinate(latitude: 0, longitude: -179.9999), accuracy: 5, speed: 30, timestamp: 101, now: 101, isCurrent: true))
         XCTAssertGreaterThan(abs(smoother.advance(seconds: 0.1)!.longitude), 179)
+    }
+
+    func testMovingMarkerReachesLatestMeasuredFixWithoutTargetFilteringOrPrediction() {
+        var smoother = NavigationMapSmoother()
+        _ = feed(&smoother, 0, at: 100, speed: 20)
+        _ = feed(&smoother, 20, at: 101, speed: 20)
+        for _ in 0..<30 { _ = smoother.advance(seconds: 1 / 60.0) }
+        XCTAssertEqual(smoother.coordinate!.longitude * 111_195, 20, accuracy: 3)
+        for _ in 0..<90 { _ = smoother.advance(seconds: 1 / 60.0) }
+        XCTAssertEqual(smoother.coordinate!.longitude * 111_195, 20, accuracy: 0.01)
+        XCTAssertLessThanOrEqual(smoother.coordinate!.longitude * 111_195, 20.00001)
+    }
+
+    func testOneHertzHighwayFixesKeepSingleFilterLagBoundedAtSixtyHertz() {
+        var smoother = NavigationMapSmoother()
+        var latestMeasurement = 0.0
+        for frame in 0...7200 {
+            let time = Double(frame) / 60
+            if frame.isMultiple(of: 60) {
+                latestMeasurement = time * 20
+                XCTAssertTrue(feed(&smoother, latestMeasurement, at: 100 + time, speed: 20))
+            }
+            let displayed = smoother.advance(seconds: 1 / 60.0)!.longitude * 111_195
+            XCTAssertLessThanOrEqual(displayed, latestMeasurement + 0.0001)
+            XCTAssertLessThan(latestMeasurement - displayed, 20)
+            if frame % 60 >= 30 { XCTAssertLessThan(latestMeasurement - displayed, 3) }
+        }
+    }
+
+    func testEstimateHandoverPreservesPositionAndAcceptsEarlierMeasuredCaptureTime() {
+        var smoother = NavigationMapSmoother()
+        _ = feed(&smoother, 0, at: 100, speed: 20)
+        _ = feed(&smoother, 20, at: 101, speed: 20)
+        for _ in 0..<30 { _ = smoother.advance(seconds: 1 / 60.0) }
+        let beforeEstimate = smoother.coordinate
+        XCTAssertTrue(smoother.ingest(point(21), accuracy: 15, speed: -1, timestamp: 102.05,
+            now: 102.05, isCurrent: false, isEstimated: true))
+        XCTAssertEqual(smoother.coordinate, beforeEstimate)
+        let beforeRecovery = smoother.advance(seconds: 1 / 60.0)
+        XCTAssertTrue(smoother.ingest(point(20.5), accuracy: 10, speed: 20, timestamp: 102,
+            now: 102.1, isCurrent: true))
+        XCTAssertEqual(smoother.coordinate, beforeRecovery)
+        for _ in 0..<120 { _ = smoother.advance(seconds: 1 / 60.0) }
+        XCTAssertEqual(smoother.coordinate!.longitude * 111_195, 20.5, accuracy: 0.01)
+        XCTAssertFalse(feed(&smoother, 50, at: 101.5, speed: 20))
+    }
+
+    func testExpiredEstimateReturnsToCachedFixAndCannotContinueMoving() {
+        var smoother = NavigationMapSmoother()
+        _ = feed(&smoother, 0, at: 100, speed: 20)
+        _ = feed(&smoother, 20, at: 101, speed: 20)
+        XCTAssertTrue(smoother.ingest(point(60), accuracy: 35, speed: -1, timestamp: 104,
+            now: 104, isCurrent: false, isEstimated: true))
+        for _ in 0..<30 { _ = smoother.advance(seconds: 1 / 60.0) }
+        XCTAssertTrue(smoother.ingest(point(20), accuracy: 10, speed: 20, timestamp: 101,
+            now: 106, isCurrent: false))
+        for _ in 0..<180 { _ = smoother.advance(seconds: 1 / 60.0) }
+        XCTAssertEqual(smoother.coordinate!.longitude * 111_195, 20, accuracy: 0.0001)
+        XCTAssertTrue(feed(&smoother, 100, at: 107, speed: 20))
+        XCTAssertEqual(smoother.coordinate!.longitude * 111_195, 100, accuracy: 0.0001)
+    }
+
+    func testExpiredEstimateInputAndHandoverTeleportAreRejected() {
+        var smoother = NavigationMapSmoother()
+        _ = feed(&smoother, 0, at: 100, speed: 20)
+        XCTAssertFalse(smoother.ingest(point(20), accuracy: 10, speed: -1, timestamp: 101,
+            now: 104, isCurrent: false, isEstimated: true))
+        XCTAssertTrue(smoother.ingest(point(20), accuracy: 10, speed: -1, timestamp: 101,
+            now: 101, isCurrent: false, isEstimated: true))
+        XCTAssertFalse(feed(&smoother, 1000, at: 101.1, speed: 20))
+        XCTAssertTrue(feed(&smoother, 22, at: 101.2, speed: 20))
+    }
+
+    func testHeadingCrossesNorthByShortestPathAndIgnoresInvalidTime() {
+        let clockwise = NavigationMapSmoother.interpolatedHeading(from: 359, toward: 1, seconds: 0.1)
+        XCTAssertGreaterThan(clockwise, 359)
+        XCTAssertLessThan(clockwise, 360)
+        let counterclockwise = NavigationMapSmoother.interpolatedHeading(from: 1, toward: 359, seconds: 0.1)
+        XCTAssertGreaterThan(counterclockwise, 0)
+        XCTAssertLessThan(counterclockwise, 1)
+        XCTAssertEqual(NavigationMapSmoother.interpolatedHeading(from: 45, toward: 90, seconds: .nan), 45)
+        XCTAssertEqual(NavigationMapSmoother.interpolatedHeading(from: 45, toward: 90, seconds: -1), 45)
     }
 }

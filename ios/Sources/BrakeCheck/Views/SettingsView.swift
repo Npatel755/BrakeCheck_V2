@@ -96,6 +96,8 @@ struct SettingsView: View {
     @AppStorage("display.mph") private var useMPH = true
     @AppStorage("display.detectionBoxes") private var showDetections = true
     @AppStorage("display.laneGuides") private var showLanes = false
+    @AppStorage("display.laneTrackingMode") private var laneTrackingMode = "kalman"
+    @AppStorage("display.lanePresentation") private var lanePresentation = "corridor"
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
     @AppStorage("navigation.cameraAR") private var cameraAR = true
     @AppStorage("recording.limitGB") private var recordingLimitGB = 0
@@ -321,6 +323,21 @@ struct SettingsView: View {
             }.pickerStyle(.segmented)
             Toggle("Show vehicle boxes", isOn: $showDetections)
             Toggle("Show lane guides", isOn: $showLanes)
+            Picker("Lane guide style", selection: $lanePresentation) {
+                Text("Filled corridor").tag("corridor")
+                Text("Lines").tag("lines")
+            }.pickerStyle(.segmented)
+                .onChange(of: lanePresentation) { _, _ in showLanes = true }
+            Text("The cyan corridor follows the detected left and right lane boundaries. It appears where both sides are visible.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+            Picker("Lane tracking test", selection: $laneTrackingMode) {
+                ForEach(LaneTrackingMode.allCases, id: \.rawValue) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }.pickerStyle(.segmented)
+                .onChange(of: laneTrackingMode) { _, _ in showLanes = true }
+            Text("Compare lane-guide stability with Raw, Averaging, or Kalman. Changes apply to the next camera result.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Toggle("Show full camera frame", isOn: $showFullFrame)
             Toggle("Directions on the road", isOn: $cameraAR)
             CameraCalibrationControls(model: model, presentation: arPresentation, cameraAR: $cameraAR, openCameraSetup: openCameraSetup)
@@ -467,7 +484,7 @@ struct SettingsView: View {
             Text("Check-in replies are recognized on this iPhone when on-device speech is supported. The I'm okay and Send help buttons remain available. Automatic contact alerts require a connected service.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .safety:
-            DrivingAssistControls()
+            DrivingAssistControls(model: model)
             Divider()
             Toggle("Pre-drive checklist before each trip", isOn: Binding(
                 get: { !skipChecklist }, set: { skipChecklist = !$0 }))
@@ -530,8 +547,8 @@ struct SettingsView: View {
 
     private static let noticeFiles = [
         NoticeFile(title: "Vehicle detectors", folder: "ModelLicenses", name: "NOTICE.md"),
-        NoticeFile(title: "UFLD lane detection", folder: "ModelLicenses", name: "UFLD-MIT.txt"),
-        NoticeFile(title: "Intel road segmentation", folder: "ModelLicenses", name: "Apache-2.0.txt"),
+        NoticeFile(title: "UFLDv2 lane detection", folder: "ModelLicenses", name: "UFLD-MIT.txt"),
+        NoticeFile(title: "SegFormer road segmentation", folder: "ModelLicenses", name: "SegFormer-NVIDIA-License.txt"),
         NoticeFile(title: "Vehicle orientation", folder: "ViewpointModelData", name: "CFV-LICENSE.txt"),
         NoticeFile(title: "Red Hat Display font", folder: "Fonts", name: "OFL.txt")
     ]

@@ -83,6 +83,20 @@ public struct RoadVisibilityMask {
     }
 }
 
+public struct CameraARTrackingEvidence {
+    public let validatedAt: TimeInterval
+    public let consecutiveMatches: Int
+    public let accumulatedCycleError: Double
+    public init(validatedAt: TimeInterval, consecutiveMatches: Int, accumulatedCycleError: Double) {
+        self.validatedAt = validatedAt; self.consecutiveMatches = consecutiveMatches
+        self.accumulatedCycleError = accumulatedCycleError
+    }
+    public func isUsable(at time: TimeInterval) -> Bool {
+        time.isFinite && validatedAt.isFinite && time >= validatedAt && time - validatedAt <= 0.10
+            && consecutiveMatches >= 2 && accumulatedCycleError.isFinite && (0...0.025).contains(accumulatedCycleError)
+    }
+}
+
 public struct CameraARScene {
     public let lane: LanePath?
     public let road: RoadRegion?
@@ -94,14 +108,17 @@ public struct CameraARScene {
     public let obstacles: [CGRect]
     public let obstaclesFresh: Bool
     public let isPredicted: Bool
+    public let trackingEvidence: CameraARTrackingEvidence?
     public init(lane: LanePath?, road: RoadRegion?, laneObservedAt: TimeInterval, roadObservedAt: TimeInterval,
                 capturedAt: TimeInterval, obstacles: [CGRect] = [], obstaclesFresh: Bool = true,
-                isPredicted: Bool = false, diagnosticRoadMask: RoadVisibilityMask? = nil) {
+                isPredicted: Bool = false, diagnosticRoadMask: RoadVisibilityMask? = nil,
+                trackingEvidence: CameraARTrackingEvidence? = nil) {
         self.lane = lane; self.road = road; self.laneObservedAt = laneObservedAt
         self.diagnosticRoadMask = diagnosticRoadMask
         self.roadObservedAt = roadObservedAt; self.capturedAt = capturedAt
         self.obstacles = obstacles; self.obstaclesFresh = obstaclesFresh
         self.isPredicted = isPredicted
+        self.trackingEvidence = trackingEvidence
     }
 }
 
@@ -154,8 +171,9 @@ public struct CameraARSceneTracker {
 /// Prediction is bounded and never recursively renews a segmentation timestamp.
 public enum RoadVisualProjection {
     public static func project(_ road: RoadRegion, from original: LanePath, to tracked: LanePath,
-                               at time: TimeInterval) -> RoadRegion? {
-        guard time.isFinite, time >= road.capturedAt, time - road.capturedAt <= 0.8,
+                               at time: TimeInterval, maximumSourceAge: TimeInterval = 0.8) -> RoadRegion? {
+        guard maximumSourceAge.isFinite, (0...3).contains(maximumSourceAge),
+              time.isFinite, time >= road.capturedAt, time - road.capturedAt <= maximumSourceAge,
               original.isUsable(at: road.capturedAt), tracked.isUsable(at: time),
               let a = original.bands.first, let b = original.bands.last,
               let c = tracked.bands.first, let d = tracked.bands.last,
@@ -299,10 +317,12 @@ public enum CameraARConfidencePolicy {
                              navigationReliable: Bool, branchAmbiguous: Bool, at time: TimeInterval) -> CameraARConfidence {
         guard time.isFinite, navigationReliable, let scene,
               time >= scene.capturedAt, time - scene.capturedAt <= 0.35 else { return .lost }
+        let tracked = scene.isPredicted && scene.trackingEvidence?.isUsable(at: time) == true
+        let maximumAge: TimeInterval = tracked ? 3 : 0.8
         let laneSupported = scene.lane.map { $0.isUsable(at: time) } == true
-            && time >= scene.laneObservedAt && time - scene.laneObservedAt <= 0.8
+            && time >= scene.laneObservedAt && time - scene.laneObservedAt <= maximumAge
         let roadSupported = scene.road.map { $0.isUsable(at: time) } == true
-            && time >= scene.roadObservedAt && time - scene.roadObservedAt <= 0.8
+            && time >= scene.roadObservedAt && time - scene.roadObservedAt <= maximumAge
         guard laneSupported || roadSupported else { return .lost }
         guard laneSupported && roadSupported, let lane = scene.lane, let road = scene.road else { return .directional }
         guard verified, routeMatched, !branchAmbiguous, scene.obstaclesFresh,

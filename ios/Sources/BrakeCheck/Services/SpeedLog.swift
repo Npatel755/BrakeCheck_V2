@@ -1,4 +1,5 @@
 import Foundation
+import BrakeCheckCore
 
 struct SpeedLogPoint {
     let time: Date
@@ -36,12 +37,14 @@ struct SpeedTrack {
     }
 }
 
-/// Writes one CSV per trip with the filtered GPS speed, so a recorded drive can be replayed indoors.
-/// Use on the main thread.
+/// GPS callbacks only admit bounded work. File creation, CSV formatting and disk
+/// writes run on Core's private I/O queue, including the final trip flush.
 final class SpeedLogWriter {
-    private var handle: FileHandle?
-    private var lastWrite = Date.distantPast
-    private(set) var url: URL?
+    private let writer = QueuedSpeedLogWriter(directory: SpeedLogWriter.directory)
+    var url: URL? { writer.url }
+    var lastError: String? { writer.lastError }
+    var droppedSamples: Int { writer.droppedSamples }
+    var pendingSamples: Int { writer.pendingSamples }
 
     static var directory: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -49,32 +52,17 @@ final class SpeedLogWriter {
     }
 
     func start(at date: Date = Date()) {
-        stop()
-        let files = FileManager.default
-        try? files.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let fileURL = Self.directory.appendingPathComponent("trip_\(formatter.string(from: date)).csv")
-        guard files.createFile(atPath: fileURL.path, contents: Data("unix_time,speed_mps,accuracy_mps\n".utf8)),
-              let newHandle = try? FileHandle(forWritingTo: fileURL) else { return }
-        _ = try? newHandle.seekToEnd()
-        handle = newHandle
-        url = fileURL
+        writer.start(at: date)
     }
 
     func append(speed: Double, accuracy: Double, at date: Date) {
-        guard let handle, speed.isFinite, date.timeIntervalSince(lastWrite) >= 0.2 else { return }
-        lastWrite = date
-        let line = String(format: "%.3f,%.3f,%.3f\n", date.timeIntervalSince1970, speed, accuracy)
-        try? handle.write(contentsOf: Data(line.utf8))
+        writer.append(speed: speed, accuracy: accuracy, at: date)
     }
 
-    func stop() {
-        try? handle?.close()
-        handle = nil
-        url = nil
-        lastWrite = .distantPast
+    /// Completion returns to the main queue after accepted samples are flushed
+    /// and closed, before the caller presents a trip summary or replay picker.
+    func stop(completion: @escaping () -> Void = {}) {
+        writer.stop { DispatchQueue.main.async(execute: completion) }
     }
 }
 

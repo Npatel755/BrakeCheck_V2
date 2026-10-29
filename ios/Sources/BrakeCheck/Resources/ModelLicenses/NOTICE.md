@@ -1,15 +1,18 @@
 # BrakeCheck third-party models
 
-Camera navigation bundles UFLD ResNet18/CULane lane detection and NVIDIA
+Camera navigation bundles locally trained UFLDv2 ResNet34 lane detection and NVIDIA
 SegFormer B0/Cityscapes road segmentation. The SegFormer checkpoint is for
 non-commercial research and evaluation under the bundled NVIDIA license.
 Checkpoint sources, preprocessing and file hashes accompany the model packages.
 
-UFLD code is MIT, but its CULane-trained checkpoint remains subject to CULane's
-non-commercial dataset terms. Neither camera model is cleared for commercial
-release in this restored test configuration.
+UFLDv2 architecture code is MIT. N66 uses the epoch-3 post-label-fix checkpoint trained on
+the frozen BrakeCheck reviewed export, initialized through local checkpoints
+from a torchvision ImageNet ResNet34 backbone. The previous CULane-trained
+UFLD checkpoint is excluded from this build. Dataset and initialization
+provenance remain recorded with the training run; this is not a blanket
+commercial clearance. SegFormer's non-commercial terms remain applicable.
 
-UFLD upstream: https://github.com/cfzd/Ultra-Fast-Lane-Detection
+UFLDv2 upstream: https://github.com/cfzd/Ultra-Fast-Lane-Detection-v2
 SegFormer: https://huggingface.co/nvidia/segformer-b0-finetuned-cityscapes-1024-1024
 Day: RTMDet-tiny COCO. Low light: RTMDet-small COCO. These are general COCO
 checkpoints; the low-light profile is not a night-trained model.

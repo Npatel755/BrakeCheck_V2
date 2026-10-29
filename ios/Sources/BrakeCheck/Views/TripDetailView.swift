@@ -57,7 +57,7 @@ struct TripDetailView: View {
                 whatHappened
                 if !premium.isSubscribed {
                     NavigationLink {
-                        PremiumView()
+                        PremiumView(model: model)
                             .navigationTitle("Premium")
                             .navigationBarTitleDisplayMode(.inline)
                     } label: {

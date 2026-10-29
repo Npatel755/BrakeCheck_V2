@@ -23,10 +23,16 @@ The device's actual camera horizontal FOV supplies the projection's focal scale.
 
 ## Perception
 
-- UFLD original ResNet18/CULane: full-frame RGB stretch to 800×288, embedded
-  ImageNet normalization, `lane_logits` output `[1,201,18,4]`. The decoder uses
-  the official CULane row anchors and a stabilized softmax over 200 grid bins;
-  the final bin suppresses absent lanes. Vehicle-overlapping peaks are excluded.
+- N62 UFLDv2 ResNet34 uses the locally trained best epoch-17 checkpoint from
+  the frozen reviewed BrakeCheck export. Resize the full camera frame to
+  1600×533, retain the bottom 320 rows (remove the top 213), and supply RGB image
+  bytes. ImageNet normalization is embedded in the model. Four raw outputs are
+  `loc_row` `[1,200,72,4]`, `loc_col` `[1,100,81,4]`, `exist_row` `[1,2,72,4]`
+  and `exist_col` `[1,2,81,4]`. The stock hybrid decoder uses row heads for
+  slots 2/3 and column heads for slots 1/4, requiring 37/21 positive anchors
+  respectively. Anchors map back into the full camera frame; they do not start
+  at the cropped input's origin. Ego-boundary evidence supports corridor fitting.
+  The validation-tuned minimum-12 experiment is not enabled in this build.
 - NVIDIA SegFormer B0/Cityscapes: full-frame RGB stretch to 640×384,
   `road_scores` output `[1,2,384,640]` for non-road and road probabilities.
 - Both trained FP16 `.mlpackage` resources are bundled and compiled/cache-hashed
@@ -46,14 +52,23 @@ The device's actual camera horizontal FOV supplies the projection's focal scale.
 - Classical lane-marking fallback and the existing visual lane tracker remain
   available when neural inference cannot run. Segmentation is required for AR.
 
-The original UFLD ResNet18 version was selected as the initial mobile model;
-UFLD v2's default CULane configuration uses a much wider 1600-pixel input and a
-larger classification head. Actual
-latency and model quality must be measured on the target phone before choosing
-a larger model. This change does not claim benchmarked iPhone performance.
+N62 replaces the initial UFLD ResNet18/CULane resource with the trained local
+UFLDv2 model; the separate SegFormer road model remains unchanged. The larger
+1600-pixel lane input and ResNet34 backbone need latency and thermal measurements
+on the target phone. Existing admission and fallback policies remain in force.
+No iPhone FPS or Apple Core ML execution-parity result is claimed.
 
-This restored test build uses non-commercial UFLD/CULane and SegFormer weights.
-Both require replacement or appropriate licensing before commercial release.
+The UFLDv2 checkpoint's Python validation lane F1 is 71.88% on the frozen
+1,586-image validation split. This is not per-image accuracy or an on-device
+Core ML score. The decoder experiment reached 79.32% validation F1 with lower
+precision, but it has not been promoted. Reserved test images were not used.
+See [N62 provenance and validation](N62-UFLDV2.md).
+
+UFLDv2 code is MIT and the lane weights were trained locally from an ImageNet
+ResNet34 initialization, rather than the old CULane-trained lane checkpoint.
+Dataset permissions still require review; local training does not confer
+commercial clearance. SegFormer retains its non-commercial research/evaluation
+license, so this remains a test configuration for road segmentation.
 
 ## Road alignment
 
@@ -109,17 +124,24 @@ from the Windows/Linux development environment.
 
 ## Export and verification
 
-Install `tools/model_migration/requirements-ar.txt` in a Python virtual environment
-(CPU PyTorch wheels work), then run `tools/model_migration/export_road_models.py`.
-It fetches the official trained CULane checkpoint and NVIDIA Cityscapes checkpoint,
-checks all lane inference weight keys, verifies eager/trace parity, exports iOS 17
-Core ML packages and writes the source/hash manifest. PyTorch 2.7.1 is newer than
-Core ML Tools 8.3's tested PyTorch range; conversion succeeded, but Apple execution
-parity remains a required device check.
+The N62 lane export uses `tools/model_migration/export_ufldv2.py` with the
+trusted local frozen run. It checks the source checkpoint/training manifest,
+loads the exact trained inference weights, embeds RGB normalization, compares
+CPU eager/TorchScript outputs and native-loader preprocessing, and exports the
+four-head iOS 17 FP16 MLProgram with float32 outputs. Its provenance records the
+conversion environment and checks actually performed. It does not execute
+Core ML on the Linux conversion host. The unchanged SegFormer resource keeps
+its existing source revision, package hashes and license.
 
-`tools/model_migration/verify_road_models.py --ipa ios/xtool/BrakeCheck.ipa`
-checks resource and IPA hashes, model contracts, color layout, license inclusion,
-ZIP integrity and exclusion of the removed YOLOP model.
+`export_road_models.py` is the historical original-UFLD/CULane exporter; do not
+use it to recreate N62's lane package. `verify_ufldv2.py` checks the lane-specific
+provenance and output contracts. `verify_road_models.py --ipa
+<finished-IPA>` checks both lane/road resources, named output shapes, color
+layout, checkpoint metadata, SHA256 inventories, license inclusion and ZIP
+integrity. `verify_model_assets.py --ipa <finished-IPA>` checks all model weights
+and provenance records. Both reject retired UFLDLane, IntelRoad and YOLOP resources.
+These are packaging and structural checks; Apple execution parity remains a
+required device check.
 
 `swift test` in `ios/Core` verifies lane class suppression, coordinate conventions,
 stable decoding, straight/curved route projection, missing/stale geometry,
