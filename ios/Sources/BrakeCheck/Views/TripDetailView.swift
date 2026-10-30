@@ -12,22 +12,13 @@ struct TripDetailView: View {
     let useMPH: Bool
     @State private var route: TripRoute?
     @State private var loaded = false
+    @State private var routeError: String?
+    @State private var loadRevision = 0
     @ObservedObject private var premium = PremiumStore.shared
 
-    private var routeDistanceMeters: Double? {
-        guard let points = route?.points, points.count > 1 else { return nil }
-        let total = zip(points, points.dropFirst()).reduce(0.0) { distance, pair in
-            let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
-            let end = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
-            let segment = start.distance(from: end)
-            return distance + (segment < 250 ? segment : 0)
-        }
-        return total > 0 ? total : nil
-    }
+    private var routeDistanceMeters: Double? { route?.distanceMeters }
 
-    private var incidents: [IncidentManifest] {
-        model.incidents.filter { $0.triggerTime >= trip.startedAt && $0.triggerTime <= trip.endedAt }
-    }
+    private var incidents: [IncidentManifest] { model.incidents.filter { trip.includes($0) } }
 
     private var title: String {
         if let destination = route?.destination, !destination.isEmpty { return "To \(destination)" }
@@ -54,6 +45,13 @@ struct TripDetailView: View {
                 }
                 .background(BrakeTheme.panel)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                if let routeError {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Trip map unavailable", systemImage: "exclamationmark.triangle")
+                        Text(routeError).font(.brake(.caption))
+                        Button("Retry loading map") { loadRevision += 1 }
+                    }.brakePanel()
+                }
                 whatHappened
                 if !premium.isSubscribed {
                     NavigationLink {
@@ -106,8 +104,15 @@ struct TripDetailView: View {
         .foregroundStyle(BrakeTheme.text)
         .navigationTitle("Trip")
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            route = TripRoute.load(trip.id)
+        .task(id: loadRevision) {
+            do {
+                let loadedRoute = try await model.loadTripRoute(trip.id)
+                guard !Task.isCancelled else { return }
+                route = loadedRoute; routeError = nil
+            } catch {
+                guard !Task.isCancelled else { return }
+                route = nil; routeError = error.localizedDescription
+            }
             loaded = true
         }
     }
@@ -260,7 +265,10 @@ private struct TripRouteMapView: UIViewRepresentable {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
         }
         let path = MKPolyline(coordinates: coordinates, count: coordinates.count)
-        map.addOverlay(path)
+        for segment in route.continuousSegments where segment.count >= 2 {
+            let measured = segment.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            map.addOverlay(MKPolyline(coordinates: measured, count: measured.count))
+        }
         if let first = coordinates.first { map.addAnnotation(Pin(first, title: "Start", kind: .start)) }
         if let last = coordinates.last { map.addAnnotation(Pin(last, title: "End", kind: .end)) }
         for event in route.events {

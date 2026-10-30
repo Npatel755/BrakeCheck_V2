@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TripMetrics: Codable, Identifiable {
+public struct TripMetrics: Codable, Identifiable, Sendable {
     public let id: UUID
     public let startedAt: Date
     public let endedAt: Date
@@ -16,7 +16,7 @@ public struct TripMetrics: Codable, Identifiable {
         self.estimatedLeadHardBrakes = estimatedLeadHardBrakes
         self.estimatedCloseCalls = estimatedCloseCalls
     }
-    fileprivate var valid: Bool {
+    var valid: Bool {
         [startedAt, endedAt].allSatisfy { (-62_135_596_800...253_402_300_799).contains($0.timeIntervalSince1970) }
             && durationSeconds.isFinite && durationSeconds >= 0 && estimatedLeadHardBrakes >= 0 && estimatedCloseCalls >= 0
             && (maxSpeedMPH.map { $0.isFinite && $0 >= 0 } ?? true)

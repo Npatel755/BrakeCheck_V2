@@ -378,9 +378,9 @@ struct SettingsView: View {
             Text("Trip maps and flagged moments stay on this iPhone. You can remove their GPS trail while keeping the trip totals.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Button("Delete saved trip routes", role: .destructive) { confirmRouteDelete = true }
-                .disabled(tripActive)
+                .disabled(tripActive || stopping || model.tripHistoryBusy)
                 .alert("Delete saved trip routes?", isPresented: $confirmRouteDelete) {
-                    Button("Delete", role: .destructive) { TripRoute.deleteAll() }
+                    Button("Delete", role: .destructive) { model.deleteSavedTripRoutes() }
                     Button("Cancel", role: .cancel) { }
                 } message: {
                     Text("Trip pages will keep their totals and clips, but their maps and flagged moments will be removed.")

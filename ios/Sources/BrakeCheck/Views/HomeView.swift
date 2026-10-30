@@ -40,6 +40,9 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     header
                     startTile
+                    if !model.tripHistoryBusy && (model.tripHistoryError != nil || model.pendingTripSaveCount > 0) {
+                        TripSaveRecoveryView(model: model)
+                    }
                     if model.tripActive && !model.demo && !model.replaying { tripControls }
                     if model.tripActive && !model.cameraReady && !model.demo && !model.replaying {
                         VStack(alignment: .leading, spacing: 8) {

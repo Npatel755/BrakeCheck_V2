@@ -19,6 +19,19 @@ final class DriveModel {
     private let speedLog = AppSpeedLogWriter()
     private let tripMetricsStore = TripMetricsStore(url: FileManager.default.urls(for: .documentDirectory,
         in: .userDomainMask)[0].appendingPathComponent("TripMetrics/trip-history.json"))
+    @ObservationIgnored private lazy var tripArchive = TripArchiveStore(
+        historyURL: tripMetricsStore.url,
+        routesFolder: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("TripRoutes", isDirectory: true),
+        pendingFolder: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PendingTripSaves", isDirectory: true))
+    @ObservationIgnored private var tripPersistenceTask: Task<Void, Never>?
+    @ObservationIgnored private var tripPersistenceRevision = UUID()
+    @ObservationIgnored private var pendingTripSaves: [UUID: (TripMetrics, TripRoute)] = [:]
+    private(set) var tripHistoryBusy = false
+    private(set) var tripHistoryError: String?
+    private(set) var pendingTripSaveCount = 0
+    private(set) var lastSavedTripID: UUID?
     private(set) var savedTrips: [TripMetrics] = []
     var tripHistoryURL: URL { tripMetricsStore.url }
     private var tripHadGPSSpeed = false
@@ -37,6 +50,7 @@ final class DriveModel {
     var closeCalls = 0
     var maxSpeedMPH: Double = 0
     private var tripStarted = Date()
+    private var tripStartedUptime = ProcessInfo.processInfo.systemUptime
     private var currentTripID = UUID()
     private var lastTripPublishedSecond = -1
     @ObservationIgnored private var brakeWarningLatch = BrakeWarningLatch()
@@ -299,13 +313,21 @@ final class DriveModel {
             .receive(on: RunLoop.main).sink { [weak self] _ in self?.syncDrivingAssists() }
             .store(in: &assistSubscriptions)
         SpeechVoicePreferences.restoreOriginalDefaultsIfNeeded()
-        do {
-            savedTrips = try tripMetricsStore.load()
-            if let last = savedTrips.first {
-                tripMinutes = last.durationSeconds / 60; maxSpeedMPH = last.maxSpeedMPH ?? 0
-                hardBrakes = last.estimatedLeadHardBrakes; closeCalls = last.estimatedCloseCalls
-            }
-        } catch { message = "Could not read saved trip metrics. Your existing history has been kept." }
+        tripHistoryBusy = true
+        let persistenceRevision = UUID(); tripPersistenceRevision = persistenceRevision
+        let archive = tripArchive
+        tripPersistenceTask = Task { @MainActor [weak self] in
+            do {
+                let snapshot = try await archive.load()
+                guard let self else { return }
+                self.applyTripHistory(snapshot)
+                if self.tripPersistenceRevision == persistenceRevision, !self.tripActive, let last = self.savedTrips.first {
+                    self.tripMinutes = last.durationSeconds / 60; self.maxSpeedMPH = last.maxSpeedMPH ?? 0
+                    self.hardBrakes = last.estimatedLeadHardBrakes; self.closeCalls = last.estimatedCloseCalls
+                }
+            } catch { self?.tripHistoryError = "Could not read saved trips. " + error.localizedDescription }
+            if self?.tripPersistenceRevision == persistenceRevision { self?.tripHistoryBusy = false }
+        }
 
         navigation.useMPH = UserDefaults.standard.object(forKey: "display.mph") as? Bool ?? true
         navigation.canSpeak = { [weak self] in
@@ -662,7 +684,7 @@ final class DriveModel {
         camera.setVideoOrientation(desiredCaptureOrientation)
         clearTarget("Starting trip · acquiring the lead")
         tripActive = true
-        tripStarted = Date(); tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
+        tripStarted = Date(); tripStartedUptime = ProcessInfo.processInfo.systemUptime; tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
         currentTripID = UUID()
         lastTripPublishedSecond = -1
         tripHadGPSSpeed = false
@@ -688,6 +710,7 @@ final class DriveModel {
         guard !stopping, !demo, !replaying, navigation.canStartGuidance else { return }
         navigation.startGuidance()
         if navigation.isNavigating && !tripActive { startTrip() }
+        if navigation.isNavigating { tripRoute.updateDestination(navigation.destinationTitle) }
     }
 
     /// Retry a failed live capture without discarding the trip or its GPS log.
@@ -735,31 +758,47 @@ final class DriveModel {
 
     }
 
-    func endTrip() {
+    @discardableResult func endTrip() -> UUID? {
 
-        guard tripActive, !stopping else { return }
+        guard tripActive, !stopping else { return nil }
 
         navigation.stopGuidance()
 
         tripActive = false
-        let endedAt = Date()
-        tripMinutes = max(0, endedAt.timeIntervalSince(tripStarted) / 60)
-        do {
-            let trip = TripMetrics(id: currentTripID, startedAt: tripStarted, endedAt: endedAt,
-                maxSpeedMPH: tripHadGPSSpeed ? maxSpeedMPH : nil,
-                estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls)
-            savedTrips = try tripMetricsStore.save(trip)
-            tripRoute.finish(tripID: trip.id)
-        } catch {
-            tripRoute.cancel()
-            message = "Could not save this trip's metrics. Existing trip history has been kept."
-        }
+        let elapsed = max(0, ProcessInfo.processInfo.systemUptime - tripStartedUptime)
+        let endedAt = tripStarted.addingTimeInterval(elapsed)
+        tripMinutes = elapsed / 60
+        let trip = TripMetrics(id: currentTripID, startedAt: tripStarted, endedAt: endedAt,
+            maxSpeedMPH: tripHadGPSSpeed ? maxSpeedMPH : nil,
+            estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls)
+        let route = tripRoute.finish()
+        pendingTripSaves[trip.id] = (trip, route)
+        pendingTripSaveCount = max(pendingTripSaveCount, pendingTripSaves.count)
         safety.sendTrip(minutes: tripMinutes,
                         hardBrakes: hardBrakes, closeCalls: closeCalls, maxSpeedMPH: maxSpeedMPH)
 
         stopping = true
         beginFinalizationTask()
         let finalization = DispatchGroup()
+        finalization.enter()
+        let previous = tripPersistenceTask
+        let archive = tripArchive
+        tripHistoryBusy = true
+        let persistenceRevision = UUID(); tripPersistenceRevision = persistenceRevision
+        tripPersistenceTask = Task { @MainActor [weak self] in
+            await previous?.value
+            do {
+                let snapshot = try await archive.save(trip, route: route)
+                guard let self else { finalization.leave(); return }
+                self.pendingTripSaves.removeValue(forKey: trip.id)
+                self.applyTripHistory(snapshot)
+                self.lastSavedTripID = trip.id
+            } catch {
+                self?.tripHistoryError = "This trip is waiting to be saved. " + error.localizedDescription
+            }
+            if self?.tripPersistenceRevision == persistenceRevision { self?.tripHistoryBusy = false }
+            finalization.leave()
+        }
         finalization.enter()
         speedLog.stop { finalization.leave() }
         speedService.stop()
@@ -786,7 +825,52 @@ final class DriveModel {
             self?.stopping = false
             self?.finishBackgroundTask()
         }
+        return trip.id
+    }
 
+    private func applyTripHistory(_ snapshot: TripArchiveStore.Snapshot) {
+        savedTrips = snapshot.trips
+        pendingTripSaveCount = max(snapshot.pendingCount, pendingTripSaves.count)
+        tripHistoryError = snapshot.warnings.first
+    }
+
+    func retryTripHistorySave() {
+        guard !tripHistoryBusy, !stopping else { return }
+        let previous = tripPersistenceTask
+        let pending = pendingTripSaves.values.sorted { $0.0.startedAt < $1.0.startedAt }
+        let archive = tripArchive
+        tripHistoryBusy = true
+        let persistenceRevision = UUID(); tripPersistenceRevision = persistenceRevision
+        tripPersistenceTask = Task { @MainActor [weak self] in
+            await previous?.value
+            do {
+                var snapshot = try await archive.load()
+                for (trip, route) in pending {
+                    snapshot = try await archive.save(trip, route: route)
+                    self?.pendingTripSaves.removeValue(forKey: trip.id)
+                    self?.lastSavedTripID = trip.id
+                }
+                self?.applyTripHistory(snapshot)
+            } catch { self?.tripHistoryError = "Could not finish saving trips. " + error.localizedDescription }
+            if self?.tripPersistenceRevision == persistenceRevision { self?.tripHistoryBusy = false }
+        }
+    }
+
+    func loadTripRoute(_ id: UUID) async throws -> TripRoute? { try await tripArchive.loadRoute(id) }
+
+    func deleteSavedTripRoutes() {
+        guard !tripActive, !stopping, !tripHistoryBusy else { return }
+        tripHistoryBusy = true
+        let persistenceRevision = UUID(); tripPersistenceRevision = persistenceRevision
+        let previous = tripPersistenceTask, archive = tripArchive
+        tripPersistenceTask = Task { @MainActor [weak self] in
+            await previous?.value
+            do {
+                guard self?.pendingTripSaves.isEmpty == true else { throw TripArchiveStore.ArchiveError.conflictingPendingTrip }
+                try await archive.deleteRoutes()
+            } catch { self?.message = "Could not delete saved routes. " + error.localizedDescription }
+            if self?.tripPersistenceRevision == persistenceRevision { self?.tripHistoryBusy = false }
+        }
     }
 
     func sceneChanged(_ phase: ScenePhase) {
@@ -1320,7 +1404,7 @@ final class DriveModel {
         }
 
         guard tripActive else { return }
-        let elapsed = Date().timeIntervalSince(tripStarted)
+        let elapsed = max(0, ProcessInfo.processInfo.systemUptime - tripStartedUptime)
         if Int(elapsed) != lastTripPublishedSecond {
             lastTripPublishedSecond = Int(elapsed)
             tripMinutes = elapsed / 60

@@ -14,6 +14,10 @@ struct TripHistoryView: View {
         let history = TripHistoryPolicy.split(model.savedTrips, now: Date(), premium: premium.isSubscribed)
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                if model.tripHistoryBusy { ProgressView("Saving trip history...") }
+                if !model.tripHistoryBusy && (model.tripHistoryError != nil || model.pendingTripSaveCount > 0) {
+                    TripSaveRecoveryView(model: model)
+                }
                 if model.savedTrips.isEmpty {
                     ContentUnavailableView("No saved trips", systemImage: "chart.xyaxis.line",
                         description: Text("Your drive summary appears here after you tap End trip."))

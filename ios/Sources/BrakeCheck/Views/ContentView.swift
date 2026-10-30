@@ -311,6 +311,7 @@ struct ContentView: View {
         .onChange(of: model.stopping) { _, finishing in
             if !finishing { presentFinalizedTripSummary() }
         }
+        .onChange(of: model.lastSavedTripID) { _, _ in presentFinalizedTripSummary() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 presentPendingCheckin()
@@ -449,10 +450,9 @@ struct ContentView: View {
     private func finishTripAndPresentSummary() {
         selecting = false
         let previousCount = model.savedTrips.count
-        model.endTrip()
+        guard let tripID = model.endTrip() else { return }
         page = .home
-        guard model.savedTrips.count > previousCount, let trip = model.savedTrips.first else { return }
-        completedTripID = trip.id
+        completedTripID = tripID
         completedTripPreviousCount = previousCount
         presentFinalizedTripSummary()
     }
@@ -466,9 +466,9 @@ struct ContentView: View {
     }
 
     private func presentFinalizedTripSummary() {
-        guard canPresentCompletedTrip, completedTripID != nil,
+        guard canPresentCompletedTrip, let id = completedTripID, model.savedTrips.contains(where: { $0.id == id }),
               let previousCount = completedTripPreviousCount else { return }
-        if previousCount == 0 && !firstTripPrompted {
+        if max(previousCount, model.savedTrips.count - 1) == 0 && !firstTripPrompted {
             presentFirstTripPremium()
         } else {
             openCompletedTrip()
