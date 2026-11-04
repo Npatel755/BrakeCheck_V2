@@ -100,7 +100,6 @@ struct SettingsView: View {
     @AppStorage("display.lanePresentation") private var lanePresentation = "corridor"
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
     @AppStorage("navigation.cameraAR") private var cameraAR = true
-    @AppStorage("navigation.cameraGuidance") private var cameraGuidance = true
     @AppStorage("recording.limitGB") private var recordingLimitGB = 0
     @AppStorage("recording.retentionDays") private var recordingRetentionDays = 0
     @AppStorage("checklist.skip") private var skipChecklist = false
@@ -331,17 +330,8 @@ struct SettingsView: View {
                 .onChange(of: lanePresentation) { _, _ in showLanes = true }
             Text("The cyan corridor follows the detected left and right lane boundaries. It appears where both sides are visible.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-            Picker("Lane tracking test", selection: $laneTrackingMode) {
-                ForEach(LaneTrackingMode.allCases, id: \.rawValue) { mode in
-                    Text(mode.title).tag(mode.rawValue)
-                }
-            }.pickerStyle(.segmented)
-                .onChange(of: laneTrackingMode) { _, _ in showLanes = true }
-            Text("Compare lane-guide stability with Raw, Averaging, or Kalman. Changes apply to the next camera result.")
-                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Toggle("Show full camera frame", isOn: $showFullFrame)
             Toggle("Directions on the road", isOn: $cameraAR)
-            Toggle("Camera route overview", isOn: $cameraGuidance)
             CameraCalibrationControls(model: model, presentation: arPresentation, cameraAR: $cameraAR, openCameraSetup: openCameraSetup)
             Text("These preferences also apply to replayed drives.").foregroundStyle(BrakeTheme.muted)
         case .recordings:
