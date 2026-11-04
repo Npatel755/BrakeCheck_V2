@@ -20,13 +20,15 @@ final class TripIntentBridge {
     var noticeAccepted: Bool { UserDefaults.standard.integer(forKey: "onboarding.driverAidNotice") >= 1 }
 }
 
-struct StartTripIntent: AppIntent {
-    static let title: LocalizedStringResource = "Start a trip"
-    static let description = IntentDescription("Starts the BrakeSense camera trip with collision warnings.")
-    static let openAppWhenRun = true
+public struct StartTripIntent: AppIntent {
+    public static let title: LocalizedStringResource = "Start a trip"
+    public static let description = IntentDescription("Starts the BrakeSense camera trip with collision warnings.")
+    public static let openAppWhenRun = true
+
+    public init() {}
 
     @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
         guard TripIntentBridge.shared.noticeAccepted else {
             return .result(dialog: "Open BrakeSense and accept the driver-aid notice first.")
         }
@@ -35,28 +37,21 @@ struct StartTripIntent: AppIntent {
     }
 }
 
-struct EndTripIntent: AppIntent {
-    static let title: LocalizedStringResource = "End the trip"
-    static let description = IntentDescription("Ends the current BrakeSense trip and saves it.")
-    static let openAppWhenRun = true
+public struct EndTripIntent: AppIntent {
+    public static let title: LocalizedStringResource = "End the trip"
+    public static let description = IntentDescription("Ends the current BrakeSense trip and saves it.")
+    public static let openAppWhenRun = true
+
+    public init() {}
 
     @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
         TripIntentBridge.shared.submit(.end)
         return .result(dialog: "Ending your trip.")
     }
 }
 
-struct BrakeCheckShortcuts: AppShortcutsProvider {
-    static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: StartTripIntent(),
-                    phrases: ["Start a trip in \(.applicationName)", "Start \(.applicationName)", "Start driving with \(.applicationName)"],
-                    shortTitle: "Start trip", systemImageName: "car.fill")
-        AppShortcut(intent: EndTripIntent(),
-                    phrases: ["End the trip in \(.applicationName)", "Stop \(.applicationName)", "End my \(.applicationName) trip"],
-                    shortTitle: "End trip", systemImageName: "stop.circle.fill")
-    }
-}
-
-/// Lets an app target that links this package pick up the intents' metadata.
+/// Lets an app target that links this package pick up the intents' metadata. The Siri
+/// phrases (`AppShortcutsProvider`) must be declared in the app target itself; see
+/// ios/AppTarget/Entry/AppEntry.swift.
 public struct BrakeCheckIntentsPackage: AppIntentsPackage {}
