@@ -110,6 +110,7 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
         let utterance = AVSpeechUtterance(string: text)
         SpeechVoicePreferences.configure(utterance, language: language)
         activeUtterance = utterance
+        let utteranceID = ObjectIdentifier(utterance)
         do {
             try await withTaskCancellationHandler {
                 try Task.checkCancellation()
@@ -119,7 +120,8 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
                 }
             } onCancel: {
                 Task { @MainActor [weak self] in
-                    if self?.activeUtterance === utterance { self?.stop() }
+                    guard let self, let active = self.activeUtterance, ObjectIdentifier(active) == utteranceID else { return }
+                    self.stop()
                 }
             }
         } catch {
