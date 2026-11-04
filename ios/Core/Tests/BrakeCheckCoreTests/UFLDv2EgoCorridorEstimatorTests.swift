@@ -49,6 +49,29 @@ final class UFLDv2EgoCorridorEstimatorTests: XCTestCase {
         XCTAssertEqual(lane.confidence, 0.95, accuracy: 1e-8)
         XCTAssertTrue(estimator.status.contains("confirmed"))
     }
+    func testConfirmedPairSurvivesOneDroppedCaptureButNotTwoOrALongGap() throws {
+        var estimator = UFLDv2EgoCorridorEstimator()
+        _ = try confirm(&estimator)
+        // One capture with a missing right head: nothing emitted, history kept.
+        XCTAssertNil(estimator.update([candidate(slot: 1)], at: 10.5))
+        XCTAssertTrue(estimator.status.contains("holding"))
+        XCTAssertNotNil(estimator.update(pair(), at: 10.8))
+        // Two consecutive misses require a fresh two-capture confirmation.
+        XCTAssertNil(estimator.update([candidate(slot: 1)], at: 11.1))
+        XCTAssertNil(estimator.update([], at: 11.4))
+        XCTAssertNil(estimator.update(pair(), at: 11.7))
+        XCTAssertNotNil(estimator.update(pair(), at: 12.0))
+        // A miss after a long silence does not hold.
+        XCTAssertNil(estimator.update([candidate(slot: 2)], at: 12.0 + UFLDv2EgoCorridorEstimator.missTolerance + 0.1))
+        XCTAssertNil(estimator.update(pair(), at: 13.0))
+        XCTAssertNotNil(estimator.update(pair(), at: 13.3))
+    }
+    func testSlotWithSeveralPiecesUsesItsBestSupportedPiece() throws {
+        var estimator = UFLDv2EgoCorridorEstimator()
+        let fragment = candidate(slot: 2, anchors: Array(0..<6), positive: 6)
+        XCTAssertNil(estimator.update([candidate(slot: 1), fragment, candidate(slot: 2)], at: 10))
+        XCTAssertNotNil(estimator.update([candidate(slot: 1), candidate(slot: 2), fragment], at: 10.2))
+    }
     func testSingleZigzagHeadCannotInventOppositeBoundary() {
         let zigzag = candidate(slot: 1, x: { y, index in
             let half = 0.30 - 0.44 * y
@@ -147,19 +170,26 @@ final class UFLDv2EgoCorridorEstimatorTests: XCTestCase {
         let lane = try confirm(&estimator, candidates: [candidate(slot: 1,anchors: anchors),candidate(slot: 2,anchors: anchors)])
         XCTAssertLessThan(lane.bands.last!.y - lane.bands.first!.y, 0.25)
     }
-    func testHeadLossClearsPairAndRequiresTwoNewCaptures() throws {
+    func testHeadLossHoldsOnceThenRequiresTwoNewCaptures() throws {
         var estimator = UFLDv2EgoCorridorEstimator()
         _ = try confirm(&estimator)
         XCTAssertNil(estimator.update([candidate(slot: 1)], at: 10.3))
-        XCTAssertNil(estimator.update(pair(), at: 10.4))
-        XCTAssertNotNil(estimator.update(pair(), at: 10.5))
+        XCTAssertNotNil(estimator.update(pair(), at: 10.4))
+        XCTAssertNil(estimator.update([candidate(slot: 1)], at: 10.6))
+        XCTAssertNil(estimator.update([candidate(slot: 1)], at: 10.8))
+        XCTAssertNil(estimator.update(pair(), at: 10.9))
+        XCTAssertNotNil(estimator.update(pair(), at: 11.0))
     }
-    func testEmptyNegativeClearsPairWithoutRenewingCapture() throws {
+    func testEmptyNegativeNeverEmitsOrRenewsTheHeldCapture() throws {
         var estimator = UFLDv2EgoCorridorEstimator()
         let previous = try confirm(&estimator)
         XCTAssertNil(estimator.update([], at: 10.3))
         XCTAssertEqual(previous.capturedAt, 10.2)
-        XCTAssertNil(estimator.update(pair(), at: 10.4))
+        let next = try XCTUnwrap(estimator.update(pair(), at: 10.4))
+        XCTAssertEqual(next.capturedAt, 10.4)
+        XCTAssertNil(estimator.update([], at: 10.6))
+        XCTAssertNil(estimator.update([], at: 10.8))
+        XCTAssertNil(estimator.update(pair(), at: 10.9))
     }
     func testLargePairShiftMustBeConfirmedAgain() throws {
         var estimator = UFLDv2EgoCorridorEstimator()

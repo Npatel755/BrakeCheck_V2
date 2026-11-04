@@ -33,7 +33,9 @@ public struct LanePredictionObservation: Equatable, Sendable {
 /// It never extends endpoints, joins long unsupported gaps, or carries an old
 /// prediction forward by renewing its capture timestamp.
 public enum LanePredictionDisplay {
-    public static let maximumAge: TimeInterval = 0.5
+    /// Guides stay visible across one stretched inference interval; a longer
+    /// silence hides them rather than carrying an old prediction forward.
+    public static let maximumAge: TimeInterval = 0.75
     public static let minimumConfidence = 0.70
     /// Three missing anchors may occur between neighboring observed samples.
     public static let maximumAnchorStep = 4

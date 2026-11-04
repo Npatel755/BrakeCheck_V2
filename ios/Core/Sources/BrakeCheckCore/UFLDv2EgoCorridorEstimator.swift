@@ -13,13 +13,18 @@ public struct UFLDv2EgoCorridorEstimator {
         let anchor: Int
         let strength: Double
     }
+    /// One rejected or incomplete capture inside this window keeps a confirmed
+    /// pair's history, so a single dropped frame does not cost two confirmations.
+    public static let missTolerance: TimeInterval = 0.6
     private var previous: LanePath?
     private var consecutive = 0
     private var lastUpdate: TimeInterval?
+    private var lastAccepted: TimeInterval?
+    private var missed = 0
     public private(set) var status = "waiting for ego lane pair"
     public init() {}
     public mutating func reset() {
-        previous = nil; consecutive = 0; lastUpdate = nil
+        previous = nil; consecutive = 0; lastUpdate = nil; lastAccepted = nil; missed = 0
         status = "waiting for ego lane pair"
     }
 
@@ -28,12 +33,15 @@ public struct UFLDv2EgoCorridorEstimator {
         guard time.isFinite, lastUpdate.map({ time > $0 }) ?? true else {
             reset(); status = "invalid ego observation time"; return nil
         }
-        if let lastUpdate, time - lastUpdate > 1.10 { previous = nil; consecutive = 0 }
+        if let lastUpdate, time - lastUpdate > 1.10 { previous = nil; consecutive = 0; missed = 0 }
         lastUpdate = time
+        // A slot with several decoded pieces keeps its best-supported piece.
         let left = candidates.filter { $0.laneSlot == 1 && $0.axis == .row }
+            .max { $0.positiveAnchors < $1.positiveAnchors }.map { [$0] } ?? []
         let right = candidates.filter { $0.laneSlot == 2 && $0.axis == .row }
+            .max { $0.positiveAnchors < $1.positiveAnchors }.map { [$0] } ?? []
         guard left.count == 1, right.count == 1 else {
-            return reject("both independent ego boundaries required")
+            return reject("both independent ego boundaries required", at: time)
         }
         let masks = boxes.filter {
             $0.origin.x.isFinite && $0.origin.y.isFinite && $0.width.isFinite && $0.height.isFinite
@@ -51,7 +59,7 @@ public struct UFLDv2EgoCorridorEstimator {
                 if span > priorSpan { best = path }
             }
         }
-        guard let path = best else { return reject("ego boundaries incomplete or inconsistent") }
+        guard let path = best else { return reject("ego boundaries incomplete or inconsistent", at: time) }
         if let previous {
             let shifts = path.bands.compactMap { band -> Double? in
                 guard let old = previous.bounds(at: band.y) else { return nil }
@@ -61,13 +69,20 @@ public struct UFLDv2EgoCorridorEstimator {
                 consecutive = 0
             }
         }
-        previous = path; consecutive += 1
+        previous = path; consecutive += 1; missed = 0; lastAccepted = time
         status = consecutive >= 2 ? "measured ego lane confirmed" : "confirming ego lane pair"
         return consecutive >= 2 ? path : nil
     }
 
-    private mutating func reject(_ reason: String) -> LanePath? {
-        previous = nil; consecutive = 0; status = reason
+    /// Nothing is emitted for a rejected capture. A confirmed pair survives one
+    /// brief miss so the next complete capture is measured immediately; a second
+    /// consecutive miss, or a longer gap, requires re-confirmation.
+    private mutating func reject(_ reason: String, at time: TimeInterval) -> LanePath? {
+        if consecutive >= 2, missed == 0, let lastAccepted, time - lastAccepted <= Self.missTolerance {
+            missed = 1; status = reason + " · holding confirmed pair"
+            return nil
+        }
+        previous = nil; consecutive = 0; missed = 0; lastAccepted = nil; status = reason
         return nil
     }
 
