@@ -183,6 +183,28 @@ struct ContentView: View {
         .confirmationDialog("End this trip? Remaining post-event recording will stop.", isPresented: $stopping, titleVisibility: .visible) {
             Button("End trip", role: .destructive) { finishTripAndPresentSummary() }
         }
+        .onChange(of: TripIntentBridge.shared.request, initial: true) { _, request in
+            guard let request else { return }
+            performIntent(request)
+        }
+    }
+
+    /// Siri / Shortcuts requests go through the same trip path as the buttons.
+    private func performIntent(_ request: TripIntentRequest) {
+        TripIntentBridge.shared.clear()
+        switch request.kind {
+        case .start:
+            guard !model.tripActive, !model.demo, !model.replaying, !model.stopping else { return }
+            stopping = false
+            showCameraSetup = false
+            destinationPath = []
+            page = .camera
+            model.startTrip()
+        case .end:
+            guard model.tripActive else { return }
+            stopping = false
+            finishTripAndPresentSummary()
+        }
     }
 
     private var messageShown: Binding<Bool> {
