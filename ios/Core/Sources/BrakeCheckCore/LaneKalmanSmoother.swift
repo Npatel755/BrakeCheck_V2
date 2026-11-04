@@ -74,9 +74,10 @@ public struct LaneKalmanSmoother {
     public mutating func update(_ observation: LanePredictionObservation?, at now: TimeInterval)
         -> LanePredictionObservation? {
         guard let current = LanePredictionDisplay.visible(observation, at: now) else {
-            // One dropped capture keeps the tracks for the next observation;
-            // nothing is drawn meanwhile and a longer silence starts fresh.
-            if let old = previousInput, now.isFinite, now >= old.capturedAt,
+            // One genuinely empty capture keeps the tracks for the next observation;
+            // nothing is drawn meanwhile. An invalid or stale observation, or a
+            // longer silence, starts fresh.
+            if observation == nil, let old = previousInput, now.isFinite, now >= old.capturedAt,
                now - old.capturedAt <= Self.maximumGap { previousOutput = nil; return nil }
             reset(); return nil
         }

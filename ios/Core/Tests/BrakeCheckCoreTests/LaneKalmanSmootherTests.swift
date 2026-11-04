@@ -80,7 +80,7 @@ final class LaneKalmanSmootherTests: XCTestCase {
         let result = try XCTUnwrap(filter.update(current, at: 10.25))
         XCTAssertEqual(filter.update(current, at: 10.4), result)
         XCTAssertEqual(result.capturedAt, 10.2)
-        XCTAssertNil(filter.update(current, at: 10.96))
+        XCTAssertNil(filter.update(current, at: 10.71))
     }
 
     func testBackwardFutureNonfiniteAndLongGapStartFresh() {
