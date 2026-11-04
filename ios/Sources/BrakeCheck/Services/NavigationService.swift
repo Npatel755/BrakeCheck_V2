@@ -1025,7 +1025,6 @@ final class NavigationService: NSObject, ObservableObject {
             : "\(max(10, Int((meters / 10).rounded()) * 10)) meters"
     }
 
-    @discardableResult
     /// Lane-level and curve advisories use the turn-prompt rules (fresh GPS, foreground, spoken
     /// directions on, audio ownership) and yield to any maneuver prompt already speaking.
     @discardableResult
@@ -1034,6 +1033,7 @@ final class NavigationService: NSObject, ObservableObject {
         return announce(text, key: "advisory:" + key)
     }
 
+    @discardableResult
     private func announce(_ text: String, key: String) -> Bool {
         guard foreground, liveModeAllowed, isNavigating, spokenDirections, hasFreshLocation,
               !isPaused, !isCalculating, key != lastSpokenPrompt, canSpeak?() == true else { return false }

@@ -43,8 +43,11 @@ public struct CurveSpeedAdvisor {
         samples = []; routeLength = 0; proposalKey = nil; proposalCount = 0; spoken = []; lastUpdate = nil
         guard route.count >= 3, route.allSatisfy(\.isValid), let origin = route.first else { return }
         let scale = cos(origin.latitude * .pi / 180)
-        let points = route.map { (east: ($0.longitude - origin.longitude) * 111_320 * scale,
-                                  north: ($0.latitude - origin.latitude) * 111_320) }
+        let points: [(east: Double, north: Double)] = route.map { coordinate in
+            let east: Double = (coordinate.longitude - origin.longitude) * 111_320 * scale
+            let north: Double = (coordinate.latitude - origin.latitude) * 111_320
+            return (east: east, north: north)
+        }
         // Resample at a fixed spacing so curvature is independent of vertex density.
         var resampled: [(east: Double, north: Double)] = [points[0]]
         var carried = 0.0
@@ -53,8 +56,10 @@ public struct CurveSpeedAdvisor {
             guard length > 0 else { continue }
             var position = Self.sampleSpacing - carried
             while position <= length {
-                let t = position / length
-                resampled.append((a.east + (b.east - a.east) * t, a.north + (b.north - a.north) * t))
+                let t: Double = position / length
+                let east: Double = a.east + (b.east - a.east) * t
+                let north: Double = a.north + (b.north - a.north) * t
+                resampled.append((east: east, north: north))
                 position += Self.sampleSpacing
             }
             carried = length - (position - Self.sampleSpacing)
@@ -63,14 +68,20 @@ public struct CurveSpeedAdvisor {
         guard resampled.count >= 4 else { samples = []; return }
         // Heading at each sample from its neighbours; the heading change per
         // sample spacing is the local curvature.
-        let headings = (1..<(resampled.count - 1)).map { index in
-            atan2(resampled[index + 1].east - resampled[index - 1].east,
-                  resampled[index + 1].north - resampled[index - 1].north)
+        var headings: [Double] = []
+        headings.reserveCapacity(resampled.count)
+        for index in 1..<(resampled.count - 1) {
+            let next: (east: Double, north: Double) = resampled[index + 1]
+            let prior: (east: Double, north: Double) = resampled[index - 1]
+            let east: Double = next.east - prior.east
+            let north: Double = next.north - prior.north
+            headings.append(atan2(east, north))
         }
         for index in 1..<headings.count {
-            let delta = Self.wrapped(headings[index] - headings[index - 1])
-            let radius = abs(delta) > 1e-9 ? Self.sampleSpacing / abs(delta) : Double.infinity
-            samples.append(Sample(distance: Double(index + 1) * Self.sampleSpacing, headingDelta: delta, radius: radius))
+            let delta: Double = Self.wrapped(headings[index] - headings[index - 1])
+            let radius: Double = abs(delta) > 1e-9 ? Self.sampleSpacing / abs(delta) : Double.infinity
+            let distance: Double = Double(index + 1) * Self.sampleSpacing
+            samples.append(Sample(distance: distance, headingDelta: delta, radius: radius))
         }
     }
 
