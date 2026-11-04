@@ -41,7 +41,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .recordings: return "Manage video space and optional automatic cleanup."
         case .connection: return "Connect your private BrakeSense service."
         case .voice: return "Spoken alerts, language, and check-in replies."
-        case .safety: return "Impact detection and emergency check-ins."
+        case .safety: return "Impact detection, emergency check-ins, and driving alerts."
         case .permissions: return "Manage access to your iPhone's sensors."
         case .diagnostics: return "Camera, GPS, and measurement details."
         case .demo: return "App tour, sample driving, and check-in demo."

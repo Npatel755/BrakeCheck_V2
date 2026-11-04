@@ -449,7 +449,7 @@ struct ContentView: View {
                  openTripHistory: { destinationPath.append(.tripHistory) },
                  openReplay: { destinationPath.append(.replay) }, beginCalibration: beginCalibration,
                  openTrip: { destinationPath.append(.trip($0)) },
-                 openPremium: { destinationPath.append(.premium) },
+                 openPremium: { destinationPath.append(.premium) }, isSubscribed: premiumStore.isSubscribed,
                  onChecklistChanged: { homeChecklistPresented = $0 })
     }
 

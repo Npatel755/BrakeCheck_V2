@@ -25,6 +25,7 @@ struct HomeView: View {
     var beginCalibration: () -> Void
     var openTrip: (UUID) -> Void = { _ in }
     var openPremium: () -> Void = { }
+    var isSubscribed = false
     var onChecklistChanged: (Bool) -> Void = { _ in }
 
     @State private var lastTripOpen = false
@@ -69,7 +70,7 @@ struct HomeView: View {
                                   icon: "film.stack", iconColor: BrakeTheme.danger, iconBackground: BrakeTheme.danger.opacity(0.15), action: openIncidents)
                     }
                     Button(action: openPremium) {
-                        Label("Explore Premium", systemImage: "sparkles")
+                        Label(isSubscribed ? "Premium active · manage" : "Explore Premium", systemImage: "sparkles")
                             .font(.brake(.subheadline, weight: .semibold))
                             .foregroundStyle(BrakeTheme.accentText)
                             .frame(maxWidth: .infinity, minHeight: 44)
