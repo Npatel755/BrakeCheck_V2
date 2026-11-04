@@ -616,7 +616,7 @@ final class NavigationService: NSObject, ObservableObject {
     }
 
     private func calculateRoute() {
-        guard foreground, liveModeAllowed, let destination, !isCalculating, !userPaused,
+        guard foreground, liveModeAllowed, destination != nil, !isCalculating, !userPaused,
               recovery.canAttempt(at: Date().timeIntervalSinceReferenceDate) else { return }
         if let cached = manager.location { cacheLocation(cached) }
         guard let origin = isNavigating ? (hasFreshLocation ? location : nil) : routingLocation else {

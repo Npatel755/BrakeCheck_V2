@@ -96,7 +96,6 @@ struct SettingsView: View {
     @AppStorage("display.mph") private var useMPH = true
     @AppStorage("display.detectionBoxes") private var showDetections = true
     @AppStorage("display.laneGuides") private var showLanes = false
-    @AppStorage("display.laneTrackingMode") private var laneTrackingMode = "kalman"
     @AppStorage("display.lanePresentation") private var lanePresentation = "corridor"
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
     @AppStorage("navigation.cameraAR") private var cameraAR = true

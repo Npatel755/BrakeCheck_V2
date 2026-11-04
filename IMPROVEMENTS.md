@@ -17,6 +17,8 @@
 
 - UI polish from the simulator screenshot review: the camera route overview no longer overlaps the speed / car-ahead readouts while a trip runs; camera error text no longer doubles its full stop ("Simulator.. Use"); the Safety page shows the Premium lock once instead of under every alert toggle. Lane alerts and the Intel notice appear in Settings as intended.
 
+- Trimmed the camera route mini-map (duplicated the Navigate page and crowded the readouts) and the Raw/Averaging/Kalman lane-tracking comparison picker (development tool; Kalman stays). Camera capture and preview now set `videoRotationAngle` (iOS 17 API) instead of the deprecated `videoOrientation`, removing the remaining deprecation warnings in `CameraService`/`CameraPreview`.
+
 ### Verification
 
 Swift Core: 805 tests passed (6 lane-guidance, 6 curve-speed tests new). `tools/model_migration/verify_model_assets.py` passed with the Intel manifest. Native iOS compilation runs in the GitHub Mac workflows; physical-device behaviour of the Intel road mask, lane alerts and lane guidance remains to be checked on an actual drive.

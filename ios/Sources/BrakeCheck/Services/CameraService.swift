@@ -201,7 +201,8 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     private func applyGeometry() {
-        guard let connection = output.connection(with: .video), connection.isVideoOrientationSupported else {
+        guard let connection = output.connection(with: .video),
+              connection.isVideoRotationAngleSupported(desiredOrientation.rotationAngle) else {
             geometryAvailable = false
             recovery.stop()
             watchdog?.cancel(); watchdog = nil
@@ -217,7 +218,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         geometryChanging = true
         // Finish the old encoder before any frame with new dimensions reaches it.
         recorder.beginOrientationSegment()
-        connection.videoOrientation = desiredOrientation
+        connection.videoRotationAngle = desiredOrientation.rotationAngle
         if connection.isVideoMirroringSupported { connection.isVideoMirrored = false }
         geometryAvailable = true
         geometry = .preview(orientation: desiredOrientation, landscapeFOV: nativeHorizontalFOV)
@@ -310,7 +311,9 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             guard session.canAddOutput(output) else { throw CameraError.unavailable }
             session.addOutput(output)
             if let connection = output.connection(with: .video) {
-                if connection.isVideoOrientationSupported { connection.videoOrientation = desiredOrientation }
+                if connection.isVideoRotationAngleSupported(desiredOrientation.rotationAngle) {
+                    connection.videoRotationAngle = desiredOrientation.rotationAngle
+                }
                 if connection.isVideoStabilizationSupported { connection.preferredVideoStabilizationMode = .off }
             }
             try device.lockForConfiguration()
@@ -471,5 +474,19 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private static func sentence(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.hasSuffix(".") || trimmed.hasSuffix("!") ? trimmed : trimmed + "."
+    }
+}
+
+extension AVCaptureVideoOrientation {
+    /// iOS 17 rotation angle equivalent of this orientation for a back camera
+    /// whose sensor is landscape-right native.
+    var rotationAngle: CGFloat {
+        switch self {
+        case .portrait: return 90
+        case .portraitUpsideDown: return 270
+        case .landscapeRight: return 0
+        case .landscapeLeft: return 180
+        @unknown default: return 90
+        }
     }
 }

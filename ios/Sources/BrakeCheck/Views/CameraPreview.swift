@@ -35,9 +35,10 @@ final class PreviewSurface: UIView {
         applyRotation()
     }
     func applyRotation() {
-        if let connection = previewLayer.connection, connection.isVideoOrientationSupported,
-           connection.videoOrientation != appliedOrientation {
-            connection.videoOrientation = appliedOrientation
+        let angle = appliedOrientation.rotationAngle
+        if let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(angle),
+           connection.videoRotationAngle != angle {
+            connection.videoRotationAngle = angle
         }
     }
 }
