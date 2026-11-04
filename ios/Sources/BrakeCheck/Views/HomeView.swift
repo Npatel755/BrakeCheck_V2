@@ -27,6 +27,9 @@ struct HomeView: View {
     var openPremium: () -> Void = { }
     var isSubscribed = false
     var onChecklistChanged: (Bool) -> Void = { _ in }
+    /// Most recent destination, when no route is set, so one tap routes there again.
+    var lastDestination: String? = nil
+    var navigateAgain: () -> Void = { }
 
     @State private var lastTripOpen = false
     @State private var showChecklist = false
@@ -46,6 +49,7 @@ struct HomeView: View {
                         TripSaveRecoveryView(model: model)
                     }
                     if model.tripActive && !model.demo && !model.replaying { tripControls }
+                    if let prompt = model.parkedPrompt, model.tripActive { parkedRow(prompt) }
                     if model.canResumeRecording {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(model.recorderStatus).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
@@ -200,6 +204,24 @@ struct HomeView: View {
         }
     }
 
+    /// The parked countdown from the camera HUD, repeated here because Home hides the risk pill
+    /// unless a warning is active.
+    private func parkedRow(_ prompt: ParkedTripPrompt) -> some View {
+        HStack(spacing: 12) {
+            Label(prompt.text, systemImage: "parkingsign.circle.fill")
+                .font(.brake(.subheadline, weight: .semibold))
+                .foregroundStyle(BrakeTheme.text)
+            Spacer(minLength: 8)
+            Button("Keep going") { model.keepDriving() }
+                .font(.brake(.subheadline, weight: .bold))
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityIdentifier("home.parked.keepGoing")
+        }
+        .brakePanel()
+        .accessibilityIdentifier("home.parkedPrompt")
+    }
+
     private func chip(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
@@ -316,6 +338,11 @@ struct HomeView: View {
 
     private var moreCard: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let lastDestination {
+                navigationRow("Navigate again", detail: lastDestination, icon: "arrow.triangle.turn.up.right.circle", action: navigateAgain)
+                    .accessibilityIdentifier("home.navigateAgain")
+                rowDivider
+            }
             navigationRow("Trip history", detail: model.savedTrips.isEmpty ? "Completed trips save automatically" : "\(model.savedTrips.count) saved trips", icon: "chart.xyaxis.line", action: openTripHistory)
             rowDivider
             navigationRow("Emergency contacts", detail: contactsDetail, icon: "person.2", action: openContacts)

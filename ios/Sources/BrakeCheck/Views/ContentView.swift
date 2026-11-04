@@ -450,7 +450,13 @@ struct ContentView: View {
                  openReplay: { destinationPath.append(.replay) }, beginCalibration: beginCalibration,
                  openTrip: { destinationPath.append(.trip($0)) },
                  openPremium: { destinationPath.append(.premium) }, isSubscribed: premiumStore.isSubscribed,
-                 onChecklistChanged: { homeChecklistPresented = $0 })
+                 onChecklistChanged: { homeChecklistPresented = $0 },
+                 lastDestination: navigation.destinationTitle == nil && !navigation.isNavigating
+                     ? navigation.recentDestinations.first?.title : nil,
+                 navigateAgain: {
+                     if let recent = navigation.recentDestinations.first { navigation.chooseRecent(recent) }
+                     page = .navigation
+                 })
     }
 
     private func cameraPage(portrait: Bool) -> some View {
