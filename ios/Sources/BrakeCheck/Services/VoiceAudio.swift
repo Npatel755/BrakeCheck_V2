@@ -62,6 +62,19 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
         speak(language == "es" ? alert.spanishText : alert.text, language: language, urgent: false)
     }
 
+    func speakNotice(_ text: String, language: String) {
+        guard !isBusy else { return }
+        let spoken: String
+        if text.hasPrefix("Phone overheating") {
+            spoken = language == "es" ? "El teléfono se está sobrecalentando. Las alertas de cámara pueden retrasarse." : "Phone overheating. Camera warnings may be late."
+        } else if text.hasPrefix("Phone running hot") {
+            spoken = language == "es" ? "El teléfono se está calentando. Ponlo a la sombra." : "Phone running hot. Shade it or use a vent mount."
+        } else {
+            spoken = language == "es" ? "Modo de bajo consumo activado. La cámara funciona más lenta." : "Low Power Mode is on. The camera runs slower."
+        }
+        speak(spoken, language: language, urgent: false)
+    }
+
     func speakPreview(language: String) {
         speak(language == "es" ? "Conduce con calma. Te guiaré durante tu viaje." : "Drive comfortably. I'll guide you along the way.",
               language: language, urgent: false)

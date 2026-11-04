@@ -83,6 +83,9 @@ final class DriveModel {
     private var assistLane: LanePath?
     @ObservationIgnored private var assistSubscriptions = Set<AnyCancellable>()
     private(set) var drivingAssistAlert: DrivingAssistAlert?
+    /// Phone condition that degrades perception during a trip (heat, Low Power Mode).
+    private(set) var deviceNotice: String?
+    @ObservationIgnored private var spokenDeviceNotices: Set<String> = []
     private(set) var drivingAssistStatuses: [DrivingAssistFeature: String] = [:]
     private var assistSignalTime: TimeInterval = -.infinity
     private var assistRearVehicleTime: TimeInterval = -.infinity
@@ -328,6 +331,10 @@ final class DriveModel {
             .sink { [weak self] _ in self?.syncDrivingAssists() }.store(in: &assistSubscriptions)
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: RunLoop.main).sink { [weak self] _ in self?.syncDrivingAssists() }
+            .store(in: &assistSubscriptions)
+        NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)
+            .merge(with: NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange))
+            .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshDeviceCondition() }
             .store(in: &assistSubscriptions)
         SpeechVoicePreferences.restoreOriginalDefaultsIfNeeded()
         tripHistoryBusy = true
@@ -706,6 +713,8 @@ final class DriveModel {
         camera.setVideoOrientation(desiredCaptureOrientation)
         clearTarget("Starting trip · acquiring the lead")
         tripActive = true
+        spokenDeviceNotices = []
+        refreshDeviceCondition()
         tripStarted = Date(); tripStartedUptime = ProcessInfo.processInfo.systemUptime; tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
         currentTripID = UUID()
         lastTripPublishedSecond = -1
@@ -781,6 +790,7 @@ final class DriveModel {
     }
 
     @discardableResult func endTrip() -> UUID? {
+        deviceNotice = nil
 
         guard tripActive, !stopping else { return nil }
 
@@ -1685,6 +1695,25 @@ final class DriveModel {
             enabled: assistAllowed(.cutIn) && cameraAlignmentVerified,
             capturedAt: capturedAt, now: now)
         deliverAssist(alert)
+    }
+
+    /// Heat and Low Power Mode slow the camera pipeline; say so once per trip and keep a
+    /// line on the HUD while the condition lasts. Collision warnings are not suppressed.
+    func refreshDeviceCondition() {
+        let info = ProcessInfo.processInfo
+        let notice: String?
+        switch info.thermalState {
+        case .critical: notice = "Phone overheating · camera warnings may be late"
+        case .serious: notice = "Phone running hot · shade it or use a vent mount"
+        default: notice = info.isLowPowerModeEnabled ? "Low Power Mode on · camera runs slower" : nil
+        }
+        guard tripActive, !demo, !replaying, let notice else { deviceNotice = nil; return }
+        deviceNotice = notice
+        guard !spokenDeviceNotices.contains(notice) else { return }
+        spokenDeviceNotices.insert(notice)
+        if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections {
+            safety.audio.speakNotice(notice, language: safety.settings.language)
+        }
     }
 
     private func deliverAssist(_ alert: DrivingAssistAlert?) {

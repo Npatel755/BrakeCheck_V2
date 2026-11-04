@@ -21,6 +21,7 @@
 
 - Following-distance coaching (`DrivingAssistFeature.followingDistance`, Premium, under Lane alerts): after four seconds of headway under about one second behind the same confirmed lead at ≥ 22 mph, says "Leave more room ahead" once, then rests for a minute. Collision/brake warnings are unchanged and separate.
 - First-launch app tour: after the driver-aid notice and practice-drive flow settle, a small "Want a quick tour?" popup offers six tip cards (Start trip, road view, Navigate, Clips/Trip history, Safety settings, done) that switch to the page they describe. Replayable from Settings → Try BrakeSense → "Show the app tour". `ScreenTour` captures the offer and three cards.
+- Device-condition notice during a trip: when iOS reports a serious/critical thermal state or Low Power Mode, the HUD shows "Phone running hot / overheating / Low Power Mode on" (spoken once per trip, English/Spanish). Warnings are never suppressed; the driver just learns why they may lag.
 
 ### Verification
 

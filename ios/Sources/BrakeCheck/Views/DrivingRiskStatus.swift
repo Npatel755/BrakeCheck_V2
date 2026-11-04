@@ -79,6 +79,15 @@ struct DrivingAssistBanner: View {
                 .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
                 .accessibilityIdentifier("drivingAssistAlert")
                 .allowsHitTesting(false)
+        } else if let notice = model.deviceNotice, !safety.checkinPresented {
+            Label(notice, systemImage: notice.hasPrefix("Low Power") ? "battery.25percent" : "thermometer.sun.fill")
+                .font(.brake(size: large ? 14 : 12, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .foregroundStyle(BrakeTheme.text)
+                .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityIdentifier("deviceNotice")
+                .allowsHitTesting(false)
         }
     }
 }
