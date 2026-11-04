@@ -94,7 +94,8 @@ struct DrivingAssistBanner: View {
             .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
             .accessibilityIdentifier("parkedPrompt")
         } else if let notice = model.deviceNotice, !safety.checkinPresented {
-            Label(notice, systemImage: notice.hasPrefix("Low Power") ? "battery.25percent" : "thermometer.sun.fill")
+            Label(notice, systemImage: notice.hasPrefix("Low Power") ? "battery.25percent"
+                  : notice.hasPrefix("Battery low") ? "battery.0percent" : "thermometer.sun.fill")
                 .font(.brake(size: large ? 14 : 12, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 14).padding(.vertical, 10)

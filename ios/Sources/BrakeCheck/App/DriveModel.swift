@@ -337,7 +337,9 @@ final class DriveModel {
             .receive(on: RunLoop.main).sink { [weak self] _ in self?.syncDrivingAssists() }
             .store(in: &assistSubscriptions)
         NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)
-            .merge(with: NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange))
+            .merge(with: NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange),
+                   NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification),
+                   NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification))
             .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshDeviceCondition() }
             .store(in: &assistSubscriptions)
         SpeechVoicePreferences.restoreOriginalDefaultsIfNeeded()
@@ -718,6 +720,7 @@ final class DriveModel {
         clearTarget("Starting trip · acquiring the lead")
         tripActive = true
         spokenDeviceNotices = []
+        UIDevice.current.isBatteryMonitoringEnabled = true
         refreshDeviceCondition()
         parkedMonitor.reset(); parkedPrompt = nil; spokeParkedPrompt = false
         tripStarted = Date(); tripStartedUptime = ProcessInfo.processInfo.systemUptime; tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
@@ -797,6 +800,7 @@ final class DriveModel {
     @discardableResult func endTrip() -> UUID? {
         deviceNotice = nil
         parkedMonitor.reset(); parkedPrompt = nil
+        UIDevice.current.isBatteryMonitoringEnabled = false
 
         guard tripActive, !stopping else { return nil }
 
@@ -1742,11 +1746,18 @@ final class DriveModel {
 
     func refreshDeviceCondition() {
         let info = ProcessInfo.processInfo
+        let device = UIDevice.current
         let notice: String?
         switch info.thermalState {
         case .critical: notice = "Phone overheating · camera warnings may be late"
         case .serious: notice = "Phone running hot · shade it or use a vent mount"
-        default: notice = info.isLowPowerModeEnabled ? "Low Power Mode on · camera runs slower" : nil
+        default:
+            // The Simulator and a disabled monitor report -1; only a measured level counts.
+            if device.isBatteryMonitoringEnabled, (0...0.15).contains(device.batteryLevel), device.batteryState == .unplugged {
+                notice = "Battery low · plug in to keep the camera running"
+            } else {
+                notice = info.isLowPowerModeEnabled ? "Low Power Mode on · camera runs slower" : nil
+            }
         }
         guard tripActive, !demo, !replaying, let notice else { deviceNotice = nil; return }
         deviceNotice = notice
