@@ -18,7 +18,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var watchdog: DispatchSourceTimer?
     private var visionCadence = FrameCadence()
     private var runRevision = 0
-    private var desiredOrientation: AVCaptureVideoOrientation = .portrait
+    private var desiredOrientation: CaptureOrientation = .portrait
     private var nativeHorizontalFOV: Double?
     private var geometry = CaptureFrameGeometry.standby
     private var geometryRevision = 0
@@ -188,7 +188,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     /// Called with the window scene's orientation, never the device's reversed left/right enum.
-    func setVideoOrientation(_ orientation: AVCaptureVideoOrientation) {
+    func setVideoOrientation(_ orientation: CaptureOrientation) {
         queue.async {
             guard self.desiredOrientation != orientation else { return }
             self.desiredOrientation = orientation
@@ -474,19 +474,5 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private static func sentence(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.hasSuffix(".") || trimmed.hasSuffix("!") ? trimmed : trimmed + "."
-    }
-}
-
-extension AVCaptureVideoOrientation {
-    /// iOS 17 rotation angle equivalent of this orientation for a back camera
-    /// whose sensor is landscape-right native.
-    var rotationAngle: CGFloat {
-        switch self {
-        case .portrait: return 90
-        case .portraitUpsideDown: return 270
-        case .landscapeRight: return 0
-        case .landscapeLeft: return 180
-        @unknown default: return 90
-        }
     }
 }

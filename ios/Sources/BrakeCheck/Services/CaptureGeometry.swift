@@ -1,9 +1,26 @@
 import AVFoundation
 import UIKit
 
+/// Upright orientation of the capture buffer. Raw values match the retired
+/// `CaptureOrientation` so recorded drive metadata stays readable.
+enum CaptureOrientation: Int, Equatable {
+    case portrait = 1, portraitUpsideDown = 2, landscapeRight = 3, landscapeLeft = 4
+
+    /// iOS 17 `videoRotationAngle` for a back camera whose sensor is
+    /// landscape-right native.
+    var rotationAngle: CGFloat {
+        switch self {
+        case .portrait: return 90
+        case .portraitUpsideDown: return 270
+        case .landscapeRight: return 0
+        case .landscapeLeft: return 180
+        }
+    }
+}
+
 /// Geometry of the actual upright buffer, independent of the shape of the HUD.
 struct CaptureFrameGeometry: Equatable {
-    let videoOrientation: AVCaptureVideoOrientation
+    let videoOrientation: CaptureOrientation
     let width: Int
     let height: Int
     let horizontalFieldOfView: Double?
@@ -14,7 +31,7 @@ struct CaptureFrameGeometry: Equatable {
     static let standby = CaptureFrameGeometry(videoOrientation: .portrait,
         width: 720, height: 1280, horizontalFieldOfView: nil)
 
-    static func videoOrientation(for orientation: UIInterfaceOrientation) -> AVCaptureVideoOrientation? {
+    static func videoOrientation(for orientation: UIInterfaceOrientation) -> CaptureOrientation? {
         // These are interface orientations, not UIDeviceOrientation. The
         // device's left/right naming is reversed relative to the interface.
         switch orientation {
@@ -26,7 +43,7 @@ struct CaptureFrameGeometry: Equatable {
         }
     }
 
-    static func isPortrait(_ orientation: AVCaptureVideoOrientation) -> Bool {
+    static func isPortrait(_ orientation: CaptureOrientation) -> Bool {
         orientation == .portrait || orientation == .portraitUpsideDown
     }
 
@@ -42,7 +59,7 @@ struct CaptureFrameGeometry: Equatable {
         return result.isFinite && result > 0 ? result : nil
     }
 
-    static func preview(orientation: AVCaptureVideoOrientation, landscapeFOV: Double?) -> CaptureFrameGeometry {
+    static func preview(orientation: CaptureOrientation, landscapeFOV: Double?) -> CaptureFrameGeometry {
         let portrait = isPortrait(orientation)
         let width = portrait ? 720 : 1280
         let height = portrait ? 1280 : 720

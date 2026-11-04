@@ -118,7 +118,7 @@ final class DriveModel {
     var cameraReady = false
     var captureGeometry = CaptureFrameGeometry.standby
     var changingCameraGeometry = false
-    private var desiredCaptureOrientation: AVCaptureVideoOrientation = .portrait
+    private var desiredCaptureOrientation: CaptureOrientation = .portrait
     private var latestGeometryChangeUptime: TimeInterval = 0
     private var latestTrackingResetUptime: TimeInterval = 0
     private var lastDetectionsUptime: TimeInterval = 0

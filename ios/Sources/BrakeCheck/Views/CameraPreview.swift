@@ -5,7 +5,7 @@ import UIKit
 
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
-    let orientation: AVCaptureVideoOrientation
+    let orientation: CaptureOrientation
 
     func makeUIView(context: Context) -> PreviewSurface {
         let view = PreviewSurface()
@@ -27,7 +27,7 @@ struct CameraPreview: UIViewRepresentable {
 }
 
 final class PreviewSurface: UIView {
-    var appliedOrientation: AVCaptureVideoOrientation = .portrait
+    var appliedOrientation: CaptureOrientation = .portrait
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     override func layoutSubviews() {
