@@ -22,10 +22,14 @@
 - Following-distance coaching (`DrivingAssistFeature.followingDistance`, Premium, under Lane alerts): after four seconds of headway under about one second behind the same confirmed lead at ≥ 22 mph, says "Leave more room ahead" once, then rests for a minute. Collision/brake warnings are unchanged and separate.
 - First-launch app tour: after the driver-aid notice and practice-drive flow settle, a small "Want a quick tour?" popup offers six tip cards (Start trip, road view, Navigate, Clips/Trip history, Safety settings, done) that switch to the page they describe. Replayable from Settings → Try BrakeSense → "Show the app tour". `ScreenTour` captures the offer and three cards.
 - Device-condition notice during a trip: when iOS reports a serious/critical thermal state or Low Power Mode, the HUD shows "Phone running hot / overheating / Low Power Mode on" (spoken once per trip, English/Spanish). Warnings are never suppressed; the driver just learns why they may lag.
+- The curve banner appends the comfortable speed in the driver's units ("Curve ahead · ease off to ~35 mph") when it is at least 5 below the current speed.
+- Parked auto-end (`ParkedTripMonitor` in Core): a trip left running while the car sits still for 8 minutes shows "Parked · trip ends in N s" in the HUD and on Home (spoken once) with a Keep going button, then ends and saves itself after 90 s so the camera, GPS and recorder stop draining the battery. Only confirmed stationary fixes advance the timer, confident movement resets it, a GPS gap holds it, and guidance to an unreached destination or an open check-in defers the prompt.
+- Home "Navigate again" row: routes to the most recent destination in one tap whenever no route is set.
+- Platform: `AVCaptureVideoOrientation` replaced by an app-owned `CaptureOrientation` (same raw values, so recorded metadata still reads); `ReplayService` loads asset metadata asynchronously; microphone permission read through `AVAudioApplication`. The Xcode build is warning-free. The five macOS-only Core test failures (`/private/var` tmp aliasing, an ulp-level `CGRect.intersection` perturbation) are fixed so the Mac CI Core step passes.
 
 ### Verification
 
-Swift Core: 806 tests passed (6 lane-guidance, 6 curve-speed tests new). `tools/model_migration/verify_model_assets.py` passed with the Intel manifest. Native iOS compilation runs in the GitHub Mac workflows; physical-device behaviour of the Intel road mask, lane alerts and lane guidance remains to be checked on an actual drive.
+Swift Core: 814 tests passed on Linux and macOS (lane-guidance, curve-speed, following-distance and parked-trip tests new). `tools/model_migration/verify_model_assets.py` passed with the Intel manifest. Native iOS compilation (0 errors, 0 warnings), `ScreenTour`/`ExtraSettingsTour` and the unsigned road-test IPA were verified on a macOS machine with Xcode 26.6 because GitHub's hosted Mac runners were not acquiring jobs; physical-device behaviour of the Intel road mask, lane alerts and lane guidance remains to be checked on an actual drive.
 
 ### Still to verify on a device
 
