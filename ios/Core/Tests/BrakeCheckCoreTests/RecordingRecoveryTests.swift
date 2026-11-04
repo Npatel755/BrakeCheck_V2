@@ -6,7 +6,7 @@ final class RecordingRecoveryTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 100_000)
 
     private func withLibrary(_ work: (URL, URL) throws -> Void) throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
         let ring = root.appendingPathComponent("ring"), incidents = root.appendingPathComponent("incidents")
         try FileManager.default.createDirectory(at: ring, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: incidents, withIntermediateDirectories: true)
