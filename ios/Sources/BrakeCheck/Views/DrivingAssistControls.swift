@@ -40,7 +40,9 @@ struct DrivingAssistControls: View {
                 Label(feature.title, systemImage: feature.icon)
                     .font(.brake(.subheadline, weight: .semibold))
                 Text(feature.detail).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-                if let model {
+                // Without Premium every row would repeat the same lock notice; the
+                // single "Premium required" line below covers it.
+                if let model, premium.isSubscribed {
                     Text(model.drivingAssistStatuses[feature] ?? "Checking alert status")
                         .font(.brake(.caption, weight: .semibold))
                         .foregroundStyle(BrakeTheme.muted)

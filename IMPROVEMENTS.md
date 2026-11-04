@@ -15,6 +15,8 @@
 
 - Lane tracking stability: a confirmed UFLDv2 ego pair now survives one rejected or incomplete capture (≤ 0.6 s) instead of being discarded and re-confirmed over two more frames, so a single dropped head no longer blanks the corridor for ~0.5 s; a slot that decodes into several pieces keeps its best-supported piece. The display Kalman smoother likewise keeps its tracks across one missing capture (≤ 0.75 s) — nothing is drawn meanwhile — and weights far anchors as noisier than near ones (σ grows with image height), so distant lane ends stop twitching while the near corridor remains responsive. Freshness windows (0.5 s) are unchanged; no prediction is ever drawn without a current observation.
 
+- UI polish from the simulator screenshot review: the camera route overview no longer overlaps the speed / car-ahead readouts while a trip runs; camera error text no longer doubles its full stop ("Simulator.. Use"); the Safety page shows the Premium lock once instead of under every alert toggle. Lane alerts and the Intel notice appear in Settings as intended.
+
 ### Verification
 
 Swift Core: 805 tests passed (6 lane-guidance, 6 curve-speed tests new). `tools/model_migration/verify_model_assets.py` passed with the Intel manifest. Native iOS compilation runs in the GitHub Mac workflows; physical-device behaviour of the Intel road mask, lane alerts and lane guidance remains to be checked on an actual drive.

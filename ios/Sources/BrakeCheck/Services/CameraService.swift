@@ -84,7 +84,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     self.recoveryWork?.cancel(); self.recoveryWork = nil
                     self.recovery.stop()
                     if self.session.isRunning { self.session.stopRunning() }
-                    self.onCameraStatus?("Camera: \(description). Use Retry camera when ready.", false)
+                    self.onCameraStatus?("Camera: \(Self.sentence(description)) Use Retry camera when ready.", false)
                 }
             }
         })
@@ -172,7 +172,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         } catch {
             recovery.stop()
             if session.isRunning { session.stopRunning() }
-            onCameraStatus?("Camera: \(error.localizedDescription). Use Retry camera when ready.", false)
+            onCameraStatus?("Camera: \(Self.sentence(error.localizedDescription)) Use Retry camera when ready.", false)
         }
     }
 
@@ -465,5 +465,11 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     enum CameraError: LocalizedError {
         case unavailable
         var errorDescription: String? { "A physical iPhone rear camera is required. Use Demo in Simulator." }
+    }
+
+    /// Error descriptions may or may not end with a full stop; avoid "Simulator.. Use".
+    private static func sentence(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasSuffix(".") || trimmed.hasSuffix("!") ? trimmed : trimmed + "."
     }
 }

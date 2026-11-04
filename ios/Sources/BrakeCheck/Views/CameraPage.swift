@@ -55,9 +55,11 @@ struct CameraPage: View {
             if cameraVisible && navigation.isNavigating && !critical && !selecting {
                 VStack {
                     Spacer()
+                    // Sit clear of the speed/car-ahead readouts along the bottom edge so the
+                    // route overview never covers the gap and closing-time numbers.
                     NavigationCameraGuidanceView(navigation: navigation, useMPH: useMPH, showsInstruction: false)
                         .padding(.horizontal, portrait ? 14 : 24)
-                        .padding(.bottom, portrait ? 100 : 64)
+                        .padding(.bottom, running ? (portrait ? 212 : 176) : (portrait ? 100 : 64))
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .allowsHitTesting(false)
