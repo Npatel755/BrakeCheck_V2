@@ -85,6 +85,10 @@ final class DriveModel {
     private(set) var drivingAssistAlert: DrivingAssistAlert?
     /// Phone condition that degrades perception during a trip (heat, Low Power Mode).
     private(set) var deviceNotice: String?
+    /// Countdown shown once the car has been parked long enough that the trip will end itself.
+    private(set) var parkedPrompt: ParkedTripPrompt?
+    @ObservationIgnored private var parkedMonitor = ParkedTripMonitor()
+    @ObservationIgnored private var spokeParkedPrompt = false
     @ObservationIgnored private var spokenDeviceNotices: Set<String> = []
     private(set) var drivingAssistStatuses: [DrivingAssistFeature: String] = [:]
     private var assistSignalTime: TimeInterval = -.infinity
@@ -715,6 +719,7 @@ final class DriveModel {
         tripActive = true
         spokenDeviceNotices = []
         refreshDeviceCondition()
+        parkedMonitor.reset(); parkedPrompt = nil; spokeParkedPrompt = false
         tripStarted = Date(); tripStartedUptime = ProcessInfo.processInfo.systemUptime; tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
         currentTripID = UUID()
         lastTripPublishedSecond = -1
@@ -791,6 +796,7 @@ final class DriveModel {
 
     @discardableResult func endTrip() -> UUID? {
         deviceNotice = nil
+        parkedMonitor.reset(); parkedPrompt = nil
 
         guard tripActive, !stopping else { return nil }
 
@@ -1456,6 +1462,7 @@ final class DriveModel {
 
         }
         refreshGPSDisplay(at: now)
+        refreshParkedPrompt(at: now)
 
         // A fusion estimate is only a display diagnostic. Its own source
         // reports GPS age; clear it when the source stops issuing estimates.
@@ -1699,6 +1706,40 @@ final class DriveModel {
 
     /// Heat and Low Power Mode slow the camera pipeline; say so once per trip and keep a
     /// line on the HUD while the condition lasts. Collision warnings are not suppressed.
+    /// The driver answered the parked countdown: the trip keeps going and the park timer restarts.
+    func keepDriving() {
+        parkedMonitor.keepDriving(at: ProcessInfo.processInfo.systemUptime)
+        parkedPrompt = nil
+        spokeParkedPrompt = false
+    }
+
+    private func refreshParkedPrompt(at now: TimeInterval) {
+        guard tripActive, !demo, !replaying, !stopping else {
+            if parkedPrompt != nil { parkedPrompt = nil }
+            return
+        }
+        let stationary: Bool? = hasStationaryGPS(at: now) ? true : hasMeasuredMovement(at: now) ? false : nil
+        let hold = (navigation.isNavigating && !navigation.hasArrived) || safety.checkinPresented
+        switch parkedMonitor.update(stationary: stationary, hold: hold, at: now) {
+        case .none:
+            if parkedPrompt != nil { parkedPrompt = nil }
+            spokeParkedPrompt = false
+        case .prompt(let seconds):
+            let prompt = ParkedTripPrompt(secondsRemaining: seconds)
+            if parkedPrompt != prompt { parkedPrompt = prompt }
+            if !spokeParkedPrompt {
+                spokeParkedPrompt = true
+                if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections {
+                    safety.audio.speakNotice(prompt.text, language: safety.settings.language)
+                }
+            }
+        case .endTrip:
+            parkedPrompt = nil
+            endTrip()
+            message = "Trip ended after about 10 minutes parked. Press Start trip when you drive again."
+        }
+    }
+
     func refreshDeviceCondition() {
         let info = ProcessInfo.processInfo
         let notice: String?
