@@ -50,6 +50,14 @@ struct HomeView: View {
                     }
                     if model.tripActive && !model.demo && !model.replaying { tripControls }
                     if let prompt = model.parkedPrompt, model.tripActive { parkedRow(prompt) }
+                    if let notice = model.clipNotice, model.tripActive {
+                        Label(notice, systemImage: "bookmark.fill")
+                            .font(.brake(.subheadline, weight: .semibold))
+                            .foregroundStyle(BrakeTheme.text)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .brakePanel()
+                            .accessibilityIdentifier("home.clipNotice")
+                    }
                     if model.canResumeRecording {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(model.recorderStatus).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)

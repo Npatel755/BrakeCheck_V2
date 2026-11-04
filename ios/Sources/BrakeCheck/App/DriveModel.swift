@@ -58,6 +58,9 @@ final class DriveModel {
     @ObservationIgnored private var wasHardBrake = false
     @ObservationIgnored private var wasCloseCall = false
     @ObservationIgnored private var lastAutoClipUptime: TimeInterval?
+    /// Short HUD/Home confirmation that footage is being kept; cleared a few seconds later.
+    private(set) var clipNotice: String?
+    @ObservationIgnored private var clipNoticeTask: Task<Void, Never>?
 
     private let speedService = SpeedService()
 
@@ -801,6 +804,7 @@ final class DriveModel {
     @discardableResult func endTrip() -> UUID? {
         deviceNotice = nil
         parkedMonitor.reset(); parkedPrompt = nil
+        clipNoticeTask?.cancel(); clipNotice = nil
         UIDevice.current.isBatteryMonitoringEnabled = false
 
         guard tripActive, !stopping else { return nil }
@@ -1073,7 +1077,7 @@ final class DriveModel {
 
         camera.markIncident(reason: "Manually marked incident", tripID: currentTripID)
 
-        message = "Available footage is being preserved. Keep BrakeSense visible to capture the next 15 minutes."
+        showClipNotice("Clip saved · keeping the next 15 minutes")
 
     }
 
@@ -1870,6 +1874,17 @@ final class DriveModel {
         if let last = lastAutoClipUptime, now - last < 10 * 60 { return }
         lastAutoClipUptime = now
         camera.markIncident(reason: "Brake warning", tripID: currentTripID)
+        showClipNotice("Clip saved · brake warning")
+    }
+
+    private func showClipNotice(_ text: String) {
+        clipNotice = text
+        clipNoticeTask?.cancel()
+        clipNoticeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            self?.clipNotice = nil
+        }
     }
 
     func simulateCheckin() {

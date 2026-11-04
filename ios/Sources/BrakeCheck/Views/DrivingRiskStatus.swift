@@ -103,6 +103,14 @@ struct DrivingAssistBanner: View {
                 .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
                 .accessibilityIdentifier("deviceNotice")
                 .allowsHitTesting(false)
+        } else if let notice = model.clipNotice, !safety.checkinPresented {
+            Label(notice, systemImage: "bookmark.fill")
+                .font(.brake(size: large ? 14 : 12, weight: .semibold))
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .foregroundStyle(BrakeTheme.text)
+                .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityIdentifier("clipNotice")
+                .allowsHitTesting(false)
         }
     }
 }
