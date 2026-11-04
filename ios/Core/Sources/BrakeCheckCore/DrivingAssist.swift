@@ -53,10 +53,30 @@ public enum DrivingAssistFeature: String, CaseIterable, Identifiable, Codable {
 }
 
 public struct DrivingAssistAlert: Equatable {
+    public enum Side: Equatable { case left, right }
     public let feature: DrivingAssistFeature
     public let capturedAt: TimeInterval
-    public init(_ feature: DrivingAssistFeature, at time: TimeInterval) {
-        self.feature = feature; capturedAt = time
+    /// Lane Departure: the side of the lane the vehicle is drifting toward.
+    public let side: Side?
+    public init(_ feature: DrivingAssistFeature, at time: TimeInterval, side: Side? = nil) {
+        self.feature = feature; capturedAt = time; self.side = side
+    }
+    public var text: String {
+        switch (feature, side) {
+        case (.laneDeparture, .left?): return "Drifting left — check your lane"
+        case (.laneDeparture, .right?): return "Drifting right — check your lane"
+        default: return feature.alertText
+        }
+    }
+    public var spanishText: String {
+        switch (feature, side) {
+        case (.trafficStart, _): return "El tráfico de delante se mueve."
+        case (.laneDeparture, .left?): return "Te desvías a la izquierda. Comprueba tu carril."
+        case (.laneDeparture, .right?): return "Te desvías a la derecha. Comprueba tu carril."
+        case (.laneDeparture, nil): return "Comprueba tu posición en el carril."
+        case (.cutIn, _): return "Un vehículo podría entrar en tu carril."
+        case (.greenLight, _): return "El semáforo ha cambiado. Comprueba la vía."
+        }
     }
 }
 
@@ -97,10 +117,11 @@ public struct DrivingAssistEngine {
 
     public init() {}
     public mutating func reset() { self = Self() }
-    private mutating func emit(_ feature: DrivingAssistFeature, at time: TimeInterval) -> DrivingAssistAlert? {
+    private mutating func emit(_ feature: DrivingAssistFeature, at time: TimeInterval,
+                               side: DrivingAssistAlert.Side? = nil) -> DrivingAssistAlert? {
         guard time - (cooldown[feature] ?? -.infinity) >= 12 else { return nil }
         cooldown[feature] = time
-        return DrivingAssistAlert(feature, at: time)
+        return DrivingAssistAlert(feature, at: time, side: side)
     }
     private func fresh(_ time: TimeInterval, now: TimeInterval) -> Bool {
         time.isFinite && now.isFinite && now >= time && now - time <= 0.5
@@ -171,7 +192,9 @@ public struct DrivingAssistEngine {
         if departureSince == nil { departureSince = time }
         guard time - (departureSince ?? time) >= 0.6 else { return nil }
         laneArmed = false; departureSince = nil
-        return emit(.laneDeparture, at: time)
+        // offset is camera centre relative to lane centre: positive means the
+        // vehicle sits right of centre and is drifting toward the right line.
+        return emit(.laneDeparture, at: time, side: offset > 0 ? .right : .left)
     }
 
     public mutating func updateVehicles(_ observations: [LeadVehicle], lane: LanePath?,

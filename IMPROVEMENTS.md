@@ -10,9 +10,12 @@
 - Offered Lane Departure and Cut-In Prediction as Premium "Lane alerts". Their engine, readiness messages and voice lines already existed behind an "offered" list; they remain gated on verified camera alignment, reliable GPS speed (≥ 18 mph for departure), a fresh non-paint lane pair with confidence ≥ 0.85, and pause during planned turns and route rejoins.
 - Added lane-level navigation guidance (`LaneLevelGuidance` in Core). Using UFLDv2's four trained boundary slots it recognises the current lane among the visible painted lanes and, between 60 m and 25 s of travel before a turn or exit, shows "Move one lane right/left for the turn, when safe" or "Stay in this lane" in the turn banner and speaks the move once. A move is only suggested across a boundary that reads as broken paint (several pieces or incomplete coverage), never across a continuous line, so a two-way road's centre line never produces a left-move suggestion. Three consecutive fresh observations over 0.8 s are required; brake warnings, check-ins and active turn prompts take priority over the voice line.
 
+- Added a curve-speed warning (`CurveSpeedAdvisor` in Core). The active route is resampled every 10 m once; each GPS fix looks 15 m to ~8 s of travel ahead, finds the tightest bend, summarises it as one curve (length / total heading change) and warns when the current speed would exceed 3.5 m/s² of lateral acceleration ("Curve ahead · ease off"; ≥ 5 m/s² "Sharp curve ahead · slow down"), with the comfortable speed for 2.5 m/s². Intersection corners (effective radius < 25 m) are left to the turn prompt. Shown in the turn banner ahead of lane advice and spoken once per bend after two consistent fixes.
+- Lane Departure now says which way the vehicle is drifting ("Drifting left/right — check your lane", with Spanish equivalents) instead of the generic reminder.
+
 ### Verification
 
-Swift Core: 795 tests passed (6 new lane-guidance tests). `tools/model_migration/verify_model_assets.py` passed with the Intel manifest. Native iOS compilation runs in the GitHub Mac workflows; physical-device behaviour of the Intel road mask, lane alerts and lane guidance remains to be checked on an actual drive.
+Swift Core: 801 tests passed (6 lane-guidance, 6 curve-speed tests new). `tools/model_migration/verify_model_assets.py` passed with the Intel manifest. Native iOS compilation runs in the GitHub Mac workflows; physical-device behaviour of the Intel road mask, lane alerts and lane guidance remains to be checked on an actual drive.
 
 ### Still to verify on a device
 

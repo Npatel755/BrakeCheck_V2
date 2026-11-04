@@ -57,16 +57,9 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
         speak(language == "es" ? "¡Frena ya!" : "Brake now!", language: language, urgent: true)
     }
 
-    func speakDrivingAssist(_ feature: DrivingAssistFeature, language: String) {
+    func speakDrivingAssist(_ alert: DrivingAssistAlert, language: String) {
         guard !isBusy else { return }
-        let spanish: String
-        switch feature {
-        case .trafficStart: spanish = "El tráfico de delante se mueve."
-        case .laneDeparture: spanish = "Comprueba tu posición en el carril."
-        case .cutIn: spanish = "Un vehículo podría entrar en tu carril."
-        case .greenLight: spanish = "El semáforo ha cambiado. Comprueba la vía."
-        }
-        speak(language == "es" ? spanish : feature.alertText, language: language, urgent: false)
+        speak(language == "es" ? alert.spanishText : alert.text, language: language, urgent: false)
     }
 
     func speakPreview(language: String) {

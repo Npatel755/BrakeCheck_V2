@@ -104,6 +104,11 @@ final class DrivingAssistTests: XCTestCase {
                 aligned: true, enabled: true, now: time) { alerts.append(alert) }
         }
         XCTAssertEqual(alerts.map(\.feature), [.laneDeparture])
+        // The lane centre moved left of the camera, so the vehicle drifts toward the right line.
+        XCTAssertEqual(alerts.first?.side, .right)
+        XCTAssertEqual(alerts.first?.text, "Drifting right — check your lane")
+        XCTAssertEqual(DrivingAssistAlert(.laneDeparture, at: 0).text, DrivingAssistFeature.laneDeparture.alertText)
+        XCTAssertEqual(DrivingAssistAlert(.cutIn, at: 0, side: .left).text, DrivingAssistFeature.cutIn.alertText)
     }
 
     func testPaintFallbackUnalignedAndRepeatedCapturesCannotArmLaneDeparture() {

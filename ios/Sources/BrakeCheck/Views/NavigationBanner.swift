@@ -12,6 +12,8 @@ struct NavigationBanner: View {
     let presentation: CameraARPresentation
     /// Lane-level preparation for the next turn, shown in place of the "Then" strip.
     var laneGuidance: LaneGuidanceAdvice? = nil
+    /// Route-geometry curve warning; it outranks lane advice in the strip.
+    var curveWarning: CurveSpeedWarning? = nil
     /// During a brake warning the card drops to one line so the alert reads first.
     var compact = false
     var large = false
@@ -98,6 +100,10 @@ struct NavigationBanner: View {
             if let pauseNote {
                 Image(systemName: "location.slash").font(.brake(size: 15, weight: .bold))
                 Text(pauseNote).lineLimit(1).minimumScaleFactor(0.8)
+            } else if let warning = curveWarning, !navigation.hasArrived {
+                Image(systemName: warning.symbol).font(.brake(size: 15, weight: .bold))
+                Text(warning.text).lineLimit(1).minimumScaleFactor(0.8)
+                    .accessibilityIdentifier("curveWarning")
             } else if let advice = laneGuidance, !navigation.hasArrived {
                 Image(systemName: advice.symbol).font(.brake(size: 15, weight: .bold))
                 Text(advice.text).lineLimit(1).minimumScaleFactor(0.8)
@@ -154,6 +160,7 @@ struct NavigationBanner: View {
     private var accessibilitySummary: String {
         var parts = [distance.map { navigation.isPaused
             ? "Last known distance \($0.value) \($0.unit)" : "In \($0.value) \($0.unit)" }, primary].compactMap { $0 }
+        if let warning = curveWarning { parts.append(warning.text) }
         if let advice = laneGuidance { parts.append(advice.text) }
         if !navigation.isPaused, let next = navigation.upcomingInstruction { parts.append("Then \(next)") }
         return parts.joined(separator: ". ")

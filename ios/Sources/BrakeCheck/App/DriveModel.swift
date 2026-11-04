@@ -89,6 +89,10 @@ final class DriveModel {
     @ObservationIgnored private var laneGuidanceEngine = LaneLevelGuidance()
     /// Lane-level preparation for the next turn or exit, from the lane model's slot boundaries.
     private(set) var laneGuidance: LaneGuidanceAdvice?
+    @ObservationIgnored private var curveAdvisor = CurveSpeedAdvisor()
+    @ObservationIgnored private var curveRouteIdentity: (id: UUID, count: Int)?
+    /// Route-geometry curve warning for the current GPS speed.
+    private(set) var curveWarning: CurveSpeedWarning?
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -358,6 +362,7 @@ final class DriveModel {
 
             self.speedReading = reading
             self.camera.tracker.updateEgoSpeed(reading)
+            self.processCurveWarning()
 
             self.gpsSimulated = reading?.simulated ?? false
 
@@ -1004,6 +1009,7 @@ final class DriveModel {
     private func clearTrackingDisplay(_ reason: String) {
         drivingAssist.reset(); drivingAssistAlert = nil; assistLane = nil
         laneGuidanceEngine.reset(); laneGuidance = nil
+        curveWarning = nil
         latestTrackingResetUptime = ProcessInfo.processInfo.systemUptime
 
         targetID = nil
@@ -1636,7 +1642,29 @@ final class DriveModel {
         guard let advice, advice.shouldSpeak, let spoken = advice.spoken,
               !brakeWarningActive, risk.level != .critical, !safety.checkinPresented,
               safety.settings.voiceEnabled, !safety.audio.isBusy else { return }
-        navigation.speakLaneGuidance(spoken, key: navigation.instruction + "|" + advice.text)
+        navigation.speakAdvisory(spoken, key: "lane:" + navigation.instruction + "|" + advice.text)
+    }
+
+    /// Curve warnings come from the active route's geometry and the latest GPS speed.
+    /// They are shown in the turn banner and spoken once per curve, behind the same
+    /// priority rules as lane guidance.
+    private func processCurveWarning() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let route = navigation.activeRoute
+        let identity = route.map { ($0.id, $0.coordinates.count) }
+        if identity?.0 != curveRouteIdentity?.id || identity?.1 != curveRouteIdentity?.count {
+            curveAdvisor.setRoute(route?.coordinates ?? [])
+            curveRouteIdentity = identity.map { (id: $0.0, count: $0.1) }
+        }
+        let speed = speedReading.flatMap { $0.isConfidentlyMoving(at: now) && $0.accuracy <= 2 ? $0.metersPerSecond : nil }
+        let navigating = navigation.isNavigating && !navigation.isPaused && !navigation.userPaused
+            && !navigation.isRejoiningRoute && !navigation.hasArrived && !navigation.isCalculating && !replaying && !demo
+        let warning = curveAdvisor.update(progressFraction: navigation.cameraRouteProgress, speed: speed,
+                                          navigating: navigating, now: now)
+        if curveWarning != warning { curveWarning = warning }
+        guard let warning, warning.shouldSpeak, !brakeWarningActive, risk.level != .critical,
+              !safety.checkinPresented, safety.settings.voiceEnabled, !safety.audio.isBusy else { return }
+        navigation.speakAdvisory(warning.spoken, key: "curve:" + String(Int(warning.distance + now)))
     }
 
     private func processAssistVehicles(_ detections: [VehicleDetection], capturedAt: TimeInterval) {
@@ -1662,7 +1690,7 @@ final class DriveModel {
         drivingAssistAlert = alert
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections {
-            safety.audio.speakDrivingAssist(alert.feature, language: safety.settings.language)
+            safety.audio.speakDrivingAssist(alert, language: safety.settings.language)
         }
     }
 

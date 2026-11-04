@@ -71,7 +71,7 @@ struct DrivingAssistBanner: View {
     var body: some View {
         if let alert = model.drivingAssistAlert, premium.isSubscribed,
            !safety.checkinPresented, model.showsDrivingAssistAlert(selecting: selecting) {
-            Label(alert.feature.alertText, systemImage: alert.feature.icon)
+            Label(alert.text, systemImage: alert.feature.icon)
                 .font(.brake(size: large ? 14 : 12, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 14).padding(.vertical, 10)
