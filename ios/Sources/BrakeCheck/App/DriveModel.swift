@@ -57,6 +57,7 @@ final class DriveModel {
     private(set) var brakeWarningActive = false
     @ObservationIgnored private var wasHardBrake = false
     @ObservationIgnored private var wasCloseCall = false
+    @ObservationIgnored private var lastAutoClipUptime: TimeInterval?
 
     private let speedService = SpeedService()
 
@@ -729,7 +730,7 @@ final class DriveModel {
         tripHadGPSSpeed = false
         lastLoggedGPSUptime = nil
         speedLog.start(at: tripStarted)
-        wasHardBrake = false; wasCloseCall = false
+        wasHardBrake = false; wasCloseCall = false; lastAutoClipUptime = nil
         tripRoute.start(destination: navigation.isNavigating ? navigation.destinationTitle : nil)
         Task { await safety.prepareVoice() }
 
@@ -1843,6 +1844,7 @@ final class DriveModel {
             safety.brakeWarning()
             tripRoute.add(.brakeAlert, at: speedService.latestLocation,
                 speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: risk.timeToCollision)
+            autoSaveClipForBrakeWarning(at: now)
         }
         let braking = (risk.leadAcceleration ?? 0) < -3
         if braking && !wasHardBrake {
@@ -1858,6 +1860,16 @@ final class DriveModel {
                 speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: risk.timeToCollision)
         }
         wasCloseCall = close
+    }
+
+    /// Preserves the footage around a brake warning without a tap, at most once every
+    /// ten minutes so a busy stretch of traffic does not fill the recording budget.
+    private func autoSaveClipForBrakeWarning(at now: TimeInterval) {
+        guard tripActive, !demo, !replaying,
+              UserDefaults.standard.object(forKey: "recording.autoSaveBrakeWarnings") as? Bool ?? true else { return }
+        if let last = lastAutoClipUptime, now - last < 10 * 60 { return }
+        lastAutoClipUptime = now
+        camera.markIncident(reason: "Brake warning", tripID: currentTripID)
     }
 
     func simulateCheckin() {

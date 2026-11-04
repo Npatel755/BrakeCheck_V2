@@ -103,6 +103,7 @@ struct SettingsView: View {
     @AppStorage("navigation.cameraAR") private var cameraAR = true
     @AppStorage("recording.limitGB") private var recordingLimitGB = 0
     @AppStorage("recording.retentionDays") private var recordingRetentionDays = 0
+    @AppStorage("recording.autoSaveBrakeWarnings") private var autoSaveBrakeWarnings = true
     @AppStorage("checklist.skip") private var skipChecklist = false
     @AppStorage("diagnostics.developerOverlays") private var developerOverlays = false
     @State private var pendingRetentionDays = 0
@@ -339,6 +340,10 @@ struct SettingsView: View {
             LabeledContent("Video space used", value: storageBytes.map {
                 ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
             } ?? "Checking…")
+            Toggle("Save a clip on brake warnings", isOn: $autoSaveBrakeWarnings)
+                .accessibilityIdentifier("recording.autoSaveBrakeWarnings")
+            Text("Keeps the footage around each brake warning without a tap, at most once every 10 minutes. Save clip on the Home trip card still works any time.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Picker("Recording storage limit", selection: $recordingLimitGB) {
                 Text("No app limit").tag(0)
                 ForEach([1, 2, 5, 10], id: \.self) { value in Text("\(value) GB").tag(value) }
