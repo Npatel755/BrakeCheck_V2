@@ -6,7 +6,10 @@ import CoreVideo
 /// Plays a recorded drive through the same VehicleTracker the live camera uses, paced in real time,
 /// so the danger meter, voice alert and overlays behave exactly as on the road.
 /// Callbacks arrive on a background queue.
-final class ReplayService {
+///
+/// Mutable state is guarded by `lock` and the serial replay queue, so the service may be
+/// referenced from the detached metadata-loading task.
+final class ReplayService: @unchecked Sendable {
     struct Clip {
         let url: URL
         /// Wall-clock time of the clip's first frame, when known (BrakeCheck recordings know it).
@@ -36,9 +39,15 @@ final class ReplayService {
         let transform: CGAffineTransform
     }
 
+    /// The tracker is only touched from the serial replay queue once loading finishes.
+    private struct TrackerHandoff: @unchecked Sendable {
+        let tracker: VehicleTracker
+    }
+
     @discardableResult
     func play(_ clips: [Clip], tracker: VehicleTracker) -> Int {
         let current = bump()
+        let handoff = TrackerHandoff(tracker: tracker)
         Task.detached(priority: .userInitiated) { [weak self] in
             var prepared: [PreparedClip] = []
             for clip in clips {
@@ -61,7 +70,7 @@ final class ReplayService {
             }
             guard let self else { return }
             let ready = prepared
-            self.queue.async { [weak self] in self?.run(ready, tracker: tracker, generation: current) }
+            self.queue.async { [weak self] in self?.run(ready, tracker: handoff.tracker, generation: current) }
         }
         return current
     }

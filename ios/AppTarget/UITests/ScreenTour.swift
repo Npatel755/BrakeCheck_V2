@@ -90,6 +90,9 @@ final class ScreenTour: XCTestCase {
     }
 
     /// The tour offer follows the practice flow; accept it, step through, and capture a few cards.
+    /// The Navigate card opens the map, which asks for location, so system alerts are allowed
+    /// after each step or the later route steps run with location denied.
+    @MainActor
     private func walkAppTour(_ app: XCUIApplication) {
         let accept = element(app.buttons, ["tour.accept", "Show me around"])
         guard accept.waitForExistence(timeout: 8) else { return }
@@ -102,10 +105,11 @@ final class ScreenTour: XCTestCase {
             guard next.waitForExistence(timeout: 3) else { break }
             next.tap()
             pause(2)
+            allowSystemAlerts()
             if let shot { snap(shot) }
         }
         let last = element(app.buttons, ["tour.next"])
-        if last.exists { last.tap(); pause(1) }
+        if last.exists { last.tap(); pause(1); allowSystemAlerts() }
         let done = element(app.buttons, ["tour.done"])
         if done.waitForExistence(timeout: 3) { done.tap(); pause(1) }
     }
