@@ -20,6 +20,8 @@ jobs:
         working-directory: ios
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Generate the Xcode app project
         run: |

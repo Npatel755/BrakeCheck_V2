@@ -26,6 +26,8 @@ jobs:
       START_FIX_ALT: 33.78161,-84.3838
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Generate the Xcode app project
         run: |

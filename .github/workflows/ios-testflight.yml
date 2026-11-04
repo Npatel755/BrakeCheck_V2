@@ -32,6 +32,8 @@ jobs:
       BUNDLE_ID: ${{ vars.BUNDLE_ID }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Check the signing setup
         run: |
