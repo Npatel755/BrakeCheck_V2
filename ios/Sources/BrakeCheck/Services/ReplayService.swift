@@ -26,10 +26,43 @@ final class ReplayService {
     var onFinished: ((String, Int) -> Void)?
     var onGeometry: ((TimeInterval, Int) -> Void)?
 
+    /// A clip whose asset metadata has already been loaded asynchronously, so the paced
+    /// decode loop never blocks on AVFoundation property loading.
+    private struct PreparedClip {
+        let clip: Clip
+        let asset: AVURLAsset
+        let track: AVAssetTrack
+        let date: Date?
+        let transform: CGAffineTransform
+    }
+
     @discardableResult
     func play(_ clips: [Clip], tracker: VehicleTracker) -> Int {
         let current = bump()
-        queue.async { [weak self] in self?.run(clips, tracker: tracker, generation: current) }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var prepared: [PreparedClip] = []
+            for clip in clips {
+                guard let self, self.isCurrent(current) else { return }
+                let asset = AVURLAsset(url: clip.url)
+                do {
+                    let (tracks, creation) = try await asset.load(.tracks, .creationDate)
+                    guard let track = tracks.first(where: { $0.mediaType == .video }) else {
+                        self.onFinished?("No video track in \(clip.url.lastPathComponent). Choose a video file with readable picture frames.", current)
+                        return
+                    }
+                    let transform = try await track.load(.preferredTransform)
+                    let date = try await creation?.load(.dateValue)
+                    prepared.append(PreparedClip(clip: clip, asset: asset, track: track,
+                                                 date: clip.start ?? date, transform: transform))
+                } catch {
+                    self.onFinished?("Could not open \(clip.url.lastPathComponent): \(error.localizedDescription)", current)
+                    return
+                }
+            }
+            guard let self else { return }
+            let ready = prepared
+            self.queue.async { [weak self] in self?.run(ready, tracker: tracker, generation: current) }
+        }
         return current
     }
 
@@ -46,19 +79,15 @@ final class ReplayService {
         return value == generation
     }
 
-    private func run(_ clips: [Clip], tracker: VehicleTracker, generation current: Int) {
+    private func run(_ clips: [PreparedClip], tracker: VehicleTracker, generation current: Int) {
         let replayStart = ProcessInfo.processInfo.systemUptime
         var elapsedBeforeClip: TimeInterval = 0
         var lastPreview: TimeInterval = 0
         var lastSubmit: TimeInterval = 0
         var framesShown = 0
-        for clip in clips {
+        for item in clips {
             guard isCurrent(current) else { return }
-            let asset = AVURLAsset(url: clip.url)
-            guard let track = asset.tracks(withMediaType: .video).first else {
-                onFinished?("No video track in \(clip.url.lastPathComponent). Choose a video file with readable picture frames.", current)
-                return
-            }
+            let clip = item.clip, asset = item.asset, track = item.track
             let reader: AVAssetReader
             do { reader = try AVAssetReader(asset: asset) } catch {
                 onFinished?("Could not open \(clip.url.lastPathComponent): \(error.localizedDescription)", current)
@@ -78,13 +107,13 @@ final class ReplayService {
                 onFinished?("Could not open \(clip.url.lastPathComponent): \(detail)", current)
                 return
             }
-            let clipDate = clip.start ?? asset.creationDate?.dateValue
+            let clipDate = item.date
             let clipWallStart = ProcessInfo.processInfo.systemUptime
             var firstPTS: CMTime?
             var clipLength: TimeInterval = 0
             var geometryConfigured = false
             var decodedFrames = 0
-            let displayTransform = track.preferredTransform
+            let displayTransform = item.transform
             while isCurrent(current), let sample = output.copyNextSampleBuffer() {
                 let pts = CMSampleBufferGetPresentationTimeStamp(sample)
                 guard pts.isNumeric else { continue }
