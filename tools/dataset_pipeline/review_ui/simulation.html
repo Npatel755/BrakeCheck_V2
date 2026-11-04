@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10221c">
+  <title>BrakeCheck Studio · Simulation audits</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/simulation.css?v=1">
+  <link rel="stylesheet" href="/static/studio_nav.css?v=lead-cars1">
+  <link rel="stylesheet" href="/static/sample_actions.css?v=8">
+  <script defer src="/static/audit_fix.js?v=6"></script>
+  <script defer src="/static/simulation.js?v=7"></script>
+</head>
+<body class="sample-audit-page">
+  <header><a class="brand" href="/datasets">BrakeCheck <span>DATASET STUDIO</span></a><span class="badge">SYNTHETIC</span></header>
+  <nav class="phone-section-tabs" aria-label="Phone app sections"><a href="/?phone=1">Photos</a><a href="/lead-cars">Lead cars</a><a href="/model-errors">Model errors</a><a href="/experiments">Experiments</a></nav>
+<nav class="studio-nav" aria-label="Studio navigation"><a href="/lead-cars">Lead cars</a><a href="/">Review photos</a><a href="/datasets" aria-current="page">Datasets</a><a href="/experiment">Model proposals</a><a href="/experiments">Experiments</a><a href="/model-errors">Model mistakes</a></nav>
+  <main>
+    <div class="heading"><div><p class="eyebrow">SEPARATE OPTIONAL COLLECTION</p><h1>Simulation sample checks</h1><p class="intro">CARLA TuLane photos with converted simulator projections. Check these against visible lane paint before allowing their cohort into an optional experiment.</p></div><a class="button" href="/datasets?collection=converted_plus_simulated">Back to collection</a></div>
+    <section class="progress" aria-label="Import and audit progress"><p id="import-state">Loading import status…</p><div class="counts"><div><strong id="imported">—</strong><span>imported photos</span></div><div><strong id="remaining">—</strong><span>samples to check</span></div><div><strong id="eligible">—</strong><span>eligible train candidates</span></div></div><p id="progress-note" class="hint">Each group needs all of its samples approved. An exclusion blocks that group. No photos enter training automatically.</p></section>
+    <p id="message" role="status" aria-live="polite">Loading sample…</p><a id="pair-link" class="button" href="/" hidden>Open reviewer to pair this phone</a>
+    <section class="review" aria-label="Audit sample">
+      <div class="toolbar"><h2>Check the converted lines</h2><div class="filters"><label>Split <select id="split"><option value="all">All splits</option><option value="train">Train</option><option value="val">Synthetic validation</option></select></label><label>Queue <select id="queue"><option value="pending">To check</option><option value="skip">Skipped for later</option><option value="exclude">Excluded</option><option value="approve">Approved</option><option value="all">All samples</option></select></label><button id="refresh" type="button">Refresh</button></div></div>
+      <div id="sample" hidden>
+        <div class="photo-pair"><figure><figcaption>Original simulated photo <small>Look for visible paint</small></figcaption><img id="photo" alt="Original CARLA simulation audit photo"></figure><figure><figcaption>Converted simulator labels <small>Projected geometry · inspect before approving</small></figcaption><canvas id="lanes" role="img" aria-label="The same simulated photo with converted lane boundaries"></canvas></figure></div>
+        <div class="sample-info"><div><strong id="image-id"></strong><p id="sample-meta"></p></div><span id="saved-decision" class="badge" hidden></span></div>
+        <div class="checks"><h3>Approve only if the lines match visible longitudinal lane paint</h3><ul><li>Trace paint along the direction of travel. Curbs, road edges and crosswalks are separate.</li><li>Slots 2 and 3 border your lane; 1 and 4 are the next boundaries outside it.</li><li>Check hidden sections and traffic. A simulator projection can continue through a vehicle or show a boundary with no visible paint.</li></ul><p><b>Wrong or invented boundaries?</b> Fix the lines or exclude to block this conversion group. Unsure? Skip to check later.</p><p id="warnings" class="warning" hidden></p><p id="policy-risks" class="hint"></p></div>
+        <div id="fix-tools" class="fix-tools" hidden><div class="fix-line-tools"><label>Line slot <select id="fix-slot"><option value="1">1 · outer left</option><option value="2">2 · your left</option><option value="3">3 · your right</option><option value="4">4 · outer right</option></select></label><button id="fix-add-lane" type="button">Add line</button><button id="fix-delete-lane" type="button">Remove line</button><button id="fix-remove-point" type="button">Remove selected point</button><button id="fix-undo" type="button">Undo edit</button><span id="fix-help">Select a slot. Tap to add points, or drag a white point to move it.</span></div><label id="fix-warning-resolution" class="fix-warning-resolution" hidden><input id="fix-resolve-warnings" type="checkbox"><span>I checked the flagged lines against visible paint and corrected any errors.<small id="fix-warning-reasons"></small><small id="fix-warning-hint">Check the corrected positions, lane slots and visible endpoints against the photo.</small></span></label>
+<label id="fix-complete-annotation-control" class="fix-warning-resolution fix-complete-annotation-control" hidden><input id="fix-complete-annotation" type="checkbox"><span>I checked the whole photo and labeled every visible painted boundary in slots 1–4, including missing lines.<small id="fix-complete-reasons"></small><small>Use Add line for missing boundaries. Check lane slots and visible spans. Leave hidden paint, curbs and crosswise markings untraced.</small></span></label>
+<label id="fix-no-visible-paint-control" class="fix-warning-resolution" hidden><input id="fix-no-visible-paint" type="checkbox"><span>No lane paint is visible in this photo; the empty annotation is intentional.</span></label>
+</div>
+        <div class="actions"><button id="exclude" class="exclude" type="button">Exclude</button><button id="fix" type="button">Fix lines</button><button id="approve" class="approve" type="button">Approve</button><button id="skip" type="button">Skip</button><button id="cancel-fix" type="button" hidden>Cancel</button><button id="save-fix" class="approve" type="button" hidden>Save &amp; approve</button></div>
+      </div>
+      <div id="empty" class="empty" hidden><h3 id="empty-title">No samples in this queue</h3><p id="empty-message"></p></div>
+    </section>
+    <p class="footer-note">Apache-2.0 synthetic source only. Real TuSimple photos are excluded. Your original annotations, converted base and real validation/test sets stay unchanged.</p>
+  </main>
+</body>
+</html>

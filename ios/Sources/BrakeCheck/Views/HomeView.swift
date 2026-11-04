@@ -25,6 +25,7 @@ struct HomeView: View {
     var beginCalibration: () -> Void
     var openTrip: (UUID) -> Void = { _ in }
     var openPremium: () -> Void = { }
+    var onChecklistChanged: (Bool) -> Void = { _ in }
 
     @State private var lastTripOpen = false
     @State private var showChecklist = false
@@ -44,6 +45,14 @@ struct HomeView: View {
                         TripSaveRecoveryView(model: model)
                     }
                     if model.tripActive && !model.demo && !model.replaying { tripControls }
+                    if model.canResumeRecording {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(model.recorderStatus).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
+                            Button(action: model.resumeRecording) {
+                                Label("Resume recording", systemImage: "record.circle").frame(minHeight: 44)
+                            }.accessibilityIdentifier("recording.resume")
+                        }.brakePanel()
+                    }
                     if model.tripActive && !model.cameraReady && !model.demo && !model.replaying {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(model.cameraStatus).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
@@ -81,7 +90,8 @@ struct HomeView: View {
         .background(BrakeTheme.background)
         .foregroundStyle(BrakeTheme.text)
         .tint(BrakeTheme.accentColor(named: accentChoice))
-        .sheet(isPresented: $showChecklist) {
+        .onChange(of: showChecklist) { _, shown in onChecklistChanged(shown) }
+        .sheet(isPresented: $showChecklist, onDismiss: { onChecklistChanged(false) }) {
             PreDriveChecklist(skip: $skipChecklist) {
                 showChecklist = false
                 tripAction()

@@ -1,0 +1,26 @@
+# Core (CPU is enough for ingest, curation, geometry, QC, review round trip, exports)
+numpy>=1.26
+opencv-python-headless>=4.9
+pillow>=10
+scikit-image>=0.22
+scipy>=1.11
+pyyaml>=6
+requests>=2.31
+tqdm>=4.66
+pytest>=8
+pandas>=2.1
+streamlit>=1.36
+
+# Teachers (install PyTorch for your CUDA first: https://pytorch.org/get-started/locally/)
+segmentation-models-pytorch>=0.5
+timm>=1.0
+huggingface_hub>=0.24
+safetensors>=0.4
+transformers>=4.56          # DINOv3 support
+
+# Optional
+# cvat-sdk                  # API automation for CVAT tasks
+# "zod[all]"                # once ZOD access is granted
+# sam2  -> pip install -e from https://github.com/facebookresearch/sam2
+# sam3  -> pip install -e from https://github.com/facebookresearch/sam3 (gated weights)
+# carla -> the wheel that matches your CARLA server

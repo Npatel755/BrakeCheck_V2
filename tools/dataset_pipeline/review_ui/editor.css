@@ -1,0 +1,259 @@
+.edge-key {
+  background: #f5a9e2;
+}
+.drawing-bar {
+  padding: 12px 16px;
+  background: #18271f;
+  border-block: 1px solid #395442;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.drawing-bar strong {
+  font-size: 12px;
+  display: block;
+}
+.drawing-bar span {
+  display: block;
+  color: #b7ccbd;
+  font-size: 11px;
+  margin-top: 5px;
+  line-height: 1.5;
+}
+.drawing-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.drawing-actions .button {
+  min-height: 40px;
+}
+.button.primary {
+  background: var(--mint);
+  color: #142d20;
+  border-color: var(--mint);
+}
+.button[aria-pressed="true"] {
+  border-color: var(--mint);
+  background: #354a3b;
+}
+.stage.editing.panning canvas {
+  touch-action: pan-x pan-y;
+  cursor: grab;
+}
+.layer-tabs {
+  display: flex;
+  border: 1px solid #425648;
+  border-radius: 9px;
+  margin: 14px 0;
+  overflow: hidden;
+}
+.layer-tab {
+  flex: 1;
+  border: 0;
+  color: #b7ccbd;
+  background: #142019;
+  padding: 12px;
+  font-size: 12px;
+  min-height: 44px;
+}
+.layer-tab.selected {
+  background: #365340;
+  color: #f2fff6;
+}
+.edge-sides {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+.edge-sides .lane-chip {
+  flex: 1;
+}
+.draft-pill {
+  font-size: 9px;
+  border: 1px solid #72613b;
+  border-radius: 5px;
+  color: #e4ce99;
+  padding: 3px 6px;
+  margin-left: 7px;
+  font-weight: 400;
+}
+.draft-banner {
+  padding: 13px 16px;
+  background: #332f1d;
+  border-block: 1px solid #615436;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #ecdfb8;
+}
+.draft-banner > div {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.label-summary {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #bbcdc0;
+  font-size: 11px;
+}
+.label-summary > span {
+  line-height: 1.6;
+}
+.label-guide {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.label-guide summary {
+  cursor: pointer;
+  color: var(--mint);
+  padding: 5px 0;
+  font-weight: 550;
+}
+.label-guide p {
+  margin: 10px 0;
+}
+.label-guide b {
+  color: #e2eee5;
+}
+#edge-panel .lane-options {
+  margin-bottom: 14px;
+}
+#draft-status {
+  font-size: 10px;
+  margin-bottom: 0;
+}
+.lane-chip {
+  white-space: normal;
+  text-align: left;
+}
+.lane-chip small {
+  display: block;
+  font-size: 9px;
+  color: #b3c9b9;
+  margin-top: 4px;
+}
+#edit-mode {
+  color: #d4e7da;
+}
+.drawing-actions #finish-lane {
+  order: 5;
+}
+.stage.editing {
+  outline: 1px solid #486b50;
+}
+.editor .edit-tools .button {
+  min-height: 42px;
+}
+.editor select {
+  min-height: 40px;
+}
+.editor .hint {
+  max-width: 72ch;
+}
+.label-summary .button {
+  white-space: normal;
+}
+.decision-bar:has(#save-correction:not([hidden])) {
+  grid-template-columns: 1fr 1.4fr;
+}
+@media (max-width: 540px) {
+  .drawing-bar {
+    padding: 10px;
+    gap: 9px;
+  }
+  .drawing-bar > div:first-child {
+    width: 100%;
+  }
+  .drawing-actions {
+    gap: 5px;
+    width: 100%;
+  }
+  .drawing-actions .button {
+    font-size: 10px;
+    padding: 8px;
+    min-height: 42px;
+    flex: 1;
+  }
+  .drawing-actions #undo-node {
+    flex-basis: 110px;
+  }
+  .drawing-actions #pan-mode {
+    flex-basis: 90px;
+  }
+  .drawing-actions #finish-lane {
+    flex-basis: 100%;
+  }
+  .label-summary {
+    padding: 10px;
+    gap: 6px;
+    font-size: 10px;
+    align-items: flex-start;
+  }
+  .label-summary .button {
+    min-width: 100px;
+  }
+  .editor .lane-options {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .editor .lane-options label {
+    font-size: 11px;
+    justify-content: space-between;
+  }
+  .editor .lane-options select {
+    font-size: 16px;
+    max-width: 78%;
+    min-height: 44px;
+  }
+  .layer-tab {
+    font-size: 12px;
+  }
+  .label-guide {
+    padding: 12px;
+    font-size: 11px;
+  }
+  .draft-banner {
+    padding: 12px;
+    font-size: 11px;
+  }
+  .edge-sides .lane-chip {
+    font-size: 11px;
+    min-height: 46px;
+  }
+  .editor .edit-tools .button {
+    min-height: 44px;
+  }
+  .drawing-bar + .stage {
+    max-height: 52svh;
+  }
+  .draft-pill {
+    display: inline-block;
+  }
+  .toggles {
+    gap: 8px;
+  }
+  .image-toolbar {
+    flex-wrap: wrap;
+  }
+  .toggles label {
+    min-height: 34px;
+  }
+  .drawing-actions .button:disabled {
+    cursor: default;
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "rule": {
+    "row_minimum": 2,
+    "col_minimum": 2,
+    "confidence": 0.7,
+    "geometry": true,
+    "preserve_stock": false
+  },
+  "false_positive_budget": 243,
+  "manifest_sha256": "487563eebac2fc1a494acc7249316ddd3f7ed8d946f3d5a5b2fb089ae59d8e7d",
+  "checkpoint_sha256": "4838156c4bd7c237d9189ff617e150f38d96f5018b48ac53e472ea7d4b23f378",
+  "validation_images": 1586,
+  "test_images_used": 0,
+  "interpretation": "Exploratory selection on the same frozen validation set; not independent test evidence."
+}

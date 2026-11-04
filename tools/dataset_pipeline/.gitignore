@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+BrakeCheck_Dataset/raw/
+BrakeCheck_Dataset/extracted_frames/
+BrakeCheck_Dataset/annotations/
+BrakeCheck_Dataset/lane_geometry/
+BrakeCheck_Dataset/exports/
+BrakeCheck_Dataset/review_queue/
+BrakeCheck_Dataset/models/
+BrakeCheck_Dataset/logs/
+BrakeCheck_Dataset/curated_images/
+BrakeCheck_Dataset/reports/overlays/
+BrakeCheck_Dataset/metadata.sqlite*
+.env

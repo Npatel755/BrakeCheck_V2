@@ -105,7 +105,8 @@ final class DriveModel {
 
     var stopping = false
 
-    var demo = false
+    private(set) var demo = false
+    private(set) var demoSessionID: UUID?
 
     var cameraReady = false
     var captureGeometry = CaptureFrameGeometry.standby
@@ -288,6 +289,15 @@ final class DriveModel {
     var gpsStatus = "GPS stopped"
 
     var recorderStatus = "Recorder stopped"
+    private(set) var recordingEnabled = false
+    var canResumeRecording: Bool {
+        foreground && tripActive && cameraReady && !stopping && !demo && !replaying
+            && !changingCameraGeometry && !recordingEnabled
+    }
+    func resumeRecording() {
+        guard canResumeRecording else { return }
+        camera.resumeRecording()
+    }
     var recordingStorageBytes: Int64?
     var unindexedRecordings: [UnindexedRecording] = []
     var recordingRecoveryWarnings: [String] = []
@@ -425,6 +435,9 @@ final class DriveModel {
 
         }
 
+        camera.onRecordingEnabled = { [weak self] enabled in
+            DispatchQueue.main.async { self?.recordingEnabled = enabled }
+        }
         camera.onRecordingStorage = { [weak self] bytes in
             DispatchQueue.main.async { self?.recordingStorageBytes = bytes }
         }
@@ -1035,13 +1048,14 @@ final class DriveModel {
     func deleteIncident(_ id: UUID) { camera.deleteIncident(id) }
     func applyRecordingPreferences() { camera.applyRecordingPreferences() }
 
-    func setDemo(_ enabled: Bool, hardBrake: Bool = false) {
+    func setDemo(_ enabled: Bool, hardBrake: Bool = false, sessionID: UUID? = nil) {
 
         guard !tripActive, !stopping, !replaying else { return }
 
         navigation.setLiveModeAllowed(!enabled)
 
         demo = enabled
+        demoSessionID = enabled ? sessionID ?? UUID() : nil
         demoHardBrake = enabled && hardBrake
         resetLanePredictionDisplay()
         laneDisplayContinuity.reset(); lanePath = nil

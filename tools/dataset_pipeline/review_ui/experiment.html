@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10221c">
+  <title>BrakeCheck · Teacher experiment</title>
+  <link rel="stylesheet" href="/static/experiment.css?v=1">
+  <link rel="stylesheet" href="/static/studio_nav.css?v=lead-cars1">
+  <script defer src="/static/experiment.js?v=4"></script>
+</head>
+<body>
+  <header><a href="/">← Dataset reviewer</a><span class="badge">Separate experiment</span></header>
+  <nav class="phone-section-tabs" aria-label="Phone app sections"><a href="/?phone=1">Photos</a><a href="/lead-cars">Lead cars</a><a href="/model-errors">Model errors</a><a href="/experiments">Experiments</a></nav>
+<nav class="studio-nav" aria-label="Studio navigation"><a href="/lead-cars">Lead cars</a><a href="/">Review photos</a><a href="/datasets">Datasets</a><a href="/experiment" aria-current="page">Model proposals</a><a href="/experiments">Experiments</a><a href="/model-errors">Model mistakes</a></nav>
+  <main>
+    <h1>Fresh model proposals</h1>
+    <p class="intro">Compare the copied original conversion with its new model proposal. Your decisions here apply only to experiment copies.</p>
+    <section class="progress" aria-label="Experiment progress">
+      <div><span class="eyebrow">Teacher / training status</span><p id="phase">Loading experiment…</p></div>
+      <div id="counts" aria-live="polite"></div>
+      <p id="policy">Automatic experiments do not wait for individual approvals. Optional checks accept correct proposals or hold bad copies out. Your original dataset and approved collections stay unchanged.</p>
+      <p id="snapshot-warning" class="warning" hidden>The training snapshot is frozen. Decisions saved now apply only to a future rebuild; they do not change the current training run.</p>
+    </section>
+    <div class="filters">
+      <label>Experiment<select id="run" aria-label="Experiment run"></select></label>
+      <label>Split<select id="split"><option value="train">Training copies</option><option value="val">Validation · comparison only</option><option value="test">Test · comparison only</option><option value="all">All splits</option></select></label>
+      <label>Show<select id="filter"><option value="pending">Not checked here</option><option value="skip">Skipped</option><option value="exclude">Excluded</option><option value="approve">Approved here</option><option value="all">All copies</option></select></label>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+    <p id="message" role="status" aria-live="polite"></p>
+    <section id="review" hidden>
+      <div class="image-heading"><strong id="copy-title"></strong><span id="copy-meta"></span></div>
+      <div class="views">
+        <figure><figcaption>Copied original conversion <small>Reference · original labels stay unchanged</small></figcaption><canvas id="original" aria-label="Image with copied original conversion"></canvas></figure>
+        <figure><figcaption>Fresh model proposal <small>Experimental painted-line labels</small></figcaption><canvas id="proposal" aria-label="Image with fresh model lane proposal"></canvas></figure>
+      </div>
+      <div class="details"><span id="quality"></span><span id="teacher"></span></div>
+      <p id="holdout" class="warning" hidden>Comparison only: this copy keeps its validation/test split and cannot become an extra training image.</p>
+      <div class="decisions">
+        <button id="exclude" type="button">✕ Exclude copy</button>
+        <button id="approve" type="button" aria-describedby="quality approval-help">✓ Approve proposal</button>
+        <button id="skip" type="button">→ Skip for later</button>
+      </div>
+      <p id="approval-help" class="hint" aria-live="polite"></p>
+      <p class="hint">Approve accepts only this experimental proposal. Exclude and Skip hold the copy out of experiment training. Decisions after a snapshot is frozen apply to a future rebuild. Original reviews and approved collections stay unchanged.</p>
+    </section>
+    <section id="empty" hidden><h2 id="empty-title">No proposals ready yet</h2><p id="empty-hint">This page updates while the teacher prepares copies.</p></section>
+    <a id="pair-link" href="/" hidden>Open the main reviewer to pair this phone</a>
+  </main>
+</body>
+</html>

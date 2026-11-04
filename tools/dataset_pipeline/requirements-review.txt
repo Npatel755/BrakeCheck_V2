@@ -1,0 +1,17 @@
+# Review/preparation only. No CUDA, model training, Docker or CVAT service required.
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pydantic>=2.8,<3
+numpy>=1.26
+opencv-python-headless>=4.9
+pillow>=10
+pyyaml>=6
+requests>=2.31
+scipy>=1.11
+scikit-image>=0.22
+tqdm>=4.66
+pytest>=8
+httpx>=0.27
+qrcode[pil]>=8
+filelock>=3.16
+psutil>=6

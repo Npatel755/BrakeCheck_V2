@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10221c">
+  <title>BrakeCheck Studio · Lead cars</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/studio_nav.css?v=lead-cars1">
+  <link rel="stylesheet" href="/static/lead_cars.css?v=1">
+  <script defer src="/static/lead_cars.js?v=training-status1"></script>
+</head>
+<body>
+  <nav class="phone-section-tabs" aria-label="Phone app sections"><a href="/?phone=1">Photos</a><a href="/lead-cars" aria-current="page">Lead cars</a><a href="/model-errors">Model errors</a><a href="/experiments">Experiments</a></nav>
+  <nav class="studio-nav" aria-label="Studio navigation"><a href="/">Review photos</a><a href="/lead-cars" aria-current="page">Lead cars</a><a href="/datasets">Datasets</a><a href="/experiment">Model proposals</a><a href="/experiments">Experiments</a><a href="/model-errors">Model mistakes</a></nav>
+  <main>
+    <header class="heading"><div><p class="eyebrow">HUMAN LABELS / LEAD SELECTION</p><h1>Which vehicle are we following?</h1><p class="intro">Draw one tight box around the nearest vehicle ahead in your lane. Include stopped traffic. Leave parked, oncoming and other-lane vehicles out.</p></div><div class="progress"><strong id="count">Loading…</strong><span id="counts-detail"></span><progress id="progress" max="500" value="0" aria-label="Lead images labeled"></progress></div></header>
+    <div id="pairing" hidden><p>Pair this phone on the main review page first.</p><a href="/" class="button">Open pairing</a></div>
+    <section id="workspace" hidden>
+      <p id="training-status" class="notice" hidden aria-live="polite"></p>
+      <div class="toolbar"><label>Queue <select id="queue"><option value="pending">To label</option><option value="labeled">Labeled</option><option value="skip">Unclear / skipped</option><option value="all">All photos</option></select></label><span id="image-info"></span><button id="export" class="quiet">Export saved labels</button></div>
+      <p id="draft-notice" class="notice" hidden>Restored your unsaved box. It is only a draft until you save.</p>
+      <div class="photo-panel"><div id="stage" class="stage"><canvas id="lead-canvas" width="1280" height="720" aria-label="Lead vehicle labeling image. Drag across the lead vehicle to draw a box." tabindex="0"></canvas><p id="empty" hidden></p></div></div>
+      <div class="tools"><span>Drag to draw · drag inside to move · drag a corner to resize</span><button id="undo-draft" class="quiet" disabled>Undo box</button><button id="clear" class="quiet" disabled>Clear box</button><button id="pan" class="quiet" aria-pressed="false">Pan</button><label>Zoom <select id="zoom"><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option></select></label><label class="comparison"><input id="show-candidates" type="checkbox"> Compare vehicle candidates</label></div>
+      <p class="hint">Candidate boxes are detector suggestions, not answers. Draw your own box. If the photo cannot establish the lead, choose Unclear / skip. Saving “No lead vehicle” records a real negative.</p>
+      <label class="notes">Notes <input id="notes" maxlength="2000" placeholder="Optional: curve, cut-in, occlusion…" autocomplete="off"></label>
+      <div class="actions"><button id="no-lead">No lead vehicle</button><button id="skip" class="quiet">Unclear / skip</button><button id="save" class="primary" disabled>Save lead box →</button></div>
+      <div class="save-row"><p id="status" role="status" aria-live="polite">Loading images…</p><button id="undo-saved" class="quiet" hidden>Undo saved label</button><button id="reload" class="quiet" hidden>Reload latest label</button></div>
+      <details><summary>Labeling guide</summary><p>The lead is the nearest car, truck, bus or motorcycle occupying the lane the camera vehicle is following. Box the visible vehicle body tightly; stop at image borders for clipped vehicles. Do not guess a hidden body. When a turn or junction makes lane identity ambiguous in a still photo, skip it.</p><p>This collection grows in batches. Source sessions keep their training/validation assignment. Lane reviews and source labels remain separate. No model is trained when you save a box.</p></details>
+      <p id="export-status" class="hint"></p>
+    </section>
+  </main>
+</body>
+</html>

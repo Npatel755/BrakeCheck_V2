@@ -1,0 +1,158 @@
+# Licence registry. Checked 2026-10-16 from each project's own repo / model card.
+# status:
+#   cleared             documented rights support commercial dataset development
+#   cleared_conditions  allowed, with obligations listed under `obligations`
+#   share_alike         allowed, but derived data must carry the same licence (kept in its own pool)
+#   unverified          not checked yet: outputs go to the quarantine pool
+#   blocked             do not use for commercial outputs
+# pool: where images or annotations produced under this entry are stored for export.
+# Re-check before every release. This file is a record, not legal advice.
+
+datasets:
+  subaru_lead_signate657:
+    name: SUBARU SIGNATE leading vehicle velocity challenge
+    url: https://signate.jp/competitions/657
+    license: CC BY-NC-SA 4.0 plus competition participation terms
+    evidence: "Official competition's indexed data/rules page explicitly states NonCommercial and use only for participation. Checked 2026-10-24; current URL redirects to the migrated client application."
+    status: blocked
+    pool: quarantine
+    notes: "Lead boxes exist in training frames, but the published terms do not permit this commercial application training run. No import performed."
+  semantic_spray_lead:
+    name: SemanticSpray++ lead Car and Van camera boxes
+    url: https://semantic-spray-dataset.github.io/
+    license: original data license not yet directly verified
+    evidence: "Authors' 2024 paper verifies lead boxes in 36 scenes. The official OPARU data service returned HTTP 503 on 2026-10-24. Independent repackager reports CC BY 4.0; this is not substituted for direct original data terms."
+    status: unverified
+    pool: quarantine
+    notes: "Tooling MIT and website CC BY-SA licenses are not the dataset license. No data imported or used in training."
+  a2d2:
+    name: Audi Autonomous Driving Dataset images and semantic masks
+    url: https://a2d2-dataset.github.io/
+    license: CC BY-ND 4.0
+    evidence: "Official A2D2 website permits commercial use subject to CC BY-ND 4.0; legal code section 2(a)(1)(B) permits producing/reproducing adapted material without public sharing. Verified 2026-10-18."
+    status: cleared_conditions
+    pool: commercial
+    obligations:
+      - retain Audi attribution, dataset notice, source URLs and CC BY-ND 4.0 licence
+      - preserve original downloaded images and semantic masks unchanged
+      - converted images and annotations are for private local development; do not publicly redistribute adapted dataset material
+      - carry source provenance into trained checkpoints; check applicable distribution rights before shipping a trained model
+    notes: "Public AWS S3 access requires no account or access approval. Conditional permission for this private local pipeline is not an unconditional model-release clearance."
+  comma10k:
+    name: comma10k images + masks
+    url: https://github.com/commaai/comma10k
+    license: MIT
+    evidence: "LICENSE file (Copyright (c) 2020, Comma.ai) + README: 'MIT license, no academic only restrictions'"
+    status: cleared
+    pool: commercial
+    obligations: [keep the MIT copyright notice with redistributed images]
+    notes: Real roads with people and plates; do not publish raw images without a privacy pass.
+  comma2k19:
+    name: comma2k19 driving video
+    url: https://github.com/commaai/comma2k19
+    license: MIT
+    evidence: repository LICENSE (MIT)
+    status: cleared
+    pool: commercial
+    obligations: [keep the MIT copyright notice]
+    notes: ~100 GB in 10 chunks via Academic Torrents; each chunk needs download approval (>5 GB).
+  carla:
+    name: CARLA simulator renders
+    url: https://github.com/carla-simulator/carla
+    license: MIT (code) + CC-BY (CARLA assets) + Unreal Engine EULA
+    evidence: README Licenses section
+    status: cleared_conditions
+    pool: commercial
+    obligations: [credit CARLA assets (CC-BY) in the dataset notice, check the Unreal Engine EULA for rendered output]
+    notes: Synthetic. Tagged synthetic=1 and kept separate in every export list.
+  carlane_tulane:
+    name: CARLANE TuLane CARLA simulated source images and lane annotations
+    url: https://carlanebenchmark.github.io/
+    license: Apache-2.0
+    evidence: "Official CARLANE dataset website explicitly licenses its data under Apache License 2.0 and lists commercial use; copyright 2022 CARLANE Team. Verified 2026-10-21. Kaggle publisher release version 2."
+    status: cleared_conditions
+    pool: commercial
+    obligations:
+      - retain the CARLANE Team copyright, Apache License 2.0 and source attribution
+      - preserve original version-2 downloaded images and simulator annotations unchanged
+      - state conversion changes and retain source and conversion fingerprints
+    notes: "Only the CARLA simulated source_train/source_val portion is cleared here. Real TuSimple target photos are excluded. Projected simulator lane labels require visible-paint policy audits before optional training. Synthetic validation stays separate from the existing real-image validation."
+  zod:
+    name: Zenseact Open Dataset
+    url: https://github.com/zenseact/zod
+    license: CC BY-SA 4.0 (data), MIT (devkit)
+    evidence: README licence section
+    status: share_alike
+    pool: share_alike
+    obligations:
+      - include the full Zenseact notice with any public use, distribution or display
+      - derived annotations and images stay CC BY-SA 4.0
+      - decide with counsel whether model weights trained on it are affected before shipping
+    notes: Requires an access application; adapter works without it.
+
+models:
+  comma_segnet:
+    name: commaai/comma10k-segnet (U-Net, efficientnet-b2)
+    url: https://huggingface.co/commaai/comma10k-segnet
+    license: MIT
+    evidence: model card license field 'mit'
+    status: cleared
+  sam3:
+    name: SAM 3 (code + weights)
+    url: https://github.com/facebookresearch/sam3
+    license: SAM License (Meta custom)
+    evidence: LICENSE - non-exclusive, worldwide, royalty-free; no non-commercial clause
+    status: cleared_conditions
+    obligations:
+      - ship a copy of the SAM License with any redistributed SAM materials or derivatives
+      - no ITAR, military, nuclear, espionage or weapons use; follow trade controls
+      - acknowledge SAM in published research
+      - outputs are 'as is'; licence ends if you sue Meta over it
+  sam2:
+    name: SAM 2.1 (code + checkpoints)
+    url: https://github.com/facebookresearch/sam2
+    license: Apache-2.0
+    evidence: README licence statement covers checkpoints and code
+    status: cleared
+  dinov3:
+    name: DINOv3 backbones
+    url: https://github.com/facebookresearch/dinov3
+    license: DINOv3 License (Meta custom)
+    evidence: LICENSE.md - non-exclusive, worldwide, royalty-free; no non-commercial clause
+    status: cleared_conditions
+    obligations:
+      - ship a copy of the DINOv3 License with redistributed DINO materials
+      - no ITAR, military, nuclear, espionage or weapons use
+      - acknowledge DINOv3 in published research
+  dinov3_seg:
+    name: BrakeCheck DINOv3 segmentation decoder (trained here)
+    license: inherits dinov3 + training data licences
+    status: cleared_conditions
+    obligations: [only train on commercial-pool data, or move outputs to the matching pool]
+  openai-clip:
+    name: CLIP zero-shot scene tagger (optional)
+    url: https://github.com/openai/CLIP
+    license: MIT (repo)
+    status: unverified
+    notes: Training data provenance is undisclosed; tags only, never labels. Leave disabled until reviewed.
+  ufld_v2:
+    name: Ultra-Fast-Lane-Detection-v2 code
+    url: https://github.com/cfzd/Ultra-Fast-Lane-Detection-v2
+    license: MIT
+    status: cleared
+    notes: Its CULane/TuSimple/CurveLanes PRETRAINED weights come from non-commercial datasets - do not fine-tune from them for the App Store build.
+
+software:
+  cvat: {license: MIT, url: https://github.com/cvat-ai/cvat, status: cleared}
+  segmentation_models_pytorch: {license: MIT, status: cleared}
+  timm: {license: Apache-2.0, status: cleared}
+  opencv: {license: Apache-2.0, status: cleared}
+  scikit_image: {license: BSD-3-Clause, status: cleared}
+  streamlit: {license: Apache-2.0, status: cleared}
+  ffmpeg: {license: LGPL-2.1+ (GPL if built with GPL parts), status: cleared, notes: used as a separate program, not linked}
+
+derived:
+  bc_annotations:
+    name: BrakeCheck generated + reviewed annotations
+    license: owned by BrakeCheck, subject to the licence of each source image and model listed in its provenance
+    status: cleared_conditions

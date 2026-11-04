@@ -1,0 +1,16 @@
+.image-comparison { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; background: var(--border); }
+.source-audit-summary { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 0 0 20px; background: var(--panel); font-size: 13px; }
+.source-audit-summary p { line-height: 1.6; }
+.source-audit-summary .button { margin: 4px 6px 0 0; }
+.comparison-pane { min-width: 0; background: var(--panel); }
+.comparison-heading { display: flex; flex-direction: column; gap: 5px; padding: 12px; min-height: 90px; box-sizing: border-box; font-size: 12px; }
+.comparison-heading span { font-size: 10px; line-height: 1.5; color: var(--muted); }
+.comparison-heading .text-button { text-align: left; padding: 0; width: fit-content; font-size: 10px; }
+.image-comparison.reference-hidden { grid-template-columns: minmax(0, 1fr); }
+#reference-canvas { cursor: default; touch-action: pan-x pan-y; }
+@media (max-width: 700px) {
+  .image-comparison { grid-template-columns: minmax(0, 1fr); }
+  .comparison-heading { min-height: 0; padding: 10px 12px; }
+  .comparison-heading strong { font-size: 12px; }
+  .image-comparison .stage { max-height: 48svh; }
+}

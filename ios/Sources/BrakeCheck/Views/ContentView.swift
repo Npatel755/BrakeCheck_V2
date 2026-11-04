@@ -66,7 +66,9 @@ struct ContentView: View {
     @AppStorage("onboarding.driverAidNotice") private var acceptedNotice = 0
     @AppStorage("onboarding.practiceDriveOffered") private var practiceDriveOffered = false
     @State private var showPracticePrompt = false
-    @State private var practiceStartedAt: Date?
+    @State private var homeChecklistPresented = false
+    @State private var practiceFlow = PracticeDriveFlow()
+    @State private var onboardingVisible = false
     @State private var showOnboardingPremium = false
 
     init(model: DriveModel) {
@@ -194,59 +196,84 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.2), value: showCameraSetup)
     }
 
-    /// After the notice: offer the practice drive once, and follow a watched one with Premium.
+    private var practiceContext: PracticeDriveFlow.Context {
+        var context = PracticeDriveFlow.Context()
+        context.visible = onboardingVisible
+        context.foreground = scenePhase == .active
+        context.noticeAccepted = acceptedNotice >= 1
+        context.previouslyOffered = practiceDriveOffered
+        context.onHome = page == .home
+        context.liveTrip = model.tripActive
+        context.finalizing = model.stopping
+        context.replay = model.replaying
+        context.navigation = navigation.isNavigating
+        context.checkin = safety.checkinPresented || showCheckin || requestDemo
+        context.presentationBusy = !destinationPath.isEmpty || showCameraSetup || selecting || keyboardShown || homeChecklistPresented
+            || showFirstTripPremium || showOnboardingPremium || stopping || model.message != nil || completedTripID != nil
+        context.subscribed = premiumStore.isSubscribed
+        context.demoSessionID = model.demoSessionID
+        return context
+    }
+
     private func observingOnboarding<Content: View>(_ content: Content) -> some View {
         content
-        .onAppear { offerPracticeDriveIfDue() }
-        .onChange(of: acceptedNotice) { _, _ in offerPracticeDriveIfDue() }
-        .sheet(isPresented: $showPracticePrompt) {
-            PracticeDrivePrompt(start: startPracticeDrive, skip: { showPracticePrompt = false })
-                .presentationDetents([.medium, .large])
+        .onAppear { onboardingVisible = true; reconcilePractice() }
+        .onDisappear { onboardingVisible = false; reconcilePractice() }
+        .onChange(of: practiceContext) { _, _ in reconcilePractice() }
+        .sheet(isPresented: $showPracticePrompt, onDismiss: {
+            practiceFlow.skip(); presentPendingCheckin(); presentFinalizedTripSummary()
+        }) {
+            PracticeDrivePrompt(start: startPracticeDrive, skip: {
+                practiceFlow.skip(); showPracticePrompt = false
+            })
+            .presentationDetents([.medium, .large])
         }
-        .fullScreenCover(isPresented: $showOnboardingPremium) {
+        .fullScreenCover(isPresented: $showOnboardingPremium, onDismiss: {
+            presentPendingCheckin(); presentFinalizedTripSummary()
+        }) {
             PremiumView(model: model, context: .onboarding, onClose: { showOnboardingPremium = false })
         }
-        .task(id: practiceStartedAt) {
-            guard practiceStartedAt != nil else { return }
-            try? await Task.sleep(for: .seconds(16))
-            if practiceStartedAt != nil { finishPracticeDrive() }
+        .task(id: practiceFlow.request) {
+            guard let request = practiceFlow.request else { return }
+            do {
+                // Loop only for an early wake; canceled or replaced requests never fire.
+                while ProcessInfo.processInfo.systemUptime < request.deadline {
+                    try await Task.sleep(for: .seconds(max(0.001,
+                        request.deadline - ProcessInfo.processInfo.systemUptime)))
+                }
+                try Task.checkCancellation()
+            } catch { return }
+            applyPractice(practiceFlow.fire(request, context: practiceContext,
+                now: ProcessInfo.processInfo.systemUptime))
+            reconcilePractice()
         }
     }
 
-    private func offerPracticeDriveIfDue() {
-        guard acceptedNotice >= 1, !practiceDriveOffered, !model.tripActive, !model.replaying, !model.demo else { return }
-        practiceDriveOffered = true
-        Task { @MainActor in
-            // Let the notice finish closing before the sheet opens.
-            try? await Task.sleep(for: .milliseconds(600))
-            showPracticePrompt = true
+    private func reconcilePractice() {
+        applyPractice(practiceFlow.reconcile(practiceContext, now: ProcessInfo.processInfo.systemUptime))
+    }
+    private func applyPractice(_ actions: [PracticeDriveFlow.Action]) {
+        for action in actions {
+            switch action {
+            case .showOffer:
+                // Persist only an offer that is actually being presented.
+                practiceDriveOffered = true; showPracticePrompt = true
+            case .dismissOffer: showPracticePrompt = false
+            case .startDemo(let id): model.setDemo(true, hardBrake: true, sessionID: id)
+            case .stopDemo(let id):
+                if model.demoSessionID == id { model.setDemo(false) }
+            case .returnHome: page = .home
+            case .showPremium: showOnboardingPremium = true
+            }
         }
     }
-
     private func startPracticeDrive() {
+        practiceFlow.accept(practiceContext, now: ProcessInfo.processInfo.systemUptime)
         showPracticePrompt = false
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !model.tripActive, !model.replaying else { return }
-            // Demo mode moves to the camera page by itself (observingNavigation). The hard-brake
-            // scenario makes the full Brake warning play about 7 s in.
-            model.setDemo(true, hardBrake: true)
-            practiceStartedAt = Date()
-        }
     }
-
-    /// The simulated car ahead brakes about 7 s in and the warning follows, so Premium is offered
-    /// only after a drive that ran long enough to show it.
     private func finishPracticeDrive() {
-        guard let started = practiceStartedAt else { return }
-        practiceStartedAt = nil
-        model.setDemo(false)
-        page = .home
-        guard Date().timeIntervalSince(started) >= 12, !premiumStore.isSubscribed else { return }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(500))
-            showOnboardingPremium = true
-        }
+        applyPractice(practiceFlow.finish(practiceContext, now: ProcessInfo.processInfo.systemUptime))
+        reconcilePractice()
     }
 
     private func observingKeyboard<Content: View>(_ content: Content) -> some View {
@@ -366,7 +393,8 @@ struct ContentView: View {
                  openTripHistory: { destinationPath.append(.tripHistory) },
                  openReplay: { destinationPath.append(.replay) }, beginCalibration: beginCalibration,
                  openTrip: { destinationPath.append(.trip($0)) },
-                 openPremium: { destinationPath.append(.premium) })
+                 openPremium: { destinationPath.append(.premium) },
+                 onChecklistChanged: { homeChecklistPresented = $0 })
     }
 
     private func cameraPage(portrait: Bool) -> some View {
@@ -374,7 +402,7 @@ struct ContentView: View {
                    portrait: portrait, cameraVisible: page == .camera && destinationPath.isEmpty,
                    showCameraSetup: $showCameraSetup, selecting: $selecting,
                    selection: $selection, measuredDistance: $measuredDistance,
-                   practiceActive: practiceStartedAt != nil, endPractice: finishPracticeDrive)
+                   practiceActive: practiceFlow.sessionID != nil, endPractice: finishPracticeDrive)
     }
 
     // MARK: - Page switcher
@@ -513,7 +541,9 @@ struct ContentView: View {
     private func presentPendingCheckin() {
         if requestDemo { requestDemo = false; model.simulateCheckin() }
         if safety.checkinPresented {
-            if showFirstTripPremium { showFirstTripPremium = false }
+            if showPracticePrompt { showPracticePrompt = false }
+            else if showOnboardingPremium { showOnboardingPremium = false }
+            else if showFirstTripPremium { showFirstTripPremium = false }
             else { showCheckin = true }
         }
     }

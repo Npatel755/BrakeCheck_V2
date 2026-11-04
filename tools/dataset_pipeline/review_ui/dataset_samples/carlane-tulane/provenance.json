@@ -1,0 +1,46 @@
+{
+  "source_page": "https://carlanebenchmark.github.io/",
+  "retrieved_at": 1792556528.7211692,
+  "use": "visual inspection only; not imported into training or main review queue",
+  "items": [
+    {
+      "filename": "0157.jpg",
+      "source_url": "https://carlanebenchmark.github.io/static/images/dataset_images/TuLane/source/0157.jpg",
+      "sha256": "bec0cad01f70656b24110690a294644224edc2148f7a6a0b691b8c834a70a529",
+      "bytes": 62291,
+      "dimensions": [
+        1280,
+        720
+      ],
+      "domain": "CARLA simulation",
+      "subset": "TuLane source",
+      "selection": "publisher-selected website example; not a random training sample"
+    },
+    {
+      "filename": "0182.jpg",
+      "source_url": "https://carlanebenchmark.github.io/static/images/dataset_images/TuLane/source/0182.jpg",
+      "sha256": "1b0e31511f8885f5f585f196acdc361df55f4a9d9b56d401bb2241c4d7b5d5c5",
+      "bytes": 44785,
+      "dimensions": [
+        1280,
+        720
+      ],
+      "domain": "CARLA simulation",
+      "subset": "TuLane source",
+      "selection": "publisher-selected website example; not a random training sample"
+    },
+    {
+      "filename": "0046.jpg",
+      "source_url": "https://carlanebenchmark.github.io/static/images/dataset_images/TuLane/source/0046.jpg",
+      "sha256": "0da1832be716acef4b9962191e83b52488d8b7198308427496f2eeb4365161b1",
+      "bytes": 81594,
+      "dimensions": [
+        1280,
+        720
+      ],
+      "domain": "CARLA simulation",
+      "subset": "TuLane source",
+      "selection": "publisher-selected website example; not a random training sample"
+    }
+  ]
+}

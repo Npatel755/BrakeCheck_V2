@@ -355,7 +355,7 @@ struct SettingsView: View {
             .onChange(of: recordingLimitGB) { _, _ in model.applyRecordingPreferences() }
             Text("At the limit, recording pauses and saved incident footage is preserved. Camera detection can continue. Recording also stops if the iPhone has less than 500 MB free.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-            Text("Free space or increase the limit, then restart the trip to resume recording.")
+            Text("Free space or increase the limit, then tap Resume recording while the trip camera is active.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Picker("Automatically delete saved incidents", selection: Binding(
                 get: { recordingRetentionDays },
@@ -374,6 +374,10 @@ struct SettingsView: View {
             Text("Cleanup runs between trips. Active incident footage is protected. Exported copies and trip metrics are not deleted.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Button("Refresh storage usage") { model.camera.refreshIncidents() }
+            if model.canResumeRecording {
+                Button(action: model.resumeRecording) { Label("Resume recording", systemImage: "record.circle") }
+                    .accessibilityIdentifier("recording.resume")
+            }
             Divider()
             Text("Trip maps and flagged moments stay on this iPhone. You can remove their GPS trail while keeping the trip totals.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)

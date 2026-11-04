@@ -1,0 +1,227 @@
+.sample-quick-actions {
+  position: fixed;
+  right: 20px;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 45;
+  display: flex;
+  gap: 10px;
+  filter: drop-shadow(0 8px 18px #0009);
+}
+
+.sample-quick-actions .decision {
+  min-height: 56px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+body.phone-review .sample-quick-actions {
+  display: none !important;
+}
+
+@media (max-width: 540px) {
+  .sample-quick-actions {
+    left: 12px;
+    right: 12px;
+  }
+
+  .sample-quick-actions .decision {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 10px;
+    font-size: 12px;
+  }
+}
+
+body.phone-review .phone-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  box-shadow: 0 -8px 30px #0009;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+body.phone-review .review-card {
+  padding-bottom: 90px;
+}
+
+body.phone-review #phone-undo {
+  grid-column: 1 / -1;
+  min-height: 36px;
+  background: #21372c;
+  color: #e1eee6;
+  font-size: 12px;
+}
+
+body.phone-review.has-review-undo .review-card {
+  padding-bottom: 136px;
+}
+
+body.sample-audit-page main {
+  padding-bottom: calc(110px + env(safe-area-inset-bottom));
+}
+
+body.sample-audit-page .actions {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  z-index: 40;
+  transform: translateX(-50%);
+  width: min(1444px, calc(100vw - 56px));
+  border: 1px solid #466550;
+  border-radius: 12px 12px 0 0;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 30px #0009;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+body.sample-audit-page .actions.editing {
+  grid-template-columns: 1fr 2fr;
+}
+
+body.sample-audit-page .actions button {
+  min-width: 0;
+}
+
+body.sample-audit-page .fix-tools {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sample-actions-height, 90px);
+  z-index: 41;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: min(1444px, calc(100vw - 56px));
+  max-height: min(45vh, 320px);
+  padding: 10px 14px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  background: #102219;
+  border: 1px solid #466550;
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -8px 30px #0006;
+}
+
+body.sample-audit-page .fix-line-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+body.sample-audit-page .fix-tools > * {
+  flex: 0 0 auto;
+}
+
+body.sample-audit-page .fix-line-tools > * {
+  flex: 0 0 auto;
+}
+
+body.sample-audit-page .fix-tools label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: #b6cbbe;
+}
+
+body.sample-audit-page .fix-tools button,
+body.sample-audit-page .fix-tools select {
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+body.sample-audit-page #fix-help {
+  max-width: 250px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #b6cbbe;
+}
+
+body.sample-audit-page .fix-tools .fix-warning-resolution {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #8f7547;
+  border-radius: 7px;
+  background: #30271a;
+  color: #f8dfb3;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+body.sample-audit-page .fix-warning-resolution input {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin: 1px 0;
+  accent-color: #b0edca;
+}
+
+body.sample-audit-page .fix-warning-resolution small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: #dbc7a3;
+}
+
+body.sample-audit-page .fix-tools .fix-complete-annotation-control {
+  border-color: #5c9272;
+  background: #193426;
+  color: #dcf3e4;
+}
+
+body.sample-audit-page .fix-active {
+  padding-bottom: calc(var(--sample-tools-height, 90px) + 16px);
+}
+
+body.sample-audit-page canvas.fixing {
+  aspect-ratio: auto;
+  height: auto;
+  touch-action: none;
+  cursor: crosshair;
+  outline: 2px solid #b0edca;
+  outline-offset: -2px;
+}
+
+body.sample-audit-page canvas.fixing:focus-visible {
+  outline-width: 4px;
+}
+
+body.sample-audit-page .photo-pair {
+  scroll-margin-top: 8px;
+  align-items: start;
+}
+
+body.sample-audit-page .photo-pair img,
+body.sample-audit-page .photo-pair canvas {
+  aspect-ratio: auto;
+  height: auto;
+}
+
+@media (max-width: 800px) {
+  body.sample-audit-page main {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+
+  body.sample-audit-page .actions,
+  body.sample-audit-page .fix-tools {
+    width: calc(100vw - 24px);
+  }
+
+  body.sample-audit-page .fix-tools {
+    padding: 8px;
+  }
+
+  body.sample-audit-page canvas.fixing {
+    scroll-margin-top: 8px;
+    scroll-margin-bottom: calc(var(--sample-actions-height, 90px) + var(--sample-tools-height, 90px) + 8px);
+  }
+}

@@ -1,0 +1,161 @@
+# BrakeCheck dataset pipeline configuration.
+# Paths are relative to this repo unless absolute. Every stage reads this file;
+# override it with `bcdata --config my.yaml ...`.
+
+data_root: BrakeCheck_Dataset
+target_images: 2000            # stop curating once this many unique images are kept
+seed: 1234
+
+download:
+  approval_threshold_gb: 5.0   # anything bigger needs --approve-download-gb
+  min_free_disk_gb: 20.0
+
+sources:
+  a2d2:
+    enabled: true
+    bucket: audi-autonomous-driving-dataset
+    camera: cam_front_center
+    limit: 4000
+    min_frame_gap: 30
+    split_policy: drive_rank
+  comma10k:
+    enabled: true
+    repo: commaai/comma10k
+    branch: master
+    folders: [imgs]            # imgs2 (paired fisheye) and imgsd (driver cam) are not road-facing lane data
+    only_trainable: true       # use files_trainable: masks the comma community has reviewed
+    limit: 2000
+  comma2k19:
+    enabled: false             # enable after the ~10 GB/chunk torrent is approved and extracted
+    local_root: ""             # folder that contains Chunk_1/, Chunk_2/ ...
+    base_fps: 1.0
+    adaptive: true
+    min_scene_change: 0.06     # mean abs gray difference (0-1) needed to keep an extra frame
+    max_gap_seconds: 5.0       # always keep at least one frame this often
+    segments_limit: 0          # 0 = all segments found
+  carla:
+    enabled: false
+    host: 127.0.0.1
+    port: 2000
+    towns: [Town01, Town03, Town04, Town05, Town10HD]
+    frames_per_town: 200
+    image_width: 1640
+    image_height: 590
+    camera_heights_m: [1.2, 1.4, 1.6]
+    camera_pitch_deg: [-4, -2, 0]
+  zod:
+    enabled: false
+    dataset_root: ""           # where `zod download` put the frames
+    version: full
+
+quality:
+  min_width: 320
+  min_height: 240
+  invalid_std: 3.0             # almost uniform frame (black/test pattern)
+  blur_abs: 12.0               # variance of Laplacian (on 640px-wide gray) below this...
+  blur_norm: 0.010             # ...AND contrast-normalised focus below this = severely blurry
+  black_p99: 14                # 99th percentile below this = unusable black frame
+  white_p1: 242                # 1st percentile above this = unusable white frame
+  phash_near_dup: 6            # Hamming distance (of 64) for near-duplicates
+  embed_near_dup: 0.975        # cosine similarity for near-duplicates
+
+embedding:
+  backend: auto                # auto | dinov3 | cheap
+  dinov3_model: facebook/dinov3-vitl16-pretrain-lvd1689m
+  batch_size: 16
+  image_size: 448
+
+curation:
+  images_per_cluster: 8
+  cluster_size_target: 25      # k = ceil(n / cluster_size_target)
+  rare_tag_bonus: 1.0
+
+scene:
+  zero_shot:
+    enabled: false             # needs a model whose licence you have cleared in licenses.yaml
+    model: openai/clip-vit-large-patch14
+    license_id: openai-clip
+
+teachers:
+  order: [source_labels, comma_segnet, dinov3_seg, sam3, sam2_refine]   # run one at a time, unload between
+  device: auto                 # auto | cuda | cpu
+  amp: true
+  comma_segnet:
+    enabled: true
+    hub_id: commaai/comma10k-segnet
+    input_width: 512
+    input_height: 384
+  sam3:
+    enabled: false             # gated checkpoint: request access to facebook/sam3 first
+    score_threshold: 0.35
+    lane_prompts: ["lane marking", "white lane line", "yellow lane line", "dashed lane line", "solid road line"]
+    road_prompts: ["drivable road surface"]
+    boundary_prompts: ["road edge"]
+  sam2_refine:
+    enabled: false
+    base: comma_segnet         # whose lane mask gets refined
+    checkpoint: models/sam2/sam2.1_hiera_large.pt
+    model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml
+    max_area_growth: 1.6
+    min_iou_with_candidate: 0.3
+  dinov3_seg:
+    enabled: false             # turns on only after a trained decoder checkpoint exists
+    backbone: facebook/dinov3-vitl16-pretrain-lvd1689m
+    checkpoint: models/dinov3_seg/current.pt
+    input_width: 896
+    input_height: 448
+    tile: false
+
+fusion:
+  # 0 = evaluated but kept out of labels until `bcdata evaluate` shows it helps
+  weights: {comma_segnet: 1.0, dinov3_seg: 1.5, sam3: 0.8, sam2_refine: 0.0}
+  threshold: 0.5
+  uncertain_low: 0.3
+  uncertain_high: 0.7
+
+geometry:
+  camera_center_x: 0.5         # ego position as a fraction of image width
+  horizon_y: 0.42              # rows above this fraction are ignored for lane tracking
+  bottom_ignore: 0.0           # extra bottom crop (fraction) besides the source hood mask
+  min_run_px: 2
+  max_run_frac: 0.08           # runs wider than this fraction of width at the bottom are transverse/blobs
+  link_tol_px: 14
+  gap_rows: 4
+  min_segment_rows: 8
+  dash_max_gap_frac: 0.22
+  dash_max_dx_px: 18
+  dash_max_dslope: 0.45
+  max_lanes_export: 4
+
+export:
+  ufld:
+    canvas_width: 1640
+    canvas_height: 590
+    # Per-source crop box in source pixels before resizing to the 1640x590 canvas. UFLD reads lane rows from
+    # 42% of the canvas height down (cfg.row_anchor = linspace(0.42, 1)), like CULane, so the crop puts the
+    # comma horizon (~row 395 of 874) at ~37% and stops above most hoods. Re-tune for the app's own camera.
+    crop:
+      a2d2: {x0: 0, y0: 0, x1: -1, y1: -1}
+      comma10k: {x0: 0, y0: 240, x1: 1164, y1: 659}
+      comma2k19: {x0: 0, y0: 240, x1: 1164, y1: 659}
+      carla: {x0: 0, y0: 0, x1: 1640, y1: 590}
+      default: {x0: 0, y0: 0, x1: -1, y1: -1}
+    line_width: 16
+    jpeg_quality: 95
+    pools: [commercial]        # never export quarantine pools unless you add them here on purpose
+    include_tiers: [source_label, high, medium, human]
+  splits: {train: 0.8, val: 0.1, test: 0.1}
+
+qc:
+  random_sample_rate: 0.05     # share of high-confidence images that still go to review
+  tiers: {high: 0.8, medium: 0.5}
+  temporal_max_dx_px: 40
+
+review:
+  reviewers: [reviewer_1, reviewer_2]
+  batch_size: 100
+
+active_learning:
+  min_new_reviewed: 100
+  min_iou_gain: 0.005
+  max_tag_regression: 0.03

@@ -7,7 +7,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>0.4.0</string>
 	<key>CFBundleVersion</key>
-	<string>73</string>
+	<string>74</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -56,6 +56,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
 	<key>BrakeCheckMeasurementRevision</key>
-	<string>N73</string>
+	<string>N74</string>
 </dict>
 </plist>

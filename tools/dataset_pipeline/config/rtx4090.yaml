@@ -1,0 +1,55 @@
+# Offline annotation teachers, not the eventual on-device UFLDv2 model.
+# Run sequentially, at native model resolution, with no smaller-model fallback.
+hardware:
+  require_cuda: true
+  expected_gpu: RTX 4090
+  precision: bfloat16
+  image_batch_size: 1
+  sequential_models: true
+  max_allocated_gib: 22
+models:
+  sam3:
+    hub_id: facebook/sam3
+    revision: 3c879f39826c281e95690f02c7821c4de09afae7
+    license: SAM License
+    commercial_status: permitted_with_conditions
+    license_url: https://raw.githubusercontent.com/facebookresearch/sam3/main/LICENSE
+    role: independent_text_prompted_paint_and_road_candidates
+    pipeline_version: sam3-boundaries-v2-road-occlusion-2
+    prompts: [lane markings, white lane line, yellow lane line, dashed lane line, solid lane line]
+    road_prompts: [road, paved road]
+    exclusion_prompts: [vehicle]
+    exclusion_max_area_fraction: 0.30
+    threshold: 0.35
+    # Instance scores are retained in the probability maps; extraction uses
+    # this explicit threshold too, rather than silently rejecting scores .35-.5.
+    geometry_threshold: 0.35
+    road_geometry_threshold: 0.35
+  sam2_large:
+    hub_id: facebook/sam2.1-hiera-large
+    revision: 665f8e2ad61cf5f53d65644ff27c8ee525124610
+    license: Apache-2.0
+    commercial_status: permitted
+    license_url: https://raw.githubusercontent.com/facebookresearch/sam2/main/LICENSE
+    license_scope_evidence: https://github.com/facebookresearch/sam2#license
+    role: source_guided_refinement_not_independent_evaluation
+    max_area_growth: 1.6
+    min_iou: 0.3
+  dinov3:
+    hub_id: facebook/dinov3-vit7b16-pretrain-lvd1689m
+    revision: b80367753773648a6793235ab9c65cdbb029506f
+    license: DINOv3 License
+    commercial_status: permitted_with_conditions
+    license_url: https://raw.githubusercontent.com/facebookresearch/dinov3/main/LICENSE.md
+    role: reserved_feature_backbone_requires_trained_lane_decoder
+    enabled: false
+    reason: Decoder training is authorized through bcdata.dinov3_training; predictions stay disabled until real GPU-fit and validation comparison are complete.
+policy:
+  human_review_required: true
+  overwrite_human_labels: false
+  auto_promote_model: false
+  select_models_using: validation_split_only
+  reserve_test_split_for: final_frozen_evaluation
+  unrestricted_community_checkpoints: false
+  fallback_to_smaller_models: false
+  training: deferred

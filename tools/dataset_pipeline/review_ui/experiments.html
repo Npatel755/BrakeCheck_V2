@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BrakeCheck Studio · Live experiments</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/datasets.css?v=1">
+  <link rel="stylesheet" href="/static/studio_nav.css?v=lead-cars1">
+  <link rel="stylesheet" href="/static/experiments.css?v=3">
+  <script defer src="/static/experiments.js?v=6"></script>
+</head>
+<body>
+  <header class="site-header"><a class="brand" href="/">B<span>BrakeCheck<small>DATASET STUDIO</small></span></a><span class="local-badge">LIVE MONITOR</span></header>
+  <nav class="phone-section-tabs" aria-label="Phone app sections"><a href="/?phone=1">Photos</a><a href="/lead-cars">Lead cars</a><a href="/model-errors">Model errors</a><a href="/experiments" aria-current="page">Experiments</a></nav>
+<nav class="studio-nav" aria-label="Studio navigation"><a href="/lead-cars">Lead cars</a><a href="/">Review photos</a><a href="/datasets">Datasets</a><a href="/experiments" aria-current="page">Experiments</a><a href="/experiment">Model proposals</a><a href="/model-errors">Model mistakes</a></nav>
+  <main>
+    <section class="page-heading"><div><p class="eyebrow">TRAINING & EXPERIMENTS</p><h1>Watch every run.</h1><p class="intro">Live progress from cleared training and experimental runs. Updates every 5 seconds while this page is visible.</p></div><button id="refresh" type="button">Refresh now</button></section>
+    <p id="connection" role="status" aria-live="polite">Connecting…</p>
+    <a id="pair-link" href="/" hidden>Open reviewer to pair this phone</a>
+    <section id="queue" class="monitor-panel" hidden aria-label="Experiment queue"></section>
+    <div class="monitor-layout">
+      <section aria-labelledby="runs-title"><h2 id="runs-title">Runs</h2><div id="runs"></div></section>
+      <section id="detail" class="monitor-panel" aria-label="Selected run" hidden>
+        <div class="section-heading"><div><p id="kind" class="eyebrow"></p><h2 id="run-title"></h2></div><span id="phase" class="status"></span></div>
+        <p id="worker" class="hint"></p><p id="error" role="alert" hidden></p>
+        <div class="progress-heading"><span id="progress-label"></span><strong id="percent"></strong></div>
+        <progress id="bar" max="100" aria-label="Optimizer progress"></progress>
+        <p id="stage" class="hint"></p>
+        <div id="metrics" class="monitor-metrics"></div>
+        <p><a href="/model-errors">Review missed lanes, false positives and other model mistakes →</a></p>
+        <div class="chart-grid"><div><h3>Training loss</h3><div id="loss-chart"></div></div><div><h3>Validation lane F1</h3><div id="f1-chart"></div></div></div>
+        <p class="hint">Charts update after each completed epoch. Lane F1 uses the local validation evaluator.</p>
+        <details><summary>Recent training log</summary><pre id="log"></pre></details>
+      </section>
+    </div>
+    <p id="warnings" class="warning" hidden></p>
+  </main>
+</body>
+</html>

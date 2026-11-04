@@ -33,9 +33,11 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         onStatus: { [weak self] message in self?.onRecorderStatus?(message) },
         onIncidents: { [weak self] events in self?.onIncidents?(events) },
         onStorage: { [weak self] bytes in self?.onRecordingStorage?(bytes) },
-        onRecovery: { [weak self] clips, warnings in self?.onRecordingRecovery?(clips, warnings) })
+        onRecovery: { [weak self] clips, warnings in self?.onRecordingRecovery?(clips, warnings) },
+        onEnabled: { [weak self] enabled in self?.onRecordingEnabled?(enabled) })
     var onCameraStatus: ((String, Bool) -> Void)?
     var onRecorderStatus: ((String) -> Void)?
+    var onRecordingEnabled: ((Bool) -> Void)?
     var onIncidents: (([IncidentManifest]) -> Void)?
     var onRecordingStorage: ((Int64?) -> Void)?
     var onRecordingRecovery: (([UnindexedRecording], [String]) -> Void)?
@@ -234,6 +236,13 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     func refreshIncidents() { queue.async { self.recorder.refresh() } }
     func applyRecordingPreferences() { queue.async { self.recorder.applyStoragePreferences() } }
+    func resumeRecording() {
+        queue.async {
+            guard self.recovery.acceptsFrames, self.session.isRunning, !self.session.isInterrupted,
+                  self.geometryAvailable, !self.geometryChanging else { return }
+            self.recorder.resumeIfPaused()
+        }
+    }
 
     private func resetFrameTiming(notBefore time: TimeInterval) {
         captureTimestamp.reset(notBefore: time)

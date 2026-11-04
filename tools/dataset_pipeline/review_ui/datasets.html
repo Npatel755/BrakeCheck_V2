@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10221c">
+  <title>BrakeCheck Studio · Datasets</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/datasets.css?v=1">
+  <link rel="stylesheet" href="/static/studio_nav.css?v=lead-cars1">
+  <script defer src="/static/datasets.js?v=1"></script>
+</head>
+<body>
+  <header class="site-header"><a class="brand" href="/">B<span>BrakeCheck<small>DATASET STUDIO</small></span></a><span class="local-badge">LOCAL PC</span></header>
+  <nav class="phone-section-tabs" aria-label="Phone app sections"><a href="/?phone=1">Photos</a><a href="/lead-cars">Lead cars</a><a href="/model-errors">Model errors</a><a href="/experiments">Experiments</a></nav>
+<nav class="studio-nav" aria-label="Studio navigation"><a href="/lead-cars">Lead cars</a><a href="/">Review photos</a><a href="/datasets" aria-current="page">Datasets</a><a href="/experiment">Model proposals</a><a href="/experiments">Experiments</a><a href="/model-errors">Model mistakes</a></nav>
+  <main>
+    <section class="page-heading"><div><p class="eyebrow">TRAINING COLLECTIONS</p><h1>One cleared base.<br>Different experiments.</h1><p class="intro">Every collection starts with the same cleared converted photos, including your saved corrections. Compare what we add to that base.</p></div><button id="refresh" type="button">Refresh status</button></section>
+    <p><a href="/?queue=zod_audit">Review repaired ZOD audits with model proposals</a></p>
+    <p><a href="/source-audits">Review new front-camera dataset conversion samples</a></p>
+    <p><a href="/source-audits?source=college_held_repairs">Check fresh repair audits for the held College photos</a></p>
+    <p id="message" role="status" aria-live="polite">Loading dataset collections…</p>
+    <a id="pair-link" class="action" href="/" hidden>Open reviewer to pair this phone</a>
+    <div id="content" hidden>
+      <section class="base-panel" aria-label="Shared cleared base">
+        <div class="base-title"><span class="base-icon" aria-hidden="true">✓</span><div><p class="eyebrow">INCLUDED IN EVERY COLLECTION</p><h2>Cleared converted photos</h2><p id="base-description">Reviewed labels and conversions cleared through source audits.</p></div></div>
+        <div class="base-stats"><div><strong id="base-train">—</strong><span>training photos</span></div><div><strong id="base-val">—</strong><span>validation photos</span></div><div><strong id="base-test">—</strong><span>reserved test photos</span></div></div>
+        <div id="source-breakdown" class="source-list"></div>
+        <p class="base-note">The validation and test photos stay separate from training in every experiment.</p>
+      </section>
+      <section id="overnight-panel" class="overnight-panel" aria-labelledby="overnight-title" hidden>
+        <div class="section-heading"><div><p class="eyebrow">PRIVATE PROVISIONAL RUNS</p><h2 id="overnight-title">Overnight experiments</h2></div><span id="overnight-status" class="status"></span></div>
+        <p class="hint">Runs automatically in order 2 → 3 → 4. Unaudited additions are used only in these experiments. Approved collections stay unchanged until audits pass.</p>
+        <div id="overnight-jobs" class="overnight-jobs"></div>
+        <p id="overnight-message" class="hint"></p>
+      </section>
+      <section aria-label="Choose a dataset collection"><div class="section-heading"><h2>Choose a collection</h2><p>Each card is a different training combination.</p></div><div id="collections" class="collection-grid" role="tablist" aria-label="Dataset combinations"></div></section>
+      <section id="collection-detail" class="detail-panel" role="tabpanel" tabindex="0" aria-label="Selected dataset collection">
+        <div class="detail-heading"><div><p id="detail-kicker" class="eyebrow"></p><h2 id="detail-title"></h2></div><span id="detail-status" class="status"></span></div>
+        <p id="detail-description" class="detail-description"></p>
+        <div id="composition" class="composition" aria-label="Training data composition"></div>
+        <div id="detail-counts" class="detail-counts"></div>
+        <p id="provisional-counts" class="progress-text" hidden></p>
+        <div class="detail-columns"><div><h3>What this collection contains</h3><ul id="contents"></ul></div><div><h3 id="steps-heading">Status and next steps</h3><ol id="steps"></ol></div></div>
+        <p id="progress" class="progress-text" hidden></p>
+        <p id="simulation-progress" class="progress-text simulation-progress" hidden></p>
+        <div id="links" class="action-row"></div>
+        <div id="extra-preview" class="extra-preview" hidden></div>
+      </section>
+      <section class="base-previews" aria-labelledby="base-preview-title"><div class="section-heading"><div><p class="eyebrow">THE BASE IN EVERY COLLECTION</p><h2 id="base-preview-title">Converted photo examples</h2></div><button id="more-samples" type="button">More examples</button></div><p class="hint">These show the frozen training photos and their cleared painted-line labels. Browsing here does not change your reviews.</p><div id="base-samples" class="sample-grid"></div><p id="sample-message" role="status"></p></section>
+      <p id="warnings" class="warning" hidden></p>
+      <p id="updated" class="updated"></p>
+    </div>
+  </main>
+</body>
+</html>

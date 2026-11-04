@@ -11,6 +11,7 @@ final class QueuedSegmentRecorder {
     private let onIncidents: ([IncidentManifest]) -> Void
     private let onStorage: (Int64?) -> Void
     private let onRecovery: ([UnindexedRecording], [String]) -> Void
+    private let onEnabled: (Bool) -> Void
     // Created and accessed only on the recorder queue.
     private lazy var recorder: SegmentRecorder = {
         let result = SegmentRecorder(queue: work.queue)
@@ -18,17 +19,20 @@ final class QueuedSegmentRecorder {
         result.onIncidents = onIncidents
         result.onStorage = onStorage
         result.onRecovery = onRecovery
+        result.onEnabled = onEnabled
         return result
     }()
 
     init(onStatus: @escaping (String) -> Void,
          onIncidents: @escaping ([IncidentManifest]) -> Void,
          onStorage: @escaping (Int64?) -> Void,
-         onRecovery: @escaping ([UnindexedRecording], [String]) -> Void) {
+         onRecovery: @escaping ([UnindexedRecording], [String]) -> Void,
+         onEnabled: @escaping (Bool) -> Void) {
         self.onStatus = onStatus
         self.onIncidents = onIncidents
         self.onStorage = onStorage
         self.onRecovery = onRecovery
+        self.onEnabled = onEnabled
     }
 
     func append(_ sample: CMSampleBuffer, capturedAt: Date) {
@@ -39,6 +43,7 @@ final class QueuedSegmentRecorder {
         work.submitCommand { self.recorder.start(); completion() }
     }
     func refresh() { work.submitCommand { self.recorder.refresh() } }
+    func resumeIfPaused() { work.submitCommand { self.recorder.resumeIfPaused() } }
     func applyStoragePreferences() { work.submitCommand { self.recorder.applyStoragePreferences() } }
     func beginOrientationSegment() { work.submitCommand { self.recorder.beginOrientationSegment() } }
     func markIncident(reason: String, tripID: UUID) { work.submitCommand { self.recorder.markIncident(reason: reason, tripID: tripID) } }
@@ -63,7 +68,9 @@ final class SegmentRecorder {
     private var pendingEvents = Set<UUID>()
     private var recovery = RecordingLibrarySnapshotState()
     private var prepared = false
-    private var enabled = false
+    private var enabled = false { didSet { onEnabled?(enabled) } }
+    private var resumeGate = RecordingResumeGate()
+    private var storageCompletions: [() -> Void] = []
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
     private var segmentURL: URL?
@@ -80,6 +87,7 @@ final class SegmentRecorder {
     private var storageGeneration = 0
     private var lastStorageScan = Date.distantPast
     private let storageQueue = DispatchQueue(label: "BrakeCheck.videoStorage", qos: .utility)
+    var onEnabled: ((Bool) -> Void)?
     var onStatus: ((String) -> Void)?
     var onIncidents: (([IncidentManifest]) -> Void)?
     var onStorage: ((Int64?) -> Void)?
@@ -168,7 +176,8 @@ final class SegmentRecorder {
         refreshStorageUsage(force: true)
     }
 
-    private func refreshStorageUsage(force: Bool = false) {
+    private func refreshStorageUsage(force: Bool = false, completion: (() -> Void)? = nil) {
+        if let completion { storageCompletions.append(completion) }
         guard !storageScanRunning,
               force || Date().timeIntervalSince(lastStorageScan) >= 30 else { return }
         storageScanRunning = true
@@ -176,20 +185,7 @@ final class SegmentRecorder {
         let roots = [ringURL, incidentsURL]
         let generation = storageGeneration
         storageQueue.async {
-            var bytes: Int64 = 0
-            var seen = Set<String>()
-            for root in roots {
-                guard let entries = FileManager.default.enumerator(at: root,
-                    includingPropertiesForKeys: [.isRegularFileKey]) else { continue }
-                for case let file as URL in entries where file.pathExtension == "mp4" {
-                    guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
-                          let size = attributes[.size] as? NSNumber else { continue }
-                    // Hard-linked ring/incident clips occupy disk space once.
-                    let key = (attributes[.systemFileNumber] as? NSNumber)?.stringValue ?? file.path
-                    if seen.insert(key).inserted { bytes += size.int64Value }
-                }
-            }
-            let measuredBytes = bytes
+            let measuredBytes = RecordingStorageInventory.bytes(in: roots)
             self.queue.async {
                 self.storageScanRunning = false
                 guard self.storageGeneration == generation else {
@@ -199,26 +195,65 @@ final class SegmentRecorder {
                 self.storageBytes = measuredBytes
                 self.onStorage?(measuredBytes)
                 if self.enabled, let limit = RecordingStoragePolicy.limitBytes(
-                    gigabytes: UserDefaults.standard.integer(forKey: "recording.limitGB")), measuredBytes >= limit {
-                    self.pause(reason: "Recording limit reached. Saved incident videos are preserved.")
+                    gigabytes: UserDefaults.standard.integer(forKey: "recording.limitGB")) {
+                    if let measuredBytes {
+                        if measuredBytes >= limit {
+                            self.pause(reason: "Recording limit reached. Saved incident videos are preserved.")
+                        }
+                    } else {
+                        self.pause(reason: "Recording paused because its storage limit could not be checked. Original clips were kept.")
+                    }
                 }
+                let completions = self.storageCompletions
+                self.storageCompletions = []
+                completions.forEach { $0() }
             }
         }
     }
 
-    func start() {
+    func resumeIfPaused() {
+        guard !enabled, let request = resumeGate.begin() else { return }
         do {
-            try prepareIfNeeded()
-            applyStoragePreferences()
-            for segment in ring { try copyToMatchingEvents(segment) }
-            prune(now: Date())
-            guard storageAvailable() else {
-                onStatus?(storageStopReason)
+            // Finish any retention/pruning work before measuring; enabling must
+            // not invalidate the fresh app-limit measurement with another prune.
+            try prepareRecording()
+        } catch {
+            _ = resumeGate.take(request)
+            onStatus?("Recorder: \(error.localizedDescription)")
+            return
+        }
+        onStatus?("Checking space before resuming recording...")
+        refreshStorageUsage(force: true) {
+            guard self.resumeGate.take(request), !self.enabled else { return }
+            guard self.storageBytes != nil else {
+                self.onStatus?("Could not measure recording storage. Original clips were kept. Retry recording when storage is available.")
                 return
             }
-            enabled = true
-            lastStorageCheck = Date()
-            onStatus?("Waiting for camera frames…")
+            self.enableRecordingIfStorageAvailable()
+        }
+    }
+
+    private func invalidateResume() { resumeGate.invalidate() }
+
+    private func prepareRecording() throws {
+        try prepareIfNeeded()
+        applyStoragePreferences()
+        for segment in ring { try copyToMatchingEvents(segment) }
+        prune(now: Date())
+    }
+
+    private func enableRecordingIfStorageAvailable() {
+        guard storageAvailable() else { onStatus?(storageStopReason); return }
+        enabled = true
+        lastStorageCheck = Date()
+        onStatus?("Waiting for camera frames...")
+    }
+
+    func start() {
+        invalidateResume()
+        do {
+            try prepareRecording()
+            enableRecordingIfStorageAvailable()
         } catch { onStatus?("Recorder: \(error.localizedDescription)") }
     }
 
@@ -394,6 +429,7 @@ final class SegmentRecorder {
 
     /// Suspends capture, but leaves requested event windows open in case recording resumes.
     func pause(reason: String, completion: (() -> Void)? = nil) {
+        invalidateResume()
         enabled = false
         notePending(reason)
         finishSegment()
@@ -402,6 +438,7 @@ final class SegmentRecorder {
     }
 
     func stop(completion: (() -> Void)? = nil) {
+        invalidateResume()
         enabled = false
         notePending("Trip ended. The full post-event window may not be available.")
         finishSegment()

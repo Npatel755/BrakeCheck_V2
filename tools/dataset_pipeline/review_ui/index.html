@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#10221c" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <link rel="manifest" href="/static/manifest.webmanifest" />
+    <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/style.css?v=label-checks1" />
+    <link rel="stylesheet" href="/static/models.css?v=boundaries2" />
+    <link rel="stylesheet" href="/static/editor.css?v=boundaries2" />
+    <link rel="stylesheet" href="/static/phone.css?v=zod-models2" />
+    <title>BrakeCheck · Human review</title>
+    <script defer src="/static/app.js?v=zod-single-action-approval1"></script>
+    <script defer src="/static/ease.js?v=zod-audits2"></script>
+    <script defer src="/static/phone.js?v=zod-single-action-approval1"></script>
+    <link rel="stylesheet" href="/static/ease.css?v=1" />
+    <link rel="stylesheet" href="/static/comparison.css?v=1" />
+    <link rel="stylesheet" href="/static/studio_nav.css?v=lead-cars1" />
+    <link rel="stylesheet" href="/static/sample_actions.css?v=review-undo1" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/"
+        ><span class="brand-icon">B<span>↗</span></span
+        ><span>BrakeCheck<small>DATASET STUDIO</small></span></a
+      >
+      <div class="top-actions">
+        <span id="connection" class="connection"><i></i> PC connected</span
+        ><button id="pair-phone" class="button quiet" hidden>Pair phone</button
+        ><button id="leaderboard" class="button quiet">Leaderboard</button
+        ><button id="activity" class="button quiet">Activity</button>
+      </div>
+    </header>
+    <nav class="phone-section-tabs" aria-label="Phone app sections"><a href="/?phone=1" aria-current="page">Photos</a><a href="/lead-cars">Lead cars</a><a href="/model-errors">Model errors</a><a href="/experiments">Experiments</a></nav>
+<nav class="studio-nav" aria-label="Studio navigation"><a href="/lead-cars">Lead cars</a><a href="/" aria-current="page">Review photos</a><a href="/datasets">Datasets</a><a href="/experiment">Model proposals</a><a href="/experiments">Experiments</a><a href="/model-errors">Model mistakes</a></nav>
+    <main id="workspace" hidden>
+      <div class="phone-header">
+        <span>BrakeCheck <small id="phone-progress">Photo review</small></span>
+        <select id="phone-queue" aria-label="Photo queue">
+          <option value="audit_sample">Audit samples</option>
+          <option value="zod_audit">ZOD repaired audits</option><option value="zod_repair">ZOD needs repair</option><option value="zod_later">ZOD review later</option>
+          <option value="repair_sample">Repair examples</option>
+          <option value="label_check">UFLD label checks</option>
+          <option value="pending">All to review</option>
+          <option value="flagged">Flagged conversions</option>
+          <option value="later">Review later</option>
+        </select>
+        <button id="phone-leaderboard" class="button quiet" aria-label="Leaderboard" title="Leaderboard">&#127942;</button>
+      </div>
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">BRAKECHECK / HUMAN REVIEW</p>
+          <h1>Check the road ahead.</h1>
+          <p class="intro">
+            Review painted lines and road edges separately. Draw what you can
+            see; mark uncertainty when you cannot.
+          </p>
+        </div>
+        <div class="progress-summary">
+          <strong id="progress-value">0 / 0</strong><span>images reviewed</span>
+          <div class="progress-track"><span id="progress-fill"></span></div>
+        </div>
+      </section>
+      <section class="summary" aria-label="Review progress">
+        <div>
+          <span class="stat-label">Audit samples</span
+          ><strong id="pending">—</strong>
+        </div>
+        <div>
+          <span class="stat-label">Human approved</span
+          ><strong id="accepted" class="mint">—</strong>
+        </div>
+        <div>
+          <span class="stat-label">Human rejected</span
+          ><strong id="rejected" class="rose">—</strong>
+        </div>
+        <div>
+          <span class="stat-label">Corrected</span
+          ><strong id="corrected">—</strong>
+        </div>
+      </section>
+      <p id="review-backlog" class="hint" role="status"></p>
+      <section id="source-audit-summary" class="source-audit-summary" hidden aria-label="Source annotation validation">
+        <strong id="source-audit-heading">Source annotations · sampled review</strong>
+        <p id="source-audit-counts"></p>
+        <p id="source-audit-hint" class="hint">Start with Audit samples. A conversion flag means a check is uncertain, not that every drawn line is wrong. Other source labels wait separately; if an audit sample needs correction, its group stays held for a conversion fix.</p>
+        <button id="review-source-sample" class="button">Review audit sample</button>
+        <button id="review-source-flagged" class="button quiet">Open flagged conversions (optional)</button>
+        <button id="review-repair-examples" class="button quiet">Repair examples</button>
+        <p id="repair-example-hint" class="hint" hidden></p>
+      </section>
+      <section id="label-check-summary" class="label-check-summary" hidden aria-label="UFLD annotation checks">
+        <div>
+          <strong>UFLD label checks</strong>
+          <p id="label-check-counts" class="hint"></p>
+        </div>
+        <button id="review-label-checks" class="button">Review UFLD label checks</button>
+      </section>
+      <section id="zod-audit-summary" class="source-audit-summary" hidden aria-label="ZOD conversion audits">
+        <strong>ZOD · repaired conversion audits</strong>
+        <p id="zod-audit-counts" class="hint"></p>
+        <button id="review-zod-audits" class="button">Review ZOD audit samples</button>
+        <p class="hint">Saved human labels are counted separately from source audits. Unchanged whole-photo confirmations can pass an audit; actual label changes hold that source cohort. Machine findings are grouped by repair cause. Cleared labels enter a new training snapshot after export checks.</p>
+      </section>
+      <div class="review-layout">
+        <section class="review-card">
+          <div class="card-heading">
+            <div class="queue-label">
+              <span class="live-dot"></span
+              ><strong id="queue-heading">Review queue</strong
+              ><span id="split-badge" class="badge">TEST FIRST</span>
+            </div>
+            <div class="filters">
+              <button id="batch-review" class="button">Batch review</button>
+              <select id="review-target" aria-label="Review target">
+                <option value="lanes">Painted lines only · UFLD</option>
+                <option value="both">Painted lines + road edges</option>
+              </select>
+              <select id="split-filter" aria-label="Split">
+                <option value="all">All splits</option>
+                <option value="test">Test</option>
+                <option value="val">Validation</option>
+                <option value="train">Training</option></select
+              ><select id="status-filter" aria-label="Review status">
+                <option value="audit_sample">Source audit sample</option>
+                <option value="zod_audit">ZOD repaired audits</option>
+                <option value="zod_repair">ZOD needs repair</option>
+                <option value="zod_later">ZOD review later</option>
+                <option value="repair_sample">Repair examples</option>
+                <option value="label_check">UFLD label checks</option>
+                <option value="pending">All review candidates</option>
+                <option value="flagged">Flagged conversions</option>
+                <option value="later">Review later</option>
+                <option value="awaiting_audit">Waiting for sample audit</option>
+                <option value="source_validated">Source validated</option>
+                <option value="approved">Approved</option>
+                <option value="corrected">Corrected</option>
+                <option value="rejected">Rejected</option>
+                <option value="all">All images</option>
+              </select>
+            </div>
+          </div>
+          <div class="image-toolbar">
+            <div class="toggles">
+              <label
+                ><input type="checkbox" id="show-labels" checked /><span
+                  class="line-key mint-key"
+                ></span
+                >Painted lines</label
+              ><label
+                ><input type="checkbox" id="show-edges" checked /><span
+                  class="line-key edge-key"
+                ></span
+                >Road edges</label
+              ><label
+                ><input type="checkbox" id="show-mask" checked /><span
+                  class="line-key yellow-key"
+                ></span
+                >Source paint</label
+              ><label
+                ><input type="checkbox" id="show-teacher" checked /><span
+                  class="line-key purple-key"
+                ></span
+                >Model</label
+              >
+            </div>
+            <div class="zoom">
+              <button id="zoom-out" aria-label="Zoom out">−</button
+              ><span id="zoom-level">100%</span
+              ><button id="zoom-in" aria-label="Zoom in">+</button>
+            </div>
+          </div>
+          <div id="model-options" class="model-options" hidden>
+            <select id="model-select" aria-label="Comparison model"></select
+            ><button id="use-model" class="button">
+              Use model lanes for correction
+            </button>
+            <button id="use-model-edges" class="button">
+              Use model road edges
+            </button>
+            <button id="refresh-models" class="button quiet">
+              Refresh predictions
+            </button>
+            <p id="model-note" class="hint" aria-live="polite"></p>
+          </div>
+          <div id="review-conflict" class="draft-banner" role="alert" hidden>
+            <span id="review-conflict-message"></span>
+            <div>
+              <button id="conflict-latest" class="button">Load latest labels</button>
+              <button id="conflict-next" class="button">Keep draft and review another</button>
+              <button id="conflict-download" class="button quiet">Download my draft</button>
+            </div>
+          </div>
+          <div id="draft-banner" class="draft-banner" hidden>
+            <span id="draft-message"
+              >An unfinished draft is saved on this device.</span
+            >
+            <div>
+              <button id="restore-draft" class="button">Restore draft</button
+              ><button id="download-draft" class="button quiet">Download draft</button
+              ><button id="discard-draft" class="button quiet">
+                Discard draft
+              </button>
+            </div>
+          </div>
+          <div id="drawing-bar" class="drawing-bar" hidden>
+            <div>
+              <strong id="drawing-target">Choose a boundary</strong
+              ><span id="drawing-instruction" aria-live="polite"
+                >Drag a point to adjust it.</span
+              >
+            </div>
+            <div class="drawing-actions">
+              <button
+                id="undo-node"
+                class="button"
+                title="Remove the last point placed on the selected boundary (Backspace)"
+              >
+                Undo last point</button
+              ><button
+                id="undo-edit"
+                class="button"
+                title="Undo an edit (Ctrl/⌘ Z)"
+              >
+                Undo edit</button
+              ><button
+                id="redo-edit"
+                class="button"
+                title="Redo an edit (Ctrl/⌘ Shift Z)"
+              >
+                Redo</button
+              ><button
+                id="auto-fix-points"
+                class="button"
+                title="Move out-of-image points onto the nearest image edge; undoable"
+              >
+                Auto-fix points</button
+              ><button id="pan-mode" class="button" aria-pressed="false">
+                Pan photo</button
+              ><button id="finish-lane" class="button primary" hidden>
+                Finish boundary
+              </button>
+            </div>
+          </div>
+          <section id="label-check-note" class="label-check-note" hidden aria-label="Annotation check for this photo">
+            <strong id="label-check-heading">UFLD label check</strong>
+            <p id="label-check-topics" class="label-check-topics"></p>
+            <p id="label-check-observation"></p>
+            <p class="hint">Inspect the painted-line labels. Approve if correct, edit to correct them, or exclude the photo. Skip saves this check in Review later.</p>
+          </section>
+          <div id="image-comparison" class="image-comparison">
+            <section id="reference-pane" class="comparison-pane">
+              <header class="comparison-heading">
+                <strong>Source paint &amp; model proposals</strong>
+                <span>Reference only · use a model proposal to adopt it</span>
+              </header>
+              <div id="reference-stage" class="stage reference-stage">
+                <div id="reference-wrap">
+                  <canvas id="reference-canvas" width="1164" height="874" aria-label="Read-only source paint and model predictions"></canvas>
+                </div>
+              </div>
+            </section>
+            <section class="comparison-pane">
+              <header class="comparison-heading">
+                <strong>Painted lines · review and edit here</strong>
+                <span>These are the lane lines you approve for UFLDv2</span>
+                <button id="toggle-reference" class="text-button" aria-expanded="true">Hide reference</button>
+              </header>
+          <div id="stage" class="stage">
+            <div id="canvas-wrap">
+              <canvas
+                id="canvas"
+                width="1164"
+                height="874"
+                aria-label="Road image and editable lane labels"
+              ></canvas>
+            </div>
+            <div id="stage-message" class="stage-message">
+              Loading the next image…
+            </div>
+          </div>
+            </section>
+          </div>
+          <div class="phone-model-tools">
+            <button id="phone-use-model" class="button">Use model lanes</button>
+            <select id="phone-model-select" aria-label="Phone comparison model"></select>
+            <span id="phone-model-name"></span>
+          </div>
+          <section id="zod-audit-note" class="label-check-note" hidden aria-label="ZOD sample confirmation">
+            <strong>ZOD conversion group sample</strong>
+            <p class="hint">Approve or Save confirms you checked the photo. No extra checkbox is needed.</p>
+            <button id="zod-no-paint" type="button" class="button quiet" aria-pressed="false">No visible lane paint — clear draft</button>
+            <p id="zod-sample-info"></p>
+            <label id="zod-observed-control" hidden><input id="zod-observed" type="checkbox"> Compare original painted sections (gold) on the reference photo.</label>
+            <p id="zod-empty-status" class="hint" role="status" hidden></p>
+          </section>
+          <div class="image-caption">
+            <div>
+              <strong id="image-name">—</strong
+              ><span id="provenance"
+                >Source-derived proposal · awaiting human review</span
+              >
+            </div>
+            <button id="restore-later" class="button quiet" hidden>Return to review queue</button>
+            <button id="skip" class="button quiet">Skip for now →</button>
+          </div>
+          <div class="label-summary">
+            <span id="label-summary">No image loaded</span
+            ><button id="no-lanes" class="button quiet">
+              No painted lines
+            </button>
+          </div>
+          <section id="editor" class="editor" hidden>
+            <div class="editor-heading">
+              <strong
+                >Edit labels
+                <span class="draft-pill">Unsaved draft</span></strong
+              ><button id="cancel-edit" class="button quiet">
+                Cancel changes
+              </button>
+            </div>
+            <div class="layer-tabs" role="tablist" aria-label="Label type">
+              <button
+                id="edit-lanes"
+                role="tab"
+                aria-selected="true"
+                class="layer-tab selected"
+              >
+                Painted lines</button
+              ><button
+                id="edit-edges"
+                role="tab"
+                aria-selected="false"
+                class="layer-tab"
+              >
+                Road edges
+              </button>
+            </div>
+            <div id="lane-panel" role="tabpanel" aria-labelledby="edit-lanes">
+              <p class="hint">
+                Trace the center of visible paint. Your lane is between 2 (left)
+                and 3 (right). Leave a missing painted line absent.
+              </p>
+              <div id="lane-list" class="lane-list"></div>
+              <button id="add-lane" class="button">+ Add painted line</button>
+              <div class="lane-options">
+                <label
+                  >Position
+                  <select id="lane-slot">
+                    <option value="1">1 · outer left</option>
+                    <option value="2">2 · your lane, left (ego left)</option>
+                    <option value="3">3 · your lane, right (ego right)</option>
+                    <option value="4">4 · outer right</option>
+                  </select></label
+                ><label
+                  >Paint
+                  <select id="lane-kind">
+                    <option value="solid">Solid</option>
+                    <option value="dashed">Dashed</option>
+                    <option value="double">Double</option>
+                  </select></label
+                >
+              </div>
+            </div>
+            <div
+              id="edge-panel"
+              role="tabpanel"
+              aria-labelledby="edit-edges"
+              hidden
+            >
+              <p class="hint">
+                Trace the visible outer road-surface limit at the foot of a curb
+                or where pavement / shoulder meets the surrounding surface. Keep
+                road edges separate from paint. Hidden, outside the photo, or
+                uncertain? Choose “Unclear / hidden”.
+              </p>
+              <div class="edge-sides">
+                <button id="edge-left" class="lane-chip" aria-pressed="true">
+                  Left road edge</button
+                ><button id="edge-right" class="lane-chip" aria-pressed="false">
+                  Right road edge
+                </button>
+              </div>
+              <div class="lane-options">
+                <label
+                  >Visibility
+                  <select id="edge-status">
+                    <option value="not_reviewed">Not reviewed yet</option>
+                    <option value="visible">Visible — trace it</option>
+                    <option value="absent">No boundary here</option>
+                    <option value="unknown">Unclear / hidden</option>
+                  </select></label
+                ><label
+                  >Edge type
+                  <select id="edge-kind">
+                    <option value="curb">Curb</option>
+                    <option value="pavement_edge">Pavement edge / grass</option>
+                    <option value="shoulder">Outer shoulder edge</option>
+                    <option value="barrier">Barrier at road edge</option>
+                    <option value="other">Other visible edge</option>
+                  </select></label
+                >
+              </div>
+              <button id="trace-edge" class="button">
+                + Trace selected edge
+              </button>
+              <p id="edge-review-progress" class="hint"></p>
+            </div>
+            <div class="edit-tools">
+              <button id="assist-trace" class="button">
+                Trace with two taps
+              </button>
+              <button id="assist-cancel" class="button quiet" hidden>
+                Cancel assisted trace
+              </button>
+              <button id="add-point" class="button">+ Add points</button
+              ><button id="remove-point" class="button">Remove a point</button
+              ><button id="delete-lane" class="button danger-text">
+                Delete boundary
+              </button>
+            </div>
+            <p id="edit-mode" class="hint" aria-live="polite">
+              Drag points to adjust.
+            </p>
+            <p id="draft-status" class="hint"></p>
+          </section>
+          <details id="label-guide" class="label-guide">
+            <summary>What should I label? · Quick guide</summary>
+            <p>
+              <b>Painted lines:</b> 2 = left of your lane, 3 = right of your
+              lane. 1 and 4 are the next painted boundaries farther left and
+              right. A double stripe is one boundary; connect dashes along the
+              same line.
+            </p>
+            <p>
+              <b>Road edges:</b> left and right road limits, even on unmarked
+              roads. Trace only the visible extent. A curb or grass edge is a
+              road edge, not a painted line. Shadows, cars, crosswalks and
+              pavement repair seams are neither.
+            </p>
+            <p>
+              <b>No painted lines</b> clears only paint in your draft. Road
+              edges may still be present. <b>No boundary here</b> means this
+              side visibly has no continuing edge, such as an open junction.
+              <b>Unclear / hidden</b> means you cannot judge an edge because it
+              is hidden, too dark, or outside the photo.
+              <b>Not reviewed yet</b> leaves that side unfinished.
+            </p>
+            <p>
+              <b>Save correction</b> accepts your draft.
+              <b>Exclude photo</b> removes the whole image from training; use
+              editing to fix poor proposals. <b>Skip for now</b> makes no
+              decision.
+            </p>
+            <p>
+              Draw from near to far. Tap to place points; drag handles to
+              adjust. Use <b>Undo last point</b> for a misplaced tap,
+              <b>Undo edit / Redo</b> for other changes, and <b>Pan photo</b> to
+              scroll while editing. Keyboard: Ctrl/⌘ Z, Ctrl/⌘ Shift Z,
+              Backspace, Escape to finish.
+            </p>
+            <button id="reset-messages" class="button quiet">
+              Show hidden messages again
+            </button>
+          </details>
+          <div class="decision-bar">
+            <button id="reject" class="decision reject">
+              <span aria-hidden="true">×</span> Exclude photo</button
+            ><button id="correct" class="decision correct">
+              <span aria-hidden="true">⌁</span> Edit labels</button
+            ><button id="approve" class="decision approve">
+              <span aria-hidden="true">✓</span> Human approve</button
+            ><button id="save-correction" class="decision approve" hidden>
+              <span aria-hidden="true">✓</span> Save correction
+            </button>
+          </div>
+          <div class="phone-actions" aria-label="Photo decisions">
+            <button id="phone-exclude" class="phone-action exclude">Exclude</button>
+            <button id="phone-fix" class="phone-action fix">Fix</button>
+            <button id="phone-approve" class="phone-action approve">Approve</button>
+            <button id="phone-skip" class="phone-action skip">Skip</button>
+            <button id="phone-undo" class="phone-action" hidden>Undo last decision</button>
+          </div>
+          <div class="save-strip">
+            <span id="save-status">Decisions are saved on the PC.</span
+            ><button id="undo" class="text-button" hidden>
+              Undo last decision
+            </button>
+          </div>
+        </section>
+        <aside class="sidebar">
+          <section class="side-card">
+            <p class="eyebrow">IMAGE DETAILS</p>
+            <div id="scene-tags" class="scene-tags"></div>
+            <dl id="image-details"></dl>
+            <div id="qc-issues" class="issues"></div>
+            <label class="notes-label" for="notes"
+              >Review notes <span>optional</span></label
+            ><textarea
+              id="notes"
+              rows="3"
+              maxlength="4000"
+              placeholder="Anything the next reviewer should know?"
+            ></textarea>
+          </section>
+          <section class="side-card pipeline-card">
+            <div class="side-heading">
+              <p class="eyebrow">PIPELINE</p>
+              <span class="badge">LOCAL PC</span>
+            </div>
+            <ol id="milestones" class="milestones"></ol>
+            <div class="export-summary">
+              <span id="export-state">Waiting for reviewed labels</span
+              ><button id="export" class="text-button">Refresh export</button>
+            </div>
+            <button id="backup" class="button wide">
+              Back up review progress
+            </button>
+          </section>
+          <section class="side-card">
+            <p class="eyebrow">ANNOTATION MODELS</p>
+            <p id="gpu-status" class="hint">
+              RTX 4090 profile · models run on the PC
+            </p>
+            <div id="model-status" class="hint">
+              Large-model setup pending. Source-based proposals are ready to
+              review.
+            </div>
+          </section>
+          <section class="side-card reference-card">
+            <p class="eyebrow">TWO LABEL TYPES</p>
+            <p>
+              Painted lines come with automatic proposals derived from existing
+              comma10k paint masks. An empty proposal still needs inspection.
+              Road edges are reviewed separately; older reviews have road edges
+              marked “not reviewed”.
+            </p>
+            <p>
+              <span class="purple-key line-key"></span> Model shows comparison
+              candidates. Use a candidate for correction before saving if it is
+              better; simply displaying it does not adopt it.
+            </p>
+            <p>
+              Painted labels export for UFLDv2. Reviewed road edges have a
+              separate dataset export. Provisional UFLDv2 training progress appears above.
+            </p>
+            <p>
+              On iPhone, open in Safari and use
+              <b>Share → Add to Home Screen</b>. Keep this PC running on the
+              same Wi-Fi, or use the private remote link when away.
+            </p>
+          </section>
+        </aside>
+      </div>
+      <footer>
+        <span>BrakeCheck · reviewed data for UFLDv2</span
+        ><span id="reviewer-label"></span
+        ><button id="logout" class="text-button" hidden>
+          Disconnect phone
+        </button>
+      </footer>
+    </main>
+    <div id="sample-quick-actions" class="sample-quick-actions" hidden>
+      <button id="quick-undo" class="decision correct" type="button" hidden>Undo last decision</button>
+      <button id="quick-fix" class="decision correct" type="button">Fix labels</button>
+      <button id="quick-approve" class="decision approve" type="button">
+        <span aria-hidden="true">✓</span> Approve sample
+      </button>
+    </div>
+    <section id="pair-screen" class="pair-screen" hidden>
+      <div class="pair-card">
+        <p class="eyebrow">CONNECT TO YOUR PC</p>
+        <h1>Your review desk.<br />In your hand.</h1>
+        <p>
+          Enter the pairing code shown on the PC. Images stay on the PC; your
+          phone sends review decisions.
+        </p>
+        <form id="pair-form">
+          <label
+            >Your name<input
+              id="reviewer-name"
+              maxlength="80"
+              autocomplete="name"
+              required
+              placeholder="Reviewer name" /></label
+          ><label
+            >Pairing code<input
+              id="pair-code"
+              inputmode="numeric"
+              pattern="[0-9]{6}"
+              maxlength="6"
+              autocomplete="one-time-code"
+              required
+              placeholder="000000" /></label
+          ><button class="decision approve" type="submit">
+            Connect phone →
+          </button>
+          <p id="pair-error" role="alert"></p>
+        </form>
+      </div>
+    </section>
+    <dialog id="pair-dialog">
+      <div class="dialog-heading">
+        <h2>Review from your phone</h2>
+        <details id="remote-share" hidden><summary>Use away from home</summary>
+          <p>Open this private link over cellular or any Wi-Fi. Keep the PC running.</p>
+          <img id="remote-qr" alt="Private remote review link" width="220" height="220" />
+          <input id="remote-url" readonly aria-label="Private remote review URL" />
+          <button id="copy-remote-url" class="button">Copy remote link</button>
+        </details>
+        <button class="close-dialog button quiet" aria-label="Close">×</button>
+      </div>
+      <p>
+        Connect your phone to the same Wi-Fi as this PC, then scan the code with
+        your camera.
+      </p>
+      <img
+        id="pair-qr"
+        alt="Scan to pair this phone"
+        width="240"
+        height="240"
+      />
+      <p class="pair-pin" id="host-pin"></p>
+      <div id="host-urls" class="host-urls"></div>
+      <p class="hint">
+        Open the address in Safari or Chrome. The PC stores every approval,
+        rejection, and correction.
+      </p>
+      <button id="revoke" class="button danger-text">
+        Disconnect all phones and change code
+      </button>
+    </dialog>
+    <dialog id="history-dialog">
+      <div class="dialog-heading">
+        <h2>Recent decisions</h2>
+        <button class="close-dialog button quiet" aria-label="Close">×</button>
+      </div>
+      <div id="history-list"></div>
+    </dialog>
+    <dialog
+      id="confirm-dialog"
+      aria-labelledby="confirm-heading"
+      aria-describedby="confirm-message"
+    >
+      <h2 id="confirm-heading">Confirm action</h2>
+      <p id="confirm-message"></p>
+      <label class="confirm-remember"
+        ><input id="confirm-remember" type="checkbox" /> Don't show this
+        confirmation again on this device</label
+      >
+      <div class="drawing-actions">
+        <button id="confirm-cancel" class="button">Cancel</button>
+        <button id="confirm-accept" class="button primary">Continue</button>
+      </div>
+    </dialog>
+    <dialog id="batch-dialog" aria-labelledby="batch-heading">
+      <div class="dialog-heading">
+        <h2 id="batch-heading">Review painted lines together</h2>
+        <button id="batch-close" class="button quiet">Close</button>
+      </div>
+      <p class="hint">
+        Inspect each selected photo before approving. Road edges stay unchanged.
+      </p>
+      <div class="batch-actions">
+        <select id="batch-model" aria-label="Batch proposal">
+          <option value="current">Current labels / source proposal</option>
+          <option value="comma_segnet_fresh">Fresh road-marking model</option>
+          <option value="dinov3_seg">DINOv3 7B · trained decoder</option>
+          <option value="sam3">SAM 3</option>
+        </select>
+        <button id="batch-load" class="button">Load photos</button>
+        <button id="batch-select" class="button">Select all shown</button>
+        <button id="batch-approve" class="button primary">
+          Approve selected
+        </button>
+        <button id="batch-undo" class="button">Undo last batch</button>
+      </div>
+      <p id="batch-status" class="hint" role="status"></p>
+      <div id="batch-grid"></div>
+    </dialog>
+    <dialog id="batch-preview" aria-label="Inspect batch photo">
+      <button id="batch-preview-close" class="button">Back to batch</button
+      ><canvas id="batch-preview-canvas"></canvas>
+    </dialog>
+    <dialog id="leaderboard-dialog" aria-labelledby="leaderboard-title">
+      <div class="leaderboard-heading"><h2 id="leaderboard-title">Reviewer leaderboard</h2><button id="leaderboard-close" class="button">Close</button></div>
+      <p class="hint">Completed photos count once. Skips stay separate.</p>
+      <table class="leaderboard-table"><thead><tr><th>Reviewer</th><th>Reviewed</th><th>Later</th></tr></thead><tbody id="leaderboard-rows"></tbody></table>
+      <p id="leaderboard-status" role="status"></p>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>

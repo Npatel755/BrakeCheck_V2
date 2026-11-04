@@ -1,0 +1,57 @@
+.phone-header,.phone-actions,.phone-model-tools{display:none}
+body.phone-review{background:#0c100f}
+body.phone-review .topbar,body.phone-review .page-heading,body.phone-review .summary,
+body.phone-review #review-backlog,body.phone-review #source-audit-summary,
+body.phone-review .sidebar,body.phone-review footer,body.phone-review .card-heading,
+body.phone-review .image-toolbar,body.phone-review #model-options,
+body.phone-review #drawing-bar,body.phone-review .image-caption,
+body.phone-review .label-summary,body.phone-review #editor,
+body.phone-review .decision-bar,body.phone-review details,
+body.phone-review .comparison-heading span,body.phone-review #toggle-reference{display:none!important}
+body.phone-review #workspace{padding:0!important;margin:0!important;max-width:none!important}
+body.phone-review .phone-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border)}
+body.phone-review .phone-header>span{font-weight:700;font-size:15px}
+body.phone-review .phone-header small{display:block;font-weight:400;font-size:10px;color:var(--muted);margin-top:3px}
+body.phone-review .phone-header select{max-width:52vw;min-height:40px;font-size:12px}
+body.phone-review .review-layout{display:block;margin:0}
+body.phone-review .review-card{border:0;border-radius:0;overflow:visible}
+body.phone-review .image-comparison{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:1px}
+body.phone-review .comparison-heading{min-height:0;padding:8px 12px;font-size:12px}
+body.phone-review .comparison-heading strong{font-size:12px}
+body.phone-review #reference-pane{display:block!important}
+body.phone-review .image-comparison .stage{min-height:0!important;max-height:none!important;height:auto!important;overflow:hidden!important;background:#080c0a}
+body.phone-review #canvas-wrap,body.phone-review #reference-wrap{width:100%!important;display:flex;justify-content:center}
+body.phone-review canvas{display:block;max-width:100%;width:auto!important;height:auto!important;max-height:calc((100svh - 225px)/2);object-fit:contain;pointer-events:none;touch-action:pan-y pinch-zoom}
+body.phone-review .phone-model-tools{display:flex;align-items:center;gap:9px;padding:7px 12px;background:var(--panel)}
+body.phone-review .phone-model-tools button{min-height:40px;padding:8px 12px;font-size:12px}
+body.phone-review #phone-model-select{min-width:0;max-width:55vw;min-height:40px;font-size:11px}
+body.phone-review #phone-model-name{display:none}
+body.phone-review #zod-audit-summary{display:none}
+body.phone-review #zod-audit-summary>p:last-child{display:none}
+body.phone-review #zod-audit-note{padding:8px 12px}
+body.phone-review #zod-audit-note label{display:block;font-size:12px;margin-top:8px}
+body.phone-review #phone-model-name{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.phone-review .phone-actions{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:8px;padding:10px 12px max(10px,env(safe-area-inset-bottom));position:sticky;bottom:0;background:#10201afa;border-top:1px solid var(--border);z-index:25}
+body.phone-review .phone-action{min-height:54px;border-radius:10px;border:1px solid #45564d;font-size:15px;font-weight:650}
+body.phone-review .phone-action.exclude{background:#392820;color:#ffb9ad;border-color:#86564d}
+body.phone-review .phone-action.approve{background:var(--mint);color:#10291d}
+body.phone-review .phone-action.skip{background:#21372c;color:#e1eee6}
+body.phone-review .save-strip{padding:5px 12px;font-size:10px;min-height:24px}
+body.phone-review .save-strip #undo{font-size:11px;min-height:34px}
+body.phone-review .toast{bottom:95px;max-width:calc(100vw - 24px)}
+@media(orientation:landscape){body.phone-review .image-comparison{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important}body.phone-review canvas{max-height:calc(100svh - 210px)}}
+
+body.phone-review .phone-header{gap:8px}
+body.phone-review .phone-header select{max-width:43vw}
+body.phone-review #phone-leaderboard{padding:6px;min-width:32px;min-height:38px;font-size:19px}
+#leaderboard-dialog{max-width:min(600px,calc(100vw - 24px));max-height:85svh;overflow:auto}
+.leaderboard-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.leaderboard-heading h2{font-size:18px;margin:0}
+.leaderboard-table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}
+.leaderboard-table td,.leaderboard-table th{padding:12px 4px;border-bottom:1px solid var(--border)}
+.leaderboard-table td small{display:block;color:var(--muted);font-size:10px;line-height:1.5;margin-top:5px}
+.leaderboard-table td:first-child{max-width:180px;overflow-wrap:anywhere}
+#remote-url{width:100%;margin:10px 0;font-size:12px}
+#remote-share img{max-width:100%;height:auto}
+
+body.phone-review .label-check-summary{margin:0;border:0;border-bottom:1px solid #4c6244;border-radius:0;padding:8px 12px;gap:8px}body.phone-review .label-check-summary strong{font-size:12px}body.phone-review .label-check-summary p{font-size:10px;line-height:1.4}body.phone-review .label-check-summary .button{padding:7px 9px;font-size:10px;min-height:36px}body.phone-review .label-check-note{padding:9px 12px;font-size:12px;line-height:1.5}body.phone-review .label-check-note .hint{font-size:10px}

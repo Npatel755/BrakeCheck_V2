@@ -1,0 +1,84 @@
+.model-options {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 15px;
+  background: #1d2921;
+  border-top: 1px solid var(--border);
+}
+.confirm-remember {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 20px 0;
+  line-height: 1.5;
+}
+#confirm-dialog {
+  max-width: min(480px, calc(100vw - 32px));
+}
+.toast-dismiss {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+}
+.model-options select {
+  max-width: 58%;
+}
+.model-options .button {
+  font-size: 10px;
+}
+.host-urls a {
+  display: block;
+}
+#model-status p {
+  margin: 8px 0;
+  line-height: 1.5;
+}
+@media (max-width: 540px) {
+  .model-options {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .model-options select {
+    max-width: 53%;
+    font-size: 10px;
+  }
+  .model-options .button {
+    font-size: 9px;
+    padding: 8px 6px;
+    white-space: normal;
+  }
+  textarea {
+    font-size: 16px;
+  }
+}
+.model-options {
+  flex-wrap: wrap;
+}
+.model-options select {
+  flex-basis: 100%;
+  max-width: 100%;
+}
+#model-note {
+  flex-basis: 100%;
+  margin: 0;
+  line-height: 1.65;
+}
+#refresh-models {
+  margin-left: auto;
+}
+@media (max-width: 540px) {
+  .model-options select {
+    max-width: 100%;
+    font-size: 12px;
+  }
+  .model-options .button {
+    flex: 1;
+    min-height: 42px;
+    font-size: 10px;
+  }
+  #refresh-models {
+    flex-basis: 100%;
+  }
+}
