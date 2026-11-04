@@ -6,7 +6,14 @@ final class RecordingRecoveryTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 100_000)
 
     private func withLibrary(_ work: (URL, URL) throws -> Void) throws {
-        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+        // Foundation's resolvingSymlinksInPath keeps the /var alias on macOS while
+        // contentsOfDirectory reports /private/var, so resolve with realpath(3).
+        let temporary = FileManager.default.temporaryDirectory.path
+        let resolved = temporary.withCString { realpath($0, nil) }.map { pointer -> String in
+            defer { free(pointer) }
+            return String(cString: pointer)
+        } ?? temporary
+        let root = URL(fileURLWithPath: resolved, isDirectory: true).appendingPathComponent(UUID().uuidString)
         let ring = root.appendingPathComponent("ring"), incidents = root.appendingPathComponent("incidents")
         try FileManager.default.createDirectory(at: ring, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: incidents, withIntermediateDirectories: true)
