@@ -4,7 +4,7 @@ import CoreGraphics
 #endif
 
 public enum DrivingAssistFeature: String, CaseIterable, Identifiable, Codable {
-    case trafficStart, laneDeparture, cutIn, greenLight
+    case trafficStart, laneDeparture, cutIn, greenLight, followingDistance
     public var id: String { rawValue }
     public var preferenceKey: String { "premium.drivingAssist." + rawValue }
     public var title: String {
@@ -13,6 +13,7 @@ public enum DrivingAssistFeature: String, CaseIterable, Identifiable, Codable {
         case .laneDeparture: return "Lane Departure"
         case .cutIn: return "Cut-In Prediction"
         case .greenLight: return "Green Light Notification"
+        case .followingDistance: return "Following Distance"
         }
     }
     public var detail: String {
@@ -21,6 +22,7 @@ public enum DrivingAssistFeature: String, CaseIterable, Identifiable, Codable {
         case .laneDeparture: return "A reminder when you drift toward a visible lane line above 18 mph. Requires camera alignment."
         case .cutIn: return "A heads-up when a tracked vehicle appears to be moving into your lane."
         case .greenLight: return "A reminder after a clearly visible red signal changes to green while you are stopped."
+        case .followingDistance: return "A gentle reminder when you follow the car ahead closer than about one second for several seconds."
         }
     }
     public var icon: String {
@@ -29,6 +31,7 @@ public enum DrivingAssistFeature: String, CaseIterable, Identifiable, Codable {
         case .laneDeparture: return "road.lanes"
         case .cutIn: return "arrow.triangle.branch"
         case .greenLight: return "light.beacon.max"
+        case .followingDistance: return "car.2"
         }
     }
     public var alertText: String {
@@ -37,15 +40,16 @@ public enum DrivingAssistFeature: String, CaseIterable, Identifiable, Codable {
         case .laneDeparture: return "Check your lane position"
         case .cutIn: return "Vehicle may enter your lane"
         case .greenLight: return "Signal changed — check the road"
+        case .followingDistance: return "Leave more room ahead"
         }
     }
     /// The alerts BrakeSense offers. Lane Departure and Cut-In rely on the bundled, locally trained
     /// UFLDv2 lane model and stay behind the engine's alignment, speed and confidence gates.
-    public static let offered: [Self] = [.trafficStart, .greenLight, .laneDeparture, .cutIn]
+    public static let offered: [Self] = [.trafficStart, .greenLight, .laneDeparture, .cutIn, .followingDistance]
     /// Alerts that only make sense while stopped, shown together as "Go alerts".
     public static let stopped: [Self] = [.trafficStart, .greenLight]
     /// Alerts that watch lane geometry while moving.
-    public static let moving: [Self] = [.laneDeparture, .cutIn]
+    public static let moving: [Self] = [.laneDeparture, .cutIn, .followingDistance]
     public static func enabled(in defaults: UserDefaults, premium: Bool) -> Set<Self> {
         guard premium else { return [] }
         return Set(offered.filter { defaults.bool(forKey: $0.preferenceKey) })
@@ -76,6 +80,7 @@ public struct DrivingAssistAlert: Equatable {
         case (.laneDeparture, nil): return "Comprueba tu posición en el carril."
         case (.cutIn, _): return "Un vehículo podría entrar en tu carril."
         case (.greenLight, _): return "El semáforo ha cambiado. Comprueba la vía."
+        case (.followingDistance, _): return "Deja más distancia con el vehículo de delante."
         }
     }
 }
@@ -157,6 +162,28 @@ public struct DrivingAssistEngine {
         guard time - (movingSince ?? time) >= 0.6 else { return nil }
         resetLead()
         return emit(.trafficStart, at: time)
+    }
+
+    private var headwayLeadID: UUID?
+    private var headwayTime: TimeInterval?
+    private var closeSince: TimeInterval?
+    /// Sustained short headway behind the same confirmed lead at road speed.
+    /// This is coaching, with a long cooldown; collision warnings are separate.
+    public mutating func updateHeadway(leadID: UUID, headway: Double?, speed: Double?, enabled: Bool,
+                                      capturedAt time: TimeInterval, now: TimeInterval) -> DrivingAssistAlert? {
+        guard enabled, fresh(time, now: now), let speed, speed.isFinite, speed >= 10,
+              let headway, headway.isFinite, headway > 0 else {
+            headwayLeadID = nil; headwayTime = nil; closeSince = nil; return nil
+        }
+        if headwayLeadID != leadID || headwayTime.map({ time < $0 || time - $0 > 0.6 }) == true { closeSince = nil }
+        headwayLeadID = leadID; headwayTime = time
+        guard headway < 1.0 else { closeSince = nil; return nil }
+        if closeSince == nil { closeSince = time }
+        guard time - (closeSince ?? time) >= 4 else { return nil }
+        closeSince = nil
+        guard let alert = emit(.followingDistance, at: time) else { return nil }
+        cooldown[.followingDistance] = time + 48   // at most once a minute
+        return alert
     }
 
     public mutating func updateLane(_ lane: LanePath?, cameraCenter: Double, speed: Double?,

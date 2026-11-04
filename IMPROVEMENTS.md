@@ -19,9 +19,11 @@
 
 - Trimmed the camera route mini-map (duplicated the Navigate page and crowded the readouts) and the Raw/Averaging/Kalman lane-tracking comparison picker (development tool; Kalman stays). Camera capture and preview now set `videoRotationAngle` (iOS 17 API) instead of the deprecated `videoOrientation`, removing the remaining deprecation warnings in `CameraService`/`CameraPreview`.
 
+- Following-distance coaching (`DrivingAssistFeature.followingDistance`, Premium, under Lane alerts): after four seconds of headway under about one second behind the same confirmed lead at ≥ 22 mph, says "Leave more room ahead" once, then rests for a minute. Collision/brake warnings are unchanged and separate.
+
 ### Verification
 
-Swift Core: 805 tests passed (6 lane-guidance, 6 curve-speed tests new). `tools/model_migration/verify_model_assets.py` passed with the Intel manifest. Native iOS compilation runs in the GitHub Mac workflows; physical-device behaviour of the Intel road mask, lane alerts and lane guidance remains to be checked on an actual drive.
+Swift Core: 806 tests passed (6 lane-guidance, 6 curve-speed tests new). `tools/model_migration/verify_model_assets.py` passed with the Intel manifest. Native iOS compilation runs in the GitHub Mac workflows; physical-device behaviour of the Intel road mask, lane alerts and lane guidance remains to be checked on an actual drive.
 
 ### Still to verify on a device
 

@@ -1321,6 +1321,9 @@ final class DriveModel {
         currentCameraRisk = cameraRisk.score == nil ? nil : cameraRisk
         risk = CollisionApproachRules.combine(lead: risk, approach: cameraRisk)
         if risk.distance == nil { risk.distance = distance }
+        deliverAssist(drivingAssist.updateHeadway(leadID: reading.targetID, headway: risk.headway, speed: egoSpeed,
+            enabled: assistAllowed(.followingDistance) && reading.hasConfirmedRearIdentity,
+            capturedAt: reading.uptime, now: now))
         speedBlocker = ""
         collisionBlocker = ""
         if risk.leadSpeed == nil {

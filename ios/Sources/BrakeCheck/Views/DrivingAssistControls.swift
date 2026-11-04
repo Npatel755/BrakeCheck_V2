@@ -8,6 +8,7 @@ struct DrivingAssistControls: View {
     @AppStorage("premium.drivingAssist.greenLight") private var greenLight = false
     @AppStorage("premium.drivingAssist.laneDeparture") private var laneDeparture = false
     @AppStorage("premium.drivingAssist.cutIn") private var cutIn = false
+    @AppStorage("premium.drivingAssist.followingDistance") private var followingDistance = false
     var offerUpgrade = true
 
     var body: some View {
@@ -62,6 +63,7 @@ struct DrivingAssistControls: View {
         case .greenLight: stored = $greenLight
         case .laneDeparture: stored = $laneDeparture
         case .cutIn: stored = $cutIn
+        case .followingDistance: stored = $followingDistance
         }
         return Binding(get: { premium.isSubscribed && stored.wrappedValue }, set: { value in
             guard premium.isSubscribed else { return }

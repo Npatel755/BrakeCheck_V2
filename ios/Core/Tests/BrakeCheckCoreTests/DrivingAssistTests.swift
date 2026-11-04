@@ -16,6 +16,28 @@ final class DrivingAssistTests: XCTestCase {
         XCTAssertTrue(DrivingAssistFeature.enabled(in: defaults, premium: true).contains(.cutIn))
     }
 
+    func testFollowingDistanceNeedsFourSecondsOfCloseHeadwayAtSpeedThenRestsAMinute() {
+        var engine = DrivingAssistEngine()
+        let id = UUID()
+        var alerts: [DrivingAssistAlert] = []
+        for step in 0...60 {
+            let time = Double(step) * 0.2
+            if let alert = engine.updateHeadway(leadID: id, headway: 0.8, speed: 20, enabled: true,
+                                                capturedAt: time, now: time) { alerts.append(alert) }
+        }
+        XCTAssertEqual(alerts.map(\.feature), [.followingDistance])
+        XCTAssertEqual(alerts.first?.capturedAt ?? -1, 4.0, accuracy: 1e-9)
+        XCTAssertEqual(alerts.first?.text, "Leave more room ahead")
+        // Comfortable headway, slow speed or a new lead restart the clock.
+        var fresh = DrivingAssistEngine()
+        for step in 0...30 {
+            let time = Double(step) * 0.2
+            XCTAssertNil(fresh.updateHeadway(leadID: id, headway: 1.4, speed: 20, enabled: true, capturedAt: time, now: time))
+            XCTAssertNil(fresh.updateHeadway(leadID: UUID(), headway: 0.8, speed: 20, enabled: true, capturedAt: time, now: time))
+            XCTAssertNil(fresh.updateHeadway(leadID: id, headway: 0.8, speed: 6, enabled: true, capturedAt: time, now: time))
+        }
+    }
+
     func testTrafficStartRequiresStoppedLeadThenSustainedOpeningOnSameID() {
         var engine = DrivingAssistEngine()
         let id = UUID()

@@ -40,6 +40,10 @@ public struct DrivingAssistReadiness {
             guard freshStationaryGPS else { return "Waiting for GPS to confirm you are stopped" }
             guard freshSignal else { return "Waiting for one clear vertical traffic signal" }
             return "Watching for a sustained red-to-green change"
+        case .followingDistance:
+            guard let speed = freshMovingSpeed, speed.isFinite, speed >= 10 else { return "Waiting for reliable GPS above 22 mph / 36 km/h" }
+            guard freshLeadRange else { return "Waiting for a confirmed lead and fresh gap measurements" }
+            return "Watching for sustained close following"
         case .laneDeparture, .cutIn:
             guard aligned else { return "Camera alignment required; open Camera setup" }
             let minimum = feature == .laneDeparture ? 8.0 : 2.0
