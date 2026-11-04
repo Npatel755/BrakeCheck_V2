@@ -1,5 +1,26 @@
 # Ongoing improvement audit
 
+## 4 November 2026 — commercial model clearance, lane alerts, lane-level guidance
+
+### Completed
+
+- Replaced the bundled NVIDIA SegFormer road model (non-commercial licence) with the Apache-2.0 Intel `road-segmentation-adas-0001` Core ML package that the repository had already converted and trialled. The tensor contract (`image` 640×384 RGB → `road_scores` [1,2,384,640]) is unchanged, so `LaneTracker`, the AR road mask, road-supported lead selection and camera-route alignment keep their existing decoding. Added `IntelRoad-MODEL-CARD.md` with source SHA-384/256 hashes, rewrote `NOTICE.md`, updated the lane manifest and the model verification scripts, and made SegFormer a retired model that CI rejects.
+- Removed the AGPL Ultralytics YOLO resources (`YOLOModelData`, `ios/licenses`) from the repository; they were already excluded from the package but their presence complicated licence review.
+- TestFlight builds now ship the lane and road models instead of stripping `LaneModelData`; the workflow verifies every bundled weight hash and licence and fails if a SegFormer or YOLO asset reappears. The build-check workflow runs the same verification.
+- Offered Lane Departure and Cut-In Prediction as Premium "Lane alerts". Their engine, readiness messages and voice lines already existed behind an "offered" list; they remain gated on verified camera alignment, reliable GPS speed (≥ 18 mph for departure), a fresh non-paint lane pair with confidence ≥ 0.85, and pause during planned turns and route rejoins.
+- Added lane-level navigation guidance (`LaneLevelGuidance` in Core). Using UFLDv2's four trained boundary slots it recognises the current lane among the visible painted lanes and, between 60 m and 25 s of travel before a turn or exit, shows "Move one lane right/left for the turn, when safe" or "Stay in this lane" in the turn banner and speaks the move once. A move is only suggested across a boundary that reads as broken paint (several pieces or incomplete coverage), never across a continuous line, so a two-way road's centre line never produces a left-move suggestion. Three consecutive fresh observations over 0.8 s are required; brake warnings, check-ins and active turn prompts take priority over the voice line.
+
+### Verification
+
+Swift Core: 795 tests passed (6 new lane-guidance tests). `tools/model_migration/verify_model_assets.py` passed with the Intel manifest. Native iOS compilation runs in the GitHub Mac workflows; physical-device behaviour of the Intel road mask, lane alerts and lane guidance remains to be checked on an actual drive.
+
+### Still to verify on a device
+
+- Intel road mask coverage at intersections, in rain, at night and around parked cars (see `tools/model_migration/ROAD-CANDIDATE-COMPARISON.md`); AR ribbon alignment with the new mask.
+- Lane Departure / Cut-In false-alert rate on worn or missing paint; the lane model's provisional F1 of 0.80 was measured on CPU, not on the phone.
+- Lane-level guidance on multi-lane roads: that UFLDv2 slot 3 / slot 0 reliably correspond to a real adjacent lane, and that broken-line detection does not misread long dashes as solid.
+- Legal sign-off that the UFLDv2 training pool (comma10k, MIT) and the Intel/Apache terms meet the distribution plan.
+
 ## 26 October 2026
 
 The user requested an ongoing audit and subsequently clarified that Koyeb is no longer used. Current hosting work targets Railway. Existing navigation changes were present at the start and have been preserved.

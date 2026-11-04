@@ -108,9 +108,9 @@ struct PremiumView: View {
     private var subtitle: String {
         if store.isSubscribed { return "Everything below is unlocked on this Apple Account." }
         switch context {
-        case .firstTrip: return "Premium adds Go alerts and keeps your whole trip history, with weekly trends."
+        case .firstTrip: return "Premium adds Go and Lane alerts and keeps your whole trip history, with weekly trends."
         case .history: return "Free keeps your last 7 days. Premium brings back every saved trip and adds weekly trends."
-        case .onboarding, .browse: return "Go alerts, your whole trip history with weekly trends, and display options."
+        case .onboarding, .browse: return "Go and Lane alerts, your whole trip history with weekly trends, and display options."
         }
     }
 
@@ -118,6 +118,9 @@ struct PremiumView: View {
         VStack(alignment: .leading, spacing: 16) {
             benefit("car.side.arrowtriangle.up.arrowtriangle.down", "Go alerts",
                     "A heads-up when the car ahead pulls away or your light turns green.")
+            Divider().overlay(BrakeTheme.text.opacity(0.06))
+            benefit("road.lanes", "Lane alerts",
+                    "A reminder when you drift toward a lane line, or a car beside you starts moving into your lane.")
             Divider().overlay(BrakeTheme.text.opacity(0.06))
             benefit("chart.xyaxis.line", "Every trip, with trends",
                     "All your drives, not just the last 7 days, plus your weekly hard-brake trend.")

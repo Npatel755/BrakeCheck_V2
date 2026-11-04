@@ -10,8 +10,10 @@ final class DrivingAssistTests: XCTestCase {
         for feature in DrivingAssistFeature.allCases { defaults.set(true, forKey: feature.preferenceKey) }
         XCTAssertEqual(DrivingAssistFeature.enabled(in: defaults, premium: false), [])
         XCTAssertEqual(DrivingAssistFeature.enabled(in: defaults, premium: true), Set(DrivingAssistFeature.offered))
-        XCTAssertFalse(DrivingAssistFeature.enabled(in: defaults, premium: true).contains(.laneDeparture))
-        XCTAssertFalse(DrivingAssistFeature.enabled(in: defaults, premium: true).contains(.cutIn))
+        XCTAssertEqual(Set(DrivingAssistFeature.offered), Set(DrivingAssistFeature.allCases))
+        XCTAssertEqual(Set(DrivingAssistFeature.stopped + DrivingAssistFeature.moving), Set(DrivingAssistFeature.offered))
+        XCTAssertTrue(DrivingAssistFeature.enabled(in: defaults, premium: true).contains(.laneDeparture))
+        XCTAssertTrue(DrivingAssistFeature.enabled(in: defaults, premium: true).contains(.cutIn))
     }
 
     func testTrafficStartRequiresStoppedLeadThenSustainedOpeningOnSameID() {

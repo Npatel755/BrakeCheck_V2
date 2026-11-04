@@ -86,6 +86,9 @@ final class DriveModel {
     private(set) var drivingAssistStatuses: [DrivingAssistFeature: String] = [:]
     private var assistSignalTime: TimeInterval = -.infinity
     private var assistRearVehicleTime: TimeInterval = -.infinity
+    @ObservationIgnored private var laneGuidanceEngine = LaneLevelGuidance()
+    /// Lane-level preparation for the next turn or exit, from the lane model's slot boundaries.
+    private(set) var laneGuidance: LaneGuidanceAdvice?
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -522,12 +525,13 @@ final class DriveModel {
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo,
                       !self.changingCameraGeometry else { return }
+                let cutoff = max(self.latestGeometryChangeUptime, self.latestTrackingResetUptime)
+                guard observation.map({ $0.capturedAt >= cutoff }) ?? true else { return }
+                self.processLaneGuidance(observation)
                 guard UserDefaults.standard.bool(forKey: "display.laneGuides") else {
                     if self.lanePredictions != nil { self.lanePredictions = nil }
                     return
                 }
-                let cutoff = max(self.latestGeometryChangeUptime, self.latestTrackingResetUptime)
-                guard observation.map({ $0.capturedAt >= cutoff }) ?? true else { return }
                 let visible = LanePredictionDisplay.visible(observation, at: ProcessInfo.processInfo.systemUptime)
                 if self.lanePredictions != visible { self.lanePredictions = visible }
             }
@@ -999,6 +1003,7 @@ final class DriveModel {
 
     private func clearTrackingDisplay(_ reason: String) {
         drivingAssist.reset(); drivingAssistAlert = nil; assistLane = nil
+        laneGuidanceEngine.reset(); laneGuidance = nil
         latestTrackingResetUptime = ProcessInfo.processInfo.systemUptime
 
         targetID = nil
@@ -1614,6 +1619,24 @@ final class DriveModel {
         let alert = drivingAssist.updateLane(lane, cameraCenter: center, speed: speed,
             aligned: cameraAlignmentVerified && !maneuver, enabled: assistAllowed(.laneDeparture), now: now)
         deliverAssist(alert)
+    }
+
+    /// Lane advice is informational and never spoken over a brake warning, check-in
+    /// or an in-progress turn prompt. It is cleared with the rest of the tracking display.
+    private func processLaneGuidance(_ observation: LanePredictionObservation?) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let speed = speedReading.flatMap { $0.isConfidentlyMoving(at: now) && $0.accuracy <= 2 ? $0.metersPerSecond : nil }
+        let navigating = navigation.isNavigating && !navigation.isPaused && !navigation.userPaused
+            && !navigation.isRejoiningRoute && !navigation.hasArrived && !navigation.isCalculating && !replaying
+        let advice = laneGuidanceEngine.update(observation,
+            maneuver: LaneGuidanceManeuver(instruction: navigation.instruction),
+            maneuverKey: navigation.instruction, distance: navigation.maneuverDistance,
+            speed: speed, navigating: navigating, now: now)
+        if laneGuidance != advice { laneGuidance = advice }
+        guard let advice, advice.shouldSpeak, let spoken = advice.spoken,
+              !brakeWarningActive, risk.level != .critical, !safety.checkinPresented,
+              safety.settings.voiceEnabled, !safety.audio.isBusy else { return }
+        navigation.speakLaneGuidance(spoken, key: navigation.instruction + "|" + advice.text)
     }
 
     private func processAssistVehicles(_ detections: [VehicleDetection], capturedAt: TimeInterval) {

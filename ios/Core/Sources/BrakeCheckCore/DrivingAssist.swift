@@ -18,7 +18,7 @@ public enum DrivingAssistFeature: String, CaseIterable, Identifiable, Codable {
     public var detail: String {
         switch self {
         case .trafficStart: return "A reminder when the tracked vehicle ahead moves while you remain stopped."
-        case .laneDeparture: return "A reminder when you drift toward a visible lane line. Requires camera alignment."
+        case .laneDeparture: return "A reminder when you drift toward a visible lane line above 18 mph. Requires camera alignment."
         case .cutIn: return "A heads-up when a tracked vehicle appears to be moving into your lane."
         case .greenLight: return "A reminder after a clearly visible red signal changes to green while you are stopped."
         }
@@ -39,9 +39,13 @@ public enum DrivingAssistFeature: String, CaseIterable, Identifiable, Codable {
         case .greenLight: return "Signal changed — check the road"
         }
     }
-    /// The alerts BrakeSense offers. Lane Departure and Cut-In are left out of v1 (no validated
-    /// lane model), so they can't be switched on even if an old preference says so.
-    public static let offered: [Self] = [.trafficStart, .greenLight]
+    /// The alerts BrakeSense offers. Lane Departure and Cut-In rely on the bundled, locally trained
+    /// UFLDv2 lane model and stay behind the engine's alignment, speed and confidence gates.
+    public static let offered: [Self] = [.trafficStart, .greenLight, .laneDeparture, .cutIn]
+    /// Alerts that only make sense while stopped, shown together as "Go alerts".
+    public static let stopped: [Self] = [.trafficStart, .greenLight]
+    /// Alerts that watch lane geometry while moving.
+    public static let moving: [Self] = [.laneDeparture, .cutIn]
     public static func enabled(in defaults: UserDefaults, premium: Bool) -> Set<Self> {
         guard premium else { return [] }
         return Set(offered.filter { defaults.bool(forKey: $0.preferenceKey) })

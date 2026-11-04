@@ -202,7 +202,7 @@ struct CameraPage: View {
     private var showsDirections: Bool { cameraVisible && navigation.isNavigating && !selecting }
 
     private func directionsBanner(large: Bool) -> some View {
-        NavigationBanner(navigation: navigation, presentation: model.arPresentation,
+        NavigationBanner(navigation: navigation, presentation: model.arPresentation, laneGuidance: model.laneGuidance,
             compact: critical || (premiumStore.isSubscribed && premiumCompactBanner),
             large: large, onSetup: { showCameraSetup = true })
     }

@@ -554,7 +554,7 @@ struct SettingsView: View {
     private static let noticeFiles = [
         NoticeFile(title: "Vehicle detectors", folder: "ModelLicenses", name: "NOTICE.md"),
         NoticeFile(title: "UFLDv2 lane detection", folder: "ModelLicenses", name: "UFLD-MIT.txt"),
-        NoticeFile(title: "SegFormer road segmentation", folder: "ModelLicenses", name: "SegFormer-NVIDIA-License.txt"),
+        NoticeFile(title: "Intel road segmentation", folder: "ModelLicenses", name: "IntelRoad-MODEL-CARD.md"),
         NoticeFile(title: "Vehicle orientation", folder: "ViewpointModelData", name: "CFV-LICENSE.txt"),
         NoticeFile(title: "Red Hat Display font", folder: "Fonts", name: "OFL.txt")
     ]

@@ -54,30 +54,12 @@ jobs:
           fi
           exit $status
 
-      - name: Detector packages are complete
-        # The app compiles without the Core ML weight files but can't load the detectors,
-        # so every file listed in the provenance JSON must be in the repo with the same hash.
+      - name: Model packages are complete and commercially licensed
+        # The app compiles without the Core ML weight files but can't load the models, so every
+        # file listed in the provenance/manifest records must be in the repo with the same hash,
+        # and no non-commercial package (SegFormer, Ultralytics YOLO) may return to the bundle.
         if: always()
-        run: |
-          python3 - <<'EOF'
-          import hashlib, json, pathlib, sys
-          res = pathlib.Path("Sources/BrakeCheck/Resources")
-          pairs = {"DetectorModelData/Day": "RTMDetTiny", "DetectorModelData/Night": "RTMDetSmall"}
-          bad = 0
-          for package, card in pairs.items():
-              prov = json.loads((res / "ModelLicenses" / f"{card}-provenance.json").read_text())
-              for rel, want in prov["files"].items():
-                  f = res / package / rel
-                  if not f.is_file():
-                      print(f"::error title=Missing model file::{package}/{rel} is not in the repo (listed in {card}-provenance.json)")
-                      bad += 1
-                  elif hashlib.sha256(f.read_bytes()).hexdigest() != want:
-                      print(f"::error title=Model hash mismatch::{package}/{rel} doesn't match {card}-provenance.json")
-                      bad += 1
-                  else:
-                      print(f"ok  {package}/{rel}")
-          sys.exit(1 if bad else 0)
-          EOF
+        run: python3 ../tools/model_migration/verify_model_assets.py
 
       - name: Upload logs
         if: always()

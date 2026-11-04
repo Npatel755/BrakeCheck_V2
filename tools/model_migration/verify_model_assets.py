@@ -15,7 +15,7 @@ RECORDS = (
     ("DetectorModelData/Night", "ModelLicenses/RTMDetSmall-provenance.json"),
     ("LaneModelData", "LaneModelData/manifest.json"),
 )
-RETIRED_MODELS = tuple(f"{name}.{extension}" for name in ("UFLDLane", "IntelRoad", "YOLOPLane")
+RETIRED_MODELS = tuple(f"{name}.{extension}" for name in ("UFLDLane", "SegFormerRoad", "YOLOPLane")
                        for extension in ("mlpackage", "mlmodel", "mlmodelc"))
 EXPECTED_CHECKPOINT = "4838156c4bd7c237d9189ff617e150f38d96f5018b48ac53e472ea7d4b23f378"
 
@@ -38,7 +38,9 @@ def expected_files():
         record = json.loads((RESOURCES / record_path).read_text(encoding="utf-8"))
         yield record_path, sha(RESOURCES / record_path)
         if folder == "LaneModelData":
-            assert {model["name"] for model in record["models"]} == {"UFLDv2Lane", "SegFormerRoad"}
+            assert {model["name"] for model in record["models"]} == {"UFLDv2Lane", "IntelRoad"}
+            road = next(model for model in record["models"] if model["name"] == "IntelRoad")
+            assert road["license"] == "Apache-2.0", "Bundled road model must stay commercially licensed"
             inventory = {str(path.relative_to(RESOURCES / folder)).replace("\\", "/") for path in (RESOURCES / folder).rglob("*") if path.is_file()}
             assert set(record["files"]) == inventory - {"manifest.json"}, "Lane manifest file inventory is incomplete"
             lane = next(model for model in record["models"] if model["name"] == "UFLDv2Lane")
@@ -55,11 +57,12 @@ def expected_files():
 
 
 def verify(ipa=None):
-    # Match the .copy resource roots in ios/Package.swift. Legacy comparison
-    # files under explicitly excluded YOLOModelData are not bundled assets.
+    # Match the .copy resource roots in ios/Package.swift.
     bundled_roots = ("DetectorModelData", "LaneModelData", "ViewpointModelData", "ModelLicenses", "Fonts")
     for folder in bundled_roots:
         assert_no_retired_models(str(path.relative_to(RESOURCES)) for path in (RESOURCES / folder).rglob("*"))
+    assert not (RESOURCES / "YOLOModelData").exists(), "AGPL Ultralytics resources must not return to the package"
+    assert not any("NVIDIA" in path.name or "SegFormer" in path.name for path in (RESOURCES / "ModelLicenses").iterdir())
     expected = dict(expected_files())
     for relative, digest in expected.items():
         path = RESOURCES / relative
@@ -69,7 +72,7 @@ def verify(ipa=None):
         manifest = json.loads((RESOURCES / folder / "Manifest.json").read_text(encoding="utf-8"))
         for entry in manifest["itemInfoEntries"].values():
             assert (RESOURCES / folder / "Data" / entry["path"]).exists(), entry["path"]
-    print("ALL models: detector day/night, trained UFLDv2, unchanged SegFormer road, viewpoint weights/provenance and SHA256 PASS")
+    print("ALL models: detector day/night, trained UFLDv2, Apache-2.0 Intel road, viewpoint weights/provenance and SHA256 PASS")
     if ipa:
         with zipfile.ZipFile(ipa) as archive:
             assert archive.testzip() is None, "IPA CRC failure"

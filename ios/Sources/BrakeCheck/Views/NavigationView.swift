@@ -128,7 +128,7 @@ struct NavigationView: View {
     }
 
     private func banner(large: Bool) -> some View {
-        NavigationBanner(navigation: navigation, presentation: model.arPresentation,
+        NavigationBanner(navigation: navigation, presentation: model.arPresentation, laneGuidance: model.laneGuidance,
                          compact: model.brakeWarningActive, large: large, alignmentDetail: false)
     }
 

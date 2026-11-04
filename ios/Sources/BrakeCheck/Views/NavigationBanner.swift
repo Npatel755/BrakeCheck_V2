@@ -10,6 +10,8 @@ struct NavigationBanner: View {
     @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     @ObservedObject var navigation: NavigationService
     let presentation: CameraARPresentation
+    /// Lane-level preparation for the next turn, shown in place of the "Then" strip.
+    var laneGuidance: LaneGuidanceAdvice? = nil
     /// During a brake warning the card drops to one line so the alert reads first.
     var compact = false
     var large = false
@@ -96,6 +98,10 @@ struct NavigationBanner: View {
             if let pauseNote {
                 Image(systemName: "location.slash").font(.brake(size: 15, weight: .bold))
                 Text(pauseNote).lineLimit(1).minimumScaleFactor(0.8)
+            } else if let advice = laneGuidance, !navigation.hasArrived {
+                Image(systemName: advice.symbol).font(.brake(size: 15, weight: .bold))
+                Text(advice.text).lineLimit(1).minimumScaleFactor(0.8)
+                    .accessibilityIdentifier("laneGuidance")
             } else if let next = navigation.upcomingInstruction, !navigation.hasArrived {
                 Text("Then").font(.brake(size: 15, weight: .semibold)).opacity(0.75)
                 Image(systemName: NavigationManeuver.symbol(for: next)).font(.brake(size: 15, weight: .bold))
@@ -148,6 +154,7 @@ struct NavigationBanner: View {
     private var accessibilitySummary: String {
         var parts = [distance.map { navigation.isPaused
             ? "Last known distance \($0.value) \($0.unit)" : "In \($0.value) \($0.unit)" }, primary].compactMap { $0 }
+        if let advice = laneGuidance { parts.append(advice.text) }
         if !navigation.isPaused, let next = navigation.upcomingInstruction { parts.append("Then \(next)") }
         return parts.joined(separator: ". ")
     }
