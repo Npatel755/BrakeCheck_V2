@@ -44,7 +44,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .safety: return "Impact detection and emergency check-ins."
         case .permissions: return "Manage access to your iPhone's sensors."
         case .diagnostics: return "Camera, GPS, and measurement details."
-        case .demo: return "Explore sample driving and check-in features."
+        case .demo: return "App tour, sample driving, and check-in demo."
         case .about: return "How BrakeSense works, its limits, and model notices."
         }
     }
@@ -58,12 +58,13 @@ struct SettingsScreen: View, Equatable {
     let settings: ConnectionSettings
     @Binding var requestDemo: Bool
     var openCameraSetup: (() -> Void)? = nil
+    var showTour: (() -> Void)? = nil
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.model === rhs.model && lhs.service === rhs.service && lhs.settings === rhs.settings
             && lhs.requestDemo == rhs.requestDemo
     }
     var body: some View {
-        SettingsView(model: model, arPresentation: model.arPresentation, service: service, settings: settings, requestDemo: $requestDemo, openCameraSetup: openCameraSetup)
+        SettingsView(model: model, arPresentation: model.arPresentation, service: service, settings: settings, requestDemo: $requestDemo, openCameraSetup: openCameraSetup, showTour: showTour)
     }
 }
 
@@ -88,6 +89,7 @@ struct SettingsView: View {
     @State private var selectedCategory: SettingsCategory = .appearance
     @Binding var requestDemo: Bool
     var openCameraSetup: (() -> Void)? = nil
+    var showTour: (() -> Void)? = nil
     @AppStorage("display.appearance") private var appearance = "dark"
     @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     @AppStorage("voice.selectedVoice") private var selectedVoice = ""
@@ -508,6 +510,12 @@ struct SettingsView: View {
             Text("Shows the road-model mask and the build number on the camera page, for test recordings.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .demo:
+            Button { showTour?() } label: {
+                Label("Show the app tour", systemImage: "map")
+            }
+            .accessibilityIdentifier("settings.tour")
+            Text("Six short tips: starting a trip, the road view, navigation, clips, and safety alerts.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Toggle("Simulated driving metrics", isOn: Binding(get: { demoMode }, set: { model.setDemo($0) }))
                 .disabled(tripActive || stopping)
             Button("Run crash check-in demo") { requestDemo = true }

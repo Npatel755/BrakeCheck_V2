@@ -20,6 +20,7 @@
 - Trimmed the camera route mini-map (duplicated the Navigate page and crowded the readouts) and the Raw/Averaging/Kalman lane-tracking comparison picker (development tool; Kalman stays). Camera capture and preview now set `videoRotationAngle` (iOS 17 API) instead of the deprecated `videoOrientation`, removing the remaining deprecation warnings in `CameraService`/`CameraPreview`.
 
 - Following-distance coaching (`DrivingAssistFeature.followingDistance`, Premium, under Lane alerts): after four seconds of headway under about one second behind the same confirmed lead at ≥ 22 mph, says "Leave more room ahead" once, then rests for a minute. Collision/brake warnings are unchanged and separate.
+- First-launch app tour: after the driver-aid notice and practice-drive flow settle, a small "Want a quick tour?" popup offers six tip cards (Start trip, road view, Navigate, Clips/Trip history, Safety settings, done) that switch to the page they describe. Replayable from Settings → Try BrakeSense → "Show the app tour". `ScreenTour` captures the offer and three cards.
 
 ### Verification
 

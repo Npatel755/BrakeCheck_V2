@@ -22,6 +22,7 @@ final class ScreenTour: XCTestCase {
             pause(2)
         }
         walkOnboardingPaywall(app)
+        walkAppTour(app)
         snap("01-home")
 
         openPage(app, "Navigate")
@@ -86,6 +87,27 @@ final class ScreenTour: XCTestCase {
             pause(2)
             snap("12-settings")
         }
+    }
+
+    /// The tour offer follows the practice flow; accept it, step through, and capture a few cards.
+    private func walkAppTour(_ app: XCUIApplication) {
+        let accept = element(app.buttons, ["tour.accept", "Show me around"])
+        guard accept.waitForExistence(timeout: 8) else { return }
+        snap("00g-tour-offer")
+        accept.tap()
+        pause(2)
+        snap("00h-tour-start")
+        for shot in ["00i-tour-camera", "00j-tour-navigate", nil, nil] {
+            let next = element(app.buttons, ["tour.next"])
+            guard next.waitForExistence(timeout: 3) else { break }
+            next.tap()
+            pause(2)
+            if let shot { snap(shot) }
+        }
+        let last = element(app.buttons, ["tour.next"])
+        if last.exists { last.tap(); pause(1) }
+        let done = element(app.buttons, ["tour.done"])
+        if done.waitForExistence(timeout: 3) { done.tap(); pause(1) }
     }
 
     /// Onboarding after the notice: the practice drive offer, the simulated drive, then the
