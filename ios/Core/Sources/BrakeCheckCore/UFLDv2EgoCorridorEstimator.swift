@@ -16,6 +16,10 @@ public struct UFLDv2EgoCorridorEstimator {
     /// One rejected or incomplete capture inside this window keeps a confirmed
     /// pair's history, so a single dropped frame does not cost two confirmations.
     public static let missTolerance: TimeInterval = 0.6
+    /// A confirmed corridor whose near width changes by more than this factor in one
+    /// capture is a slot hopping to the neighbouring line, not a lane; it is held like
+    /// a miss, and only a repeated new width re-confirms (a real lane change).
+    public static let widthJumpFactor = 1.35
     private var previous: LanePath?
     private var consecutive = 0
     private var lastUpdate: TimeInterval?
@@ -60,6 +64,10 @@ public struct UFLDv2EgoCorridorEstimator {
             }
         }
         guard let path = best else { return reject("ego boundaries incomplete or inconsistent", at: time) }
+        if let previous, consecutive >= 2, let jump = Self.widthJump(from: previous, to: path),
+           jump > Self.widthJumpFactor || jump < 1 / Self.widthJumpFactor {
+            return reject(String(format: "ego width jumped %.0f%% · holding", (jump - 1) * 100), at: time)
+        }
         if let previous {
             let shifts = path.bands.compactMap { band -> Double? in
                 guard let old = previous.bounds(at: band.y) else { return nil }
@@ -84,6 +92,15 @@ public struct UFLDv2EgoCorridorEstimator {
         }
         previous = nil; consecutive = 0; missed = 0; lastAccepted = nil; status = reason
         return nil
+    }
+
+    /// Near-row width ratio between two corridors, measured at the same row.
+    static func widthJump(from previous: LanePath, to path: LanePath) -> Double? {
+        guard let nearNew = path.bands.first, let nearOld = previous.bands.first else { return nil }
+        let y = max(nearNew.y, nearOld.y)
+        guard let old = previous.bounds(at: y), let new = path.bounds(at: y),
+              old.right - old.left > 1e-6 else { return nil }
+        return (new.right - new.left) / (old.right - old.left)
     }
 
     private func segments(_ candidate: UFLDv2LaneDecoder.Candidate,

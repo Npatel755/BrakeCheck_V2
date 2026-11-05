@@ -296,4 +296,36 @@ final class UFLDv2EgoCorridorEstimatorTests: XCTestCase {
             XCTAssertNil(selector.update([car(id: adjacentID,x: 0.75,at: time)], at: time, road: road(at: time)))
         }
     }
+
+    /// A slot hopping to the neighbouring painted line doubles the corridor width in
+    /// one capture. The confirmed corridor is held, not replaced; a repeated new width
+    /// (a real lane change) re-confirms in two further captures.
+    func testWidthJumpIsHeldLikeAMissAndRepeatedNewWidthReconfirms() throws {
+        var estimator = UFLDv2EgoCorridorEstimator()
+        let lane = try confirm(&estimator)
+        let near = lane.bands.first!
+        // Both slots land on the outer lines: width 1.45x at every row.
+        let wide = [candidate(slot: 1) { y, _ in 0.5 - 1.45 * (0.30 - 0.44 * y) },
+                    candidate(slot: 2) { y, _ in 0.5 + 1.45 * (0.30 - 0.44 * y) }]
+        XCTAssertNil(estimator.update(wide, excluding: [], at: 10.4))
+        XCTAssertTrue(estimator.status.hasPrefix("ego width jumped"))
+        XCTAssertTrue(estimator.status.contains("holding"))
+        // Back to the original width: measured immediately, no re-confirmation.
+        let back = try XCTUnwrap(estimator.update(pair(), excluding: [], at: 10.6))
+        XCTAssertEqual(back.bands.first!.right - back.bands.first!.left, near.right - near.left, accuracy: 1e-9)
+        // The new width persisting: one hold, then re-confirmation over two captures.
+        XCTAssertNil(estimator.update(wide, excluding: [], at: 10.8))
+        XCTAssertNil(estimator.update(wide, excluding: [], at: 11.0))
+        XCTAssertNil(estimator.update(wide, excluding: [], at: 11.2))
+        let accepted = try XCTUnwrap(estimator.update(wide, excluding: [], at: 11.4))
+        XCTAssertGreaterThan(accepted.bands.first!.right - accepted.bands.first!.left, 1.35 * (near.right - near.left))
+    }
+
+    func testSmallWidthChangesStillMeasureEveryCapture() throws {
+        var estimator = UFLDv2EgoCorridorEstimator()
+        _ = try confirm(&estimator)
+        let slightlyWider = [candidate(slot: 1), candidate(slot: 2) { y, _ in 0.5 + (0.30 - 0.44 * y) * 1.2 }]
+        XCTAssertNotNil(estimator.update(slightlyWider, excluding: [], at: 10.4))
+        XCTAssertEqual(estimator.status, "measured ego lane confirmed")
+    }
 }
