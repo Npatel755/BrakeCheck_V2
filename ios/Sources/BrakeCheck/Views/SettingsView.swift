@@ -341,9 +341,9 @@ struct SettingsView: View {
             LabeledContent("Video space used", value: storageBytes.map {
                 ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
             } ?? "Checking…")
-            Toggle("Save a clip on brake warnings", isOn: $autoSaveBrakeWarnings)
+            Toggle("Save a clip on brake warnings and hard brakes", isOn: $autoSaveBrakeWarnings)
                 .accessibilityIdentifier("recording.autoSaveBrakeWarnings")
-            Text("Keeps the footage around each brake warning without a tap, at most once every 10 minutes. Save clip on the Home trip card still works any time.")
+            Text("Keeps the footage around each brake warning or hard brake of yours without a tap, at most once every 10 minutes. Save clip on the Home trip card still works any time.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Picker("Recording storage limit", selection: $recordingLimitGB) {
                 Text("No app limit").tag(0)
