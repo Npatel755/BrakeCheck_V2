@@ -193,16 +193,17 @@ struct TripDetailView: View {
                 .padding(.top, 14).padding(.bottom, 4)
             if let events = route?.events, !events.isEmpty {
                 ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                    HStack(spacing: 12) {
-                        Circle().fill(color(event.kind)).frame(width: 10, height: 10)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(headline(event)).font(.brake(size: 15, weight: .semibold))
-                            Text(detail(event)).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+                    if let clip = clip(for: event) {
+                        NavigationLink {
+                            IncidentDetailView(model: model, id: clip.id)
+                        } label: {
+                            eventRow(event, hasClip: true)
                         }
-                        Spacer(minLength: 0)
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the saved clip")
+                    } else {
+                        eventRow(event, hasClip: false)
                     }
-                    .frame(minHeight: 54)
-                    .accessibilityElement(children: .combine)
                     if index < events.count - 1 {
                         Rectangle().fill(BrakeTheme.text.opacity(0.06)).frame(height: 1)
                     }
@@ -218,6 +219,30 @@ struct TripDetailView: View {
         .padding(.bottom, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func eventRow(_ event: TripRoute.Event, hasClip: Bool) -> some View {
+        HStack(spacing: 12) {
+            Circle().fill(color(event.kind)).frame(width: 10, height: 10)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headline(event)).font(.brake(size: 15, weight: .semibold))
+                Text(detail(event)).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+            }
+            Spacer(minLength: 0)
+            if hasClip {
+                Label("Watch clip", systemImage: "play.rectangle.fill")
+                    .font(.brake(size: 13, weight: .bold)).foregroundStyle(BrakeTheme.accentText)
+            }
+        }
+        .frame(minHeight: 54)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The saved clip whose trigger fell within 20 s of the moment, if any.
+    private func clip(for event: TripRoute.Event) -> IncidentManifest? {
+        incidents.filter { abs($0.triggerTime.timeIntervalSince(event.time)) <= 20 }
+            .min { abs($0.triggerTime.timeIntervalSince(event.time)) < abs($1.triggerTime.timeIntervalSince(event.time)) }
     }
 
     private func headline(_ event: TripRoute.Event) -> String {
