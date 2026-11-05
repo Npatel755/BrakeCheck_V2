@@ -118,7 +118,7 @@ struct TripDetailView: View {
                 let loadedRoute = try await model.loadTripRoute(trip.id)
                 guard !Task.isCancelled else { return }
                 route = loadedRoute; routeError = nil
-                gpxURL = writeGPX(loadedRoute)
+                gpxURL = loadedRoute.flatMap(writeGPX)
             } catch {
                 guard !Task.isCancelled else { return }
                 route = nil; routeError = error.localizedDescription
