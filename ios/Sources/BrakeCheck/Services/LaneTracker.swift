@@ -87,6 +87,7 @@ final class LaneTracker {
     private var displayTrackingMode = LaneTrackingMode.kalman
     private let context = CIContext(options: [.cacheIntermediates: false])
     private var inputPool: CVPixelBufferPool?
+    private var roadVetoes = 0
     private var lastStatusTime: TimeInterval = -.infinity
     private var consecutiveErrors = 0
     private var inputWidth = UFLDv2InputTransform.inputWidth
@@ -378,7 +379,16 @@ final class LaneTracker {
                 // Decode and publish lanes before waiting for segmentation.
                 // Road-model failure/cadence must not suppress UFLDv2 observations.
                 let decoded = try self.decode(result)
-                let lane = self.neuralEstimator.update(decoded.ego, excluding: boxes, at: time)
+                var lane = self.neuralEstimator.update(decoded.ego, excluding: boxes, at: time)
+                // The previous cycle's road mask can veto a corridor fitted off the
+                // drivable surface (kerb, barrier, oncoming side). It never adds one.
+                self.stateLock.lock()
+                let priorRoad = self.roadMeasurements.last?.region
+                self.stateLock.unlock()
+                if let corridor = lane, let priorRoad, priorRoad.encloses(corridor, at: time) == false {
+                    lane = nil
+                    self.roadVetoes += 1
+                }
                 let observation = LanePredictionDisplay.observation(candidates: decoded.display, at: time)
                 let geometry = LanePredictionGeometry.filtered(observation)
                 // Use real pre-temporal observations, with independent pair
@@ -436,7 +446,7 @@ final class LaneTracker {
                     let count = displayed.map { Set($0.boundaries.map(\.laneSlot)).count } ?? 0
                     self.onStatus?(finished - time > 1.0
                         ? "UFLDv2 · \(duration) ms · frame too old to track"
-                        : "UFLDv2 · \(mode.title) · \(duration) ms · \(count) display boundaries · road \(roadRows) rows · \(self.neuralEstimator.status) · lead \(self.leadLaneEstimator.status)")
+                        : "UFLDv2 · \(mode.title) · \(duration) ms · \(count) display boundaries · road \(roadRows) rows · \(self.roadVetoes) road vetoes · \(self.neuralEstimator.status) · lead \(self.leadLaneEstimator.status)")
                 }
             } catch {
                 self.consecutiveErrors += 1
