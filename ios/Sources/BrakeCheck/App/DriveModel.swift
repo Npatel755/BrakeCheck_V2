@@ -97,6 +97,9 @@ final class DriveModel {
     @ObservationIgnored private var ownBrakeDetector = OwnBrakeDetector()
     @ObservationIgnored private var spokeParkedPrompt = false
     @ObservationIgnored private var spokenDeviceNotices: Set<String> = []
+    /// True while the camera has seen only near-uniform frames on a moving car.
+    @ObservationIgnored private var cameraViewMonitor = CameraViewMonitor()
+    private(set) var cameraViewBlocked = false
     private(set) var drivingAssistStatuses: [DrivingAssistFeature: String] = [:]
     private var assistSignalTime: TimeInterval = -.infinity
     private var assistRearVehicleTime: TimeInterval = -.infinity
@@ -526,6 +529,9 @@ final class DriveModel {
         camera.tracker.onLightingStatus = { [weak self] status in
             DispatchQueue.main.async { self?.detectorLightingStatus = status }
         }
+        camera.tracker.onSceneSample = { [weak self] sample, time in
+            DispatchQueue.main.async { self?.recordSceneSample(sample, at: time) }
+        }
         camera.tracker.onLeadStatus = { [weak self] status in
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo,
@@ -733,6 +739,7 @@ final class DriveModel {
         parkedMonitor.reset(); parkedPrompt = nil; spokeParkedPrompt = false
         tripStarted = Date(); tripStartedUptime = ProcessInfo.processInfo.systemUptime; tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
         ownHardBrakes = 0; ownBrakeDetector.reset()
+        cameraViewMonitor.reset(); cameraViewBlocked = false
         currentTripID = UUID()
         lastTripPublishedSecond = -1
         tripHadGPSSpeed = false
@@ -808,6 +815,7 @@ final class DriveModel {
 
     @discardableResult func endTrip() -> UUID? {
         deviceNotice = nil
+        cameraViewMonitor.reset(); cameraViewBlocked = false
         parkedMonitor.reset(); parkedPrompt = nil
         clipNoticeTask?.cancel(); clipNotice = nil
         UIDevice.current.isBatteryMonitoringEnabled = false
@@ -1763,7 +1771,9 @@ final class DriveModel {
         case .serious: notice = "Phone running hot · shade it or use a vent mount"
         default:
             // The Simulator and a disabled monitor report -1; only a measured level counts.
-            if device.isBatteryMonitoringEnabled, (0...0.15).contains(device.batteryLevel), device.batteryState == .unplugged {
+            if cameraViewBlocked {
+                notice = "Camera view blocked · check the mount and windshield"
+            } else if device.isBatteryMonitoringEnabled, (0...0.15).contains(device.batteryLevel), device.batteryState == .unplugged {
                 notice = "Battery low · plug in to keep the camera running"
             } else {
                 notice = info.isLowPowerModeEnabled ? "Low Power Mode on · camera runs slower" : nil
@@ -1776,6 +1786,14 @@ final class DriveModel {
         if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections {
             safety.audio.speakNotice(notice, language: safety.settings.language)
         }
+    }
+
+    private func recordSceneSample(_ sample: DetectorLightingSample, at time: TimeInterval) {
+        guard tripActive, !demo, !replaying else { return }
+        let blocked = cameraViewMonitor.update(sample, speed: speedReading, at: time)
+        guard blocked != cameraViewBlocked else { return }
+        cameraViewBlocked = blocked
+        refreshDeviceCondition()
     }
 
     private func deliverAssist(_ alert: DrivingAssistAlert?) {

@@ -152,6 +152,8 @@ final class VehicleTracker {
     private var lowLightLoading = false
     var onLeadStatus: ((String) -> Void)?
     var onLightingStatus: ((String) -> Void)?
+    /// Each scene sample with its capture uptime, for the camera-view monitor.
+    var onSceneSample: ((DetectorLightingSample, TimeInterval) -> Void)?
     init() {
         let shared = VisionInferenceCoordinator()
         inference = shared
@@ -754,6 +756,7 @@ final class VehicleTracker {
                                         iso: Double?, exposure: Double?) {
         if lighting.shouldSample(at: time), let sample = lightingSample(buffer, iso: iso, exposure: exposure) {
             lighting.update(sample, at: time)
+            onSceneSample?(sample, time)
         }
         let requested = lighting.profile
         if requested == .night { prepareLowLightIfNeeded() }
@@ -822,8 +825,9 @@ final class VehicleTracker {
         guard !samples.isEmpty else { return nil }
         let darkFraction = Double(samples.filter { $0 < 0.20 }.count) / Double(samples.count)
         samples.sort()
+        let spread = samples[samples.count * 9 / 10] - samples[samples.count / 10]
         return DetectorLightingSample(medianLuma: samples[samples.count / 2], darkFraction: darkFraction,
-            iso: iso, exposureSeconds: exposure)
+            iso: iso, exposureSeconds: exposure, spread: spread)
     }
     private func selectAutomatic(_ detections: [LeadVehicle], at time: TimeInterval,
                                  lane: LanePath?, leadLane: LanePath?, road: RoadRegion?, trackedBox: CGRect?,

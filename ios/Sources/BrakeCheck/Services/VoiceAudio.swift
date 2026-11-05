@@ -67,6 +67,8 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
         let spoken: String
         if text.hasPrefix("Phone overheating") {
             spoken = language == "es" ? "El teléfono se está sobrecalentando. Las alertas de cámara pueden retrasarse." : "Phone overheating. Camera warnings may be late."
+        } else if text.hasPrefix("Camera view blocked") {
+            spoken = language == "es" ? "La cámara no ve la carretera. Revisa el soporte y el parabrisas." : "Camera view blocked. Check the mount and windshield."
         } else if text.hasPrefix("Battery low") {
             spoken = language == "es" ? "Batería baja. Conecta el teléfono para que la cámara siga funcionando." : "Battery low. Plug in to keep the camera running."
         } else if text.hasPrefix("Parked") {
