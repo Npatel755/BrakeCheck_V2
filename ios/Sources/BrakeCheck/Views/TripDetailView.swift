@@ -11,6 +11,7 @@ struct TripDetailView: View {
     let trip: TripMetrics
     let useMPH: Bool
     @State private var route: TripRoute?
+    @State private var gpxURL: URL?
     @State private var loaded = false
     @State private var routeError: String?
     @State private var loadRevision = 0
@@ -104,11 +105,20 @@ struct TripDetailView: View {
         .foregroundStyle(BrakeTheme.text)
         .navigationTitle("Trip")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let gpxURL {
+                ShareLink(item: gpxURL, preview: SharePreview(title, image: Image(systemName: "map"))) {
+                    Label("Share route", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("trip.shareGPX")
+            }
+        }
         .task(id: loadRevision) {
             do {
                 let loadedRoute = try await model.loadTripRoute(trip.id)
                 guard !Task.isCancelled else { return }
                 route = loadedRoute; routeError = nil
+                gpxURL = writeGPX(loadedRoute)
             } catch {
                 guard !Task.isCancelled else { return }
                 route = nil; routeError = error.localizedDescription
@@ -137,6 +147,21 @@ struct TripDetailView: View {
     }
 
     // MARK: - Totals
+
+    /// Writes the trail as GPX into Caches so Share can hand a file to Maps, Files or Messages.
+    private func writeGPX(_ route: TripRoute) -> URL? {
+        let name = "BrakeSense trip \(trip.startedAt.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour().minute()))"
+        guard let document = route.gpxDocument(name: name),
+              let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let safeName = name.replacingOccurrences(of: "[/:]", with: "-", options: .regularExpression)
+        let url = caches.appendingPathComponent("\(safeName).gpx")
+        do {
+            try document.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        } catch {
+            return nil
+        }
+    }
 
     private var stats: some View {
         HStack(alignment: .top, spacing: 8) {
