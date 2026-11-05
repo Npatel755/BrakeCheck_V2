@@ -822,12 +822,12 @@ final class DriveModel {
         tripMinutes = elapsed / 60
         let trip = TripMetrics(id: currentTripID, startedAt: tripStarted, endedAt: endedAt,
             maxSpeedMPH: tripHadGPSSpeed ? maxSpeedMPH : nil,
-            estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls)
+            estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls, ownHardBrakes: ownHardBrakes)
         let route = tripRoute.finish()
         pendingTripSaves[trip.id] = (trip, route)
         pendingTripSaveCount = max(pendingTripSaveCount, pendingTripSaves.count)
-        safety.sendTrip(minutes: tripMinutes,
-                        hardBrakes: hardBrakes, closeCalls: closeCalls, maxSpeedMPH: maxSpeedMPH)
+        safety.sendTrip(minutes: tripMinutes, hardBrakes: hardBrakes, ownHardBrakes: ownHardBrakes,
+                        closeCalls: closeCalls, maxSpeedMPH: maxSpeedMPH)
 
         stopping = true
         beginFinalizationTask()

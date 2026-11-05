@@ -33,4 +33,19 @@ final class TripSafetyScoreTests: XCTestCase {
         XCTAssertEqual(TripSafetyScore(durationSeconds: 600, hardBrakes: 20, closeCalls: 20)?.value, 0)
         XCTAssertEqual(TripSafetyScore(durationSeconds: 600, hardBrakes: 20, closeCalls: 20)?.label, "Rough")
     }
+
+    func testTripScoreCountsOwnAndLeadHardBrakesAlike() {
+        let start = Date(timeIntervalSince1970: 0), end = Date(timeIntervalSince1970: 1200)
+        let lead = TripMetrics(startedAt: start, endedAt: end, maxSpeedMPH: nil, estimatedLeadHardBrakes: 2, estimatedCloseCalls: 0)
+        let own = TripMetrics(startedAt: start, endedAt: end, maxSpeedMPH: nil, estimatedLeadHardBrakes: 0,
+                              estimatedCloseCalls: 0, ownHardBrakes: 2)
+        let both = TripMetrics(startedAt: start, endedAt: end, maxSpeedMPH: nil, estimatedLeadHardBrakes: 1,
+                               estimatedCloseCalls: 0, ownHardBrakes: 1)
+        XCTAssertEqual(TripSafetyScore(lead)?.value, 88)
+        XCTAssertEqual(TripSafetyScore(own)?.value, 88)
+        XCTAssertEqual(TripSafetyScore(both)?.value, 88)
+        XCTAssertEqual(both.totalHardBrakes, 2)
+        XCTAssertNil(TripSafetyScore(TripMetrics(startedAt: start, endedAt: start.addingTimeInterval(60),
+                                                 maxSpeedMPH: nil, estimatedLeadHardBrakes: 0, estimatedCloseCalls: 0)))
+    }
 }

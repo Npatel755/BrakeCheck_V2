@@ -168,10 +168,9 @@ struct TripDetailView: View {
             stat("\(Int((trip.durationSeconds / 60).rounded()))", "minutes", BrakeTheme.text)
             stat(trip.maxSpeedMPH.map { String(format: "%.0f", $0 * (useMPH ? 1 : 1.609344)) } ?? "--",
                  useMPH ? "max mph" : "max km/h", BrakeTheme.text)
-            stat("\(trip.estimatedLeadHardBrakes)", trip.estimatedLeadHardBrakes == 1 ? "hard brake" : "hard brakes", BrakeTheme.warning)
+            stat("\(trip.totalHardBrakes)", trip.totalHardBrakes == 1 ? "hard brake" : "hard brakes", BrakeTheme.warning)
             stat("\(trip.estimatedCloseCalls)", trip.estimatedCloseCalls == 1 ? "close call" : "close calls", BrakeTheme.danger)
-            if let score = TripSafetyScore(durationSeconds: trip.durationSeconds, hardBrakes: trip.estimatedLeadHardBrakes,
-                                           closeCalls: trip.estimatedCloseCalls) {
+            if let score = TripSafetyScore(trip) {
                 stat("\(score.value)", score.label.lowercased(), score.value >= 70 ? BrakeTheme.accentText : BrakeTheme.warning)
             }
         }

@@ -100,8 +100,7 @@ public enum TripTrends {
                   let end = calendar.date(byAdding: .weekOfYear, value: 1, to: start) else { return nil }
             let inWeek = trips.filter { $0.startedAt >= start && $0.startedAt < end }
             let scores = inWeek.compactMap {
-                TripSafetyScore(durationSeconds: $0.durationSeconds, hardBrakes: $0.estimatedLeadHardBrakes,
-                                closeCalls: $0.estimatedCloseCalls)?.value
+                TripSafetyScore($0)?.value
             }
             let average = scores.isEmpty ? nil : Int((Double(scores.reduce(0, +)) / Double(scores.count)).rounded())
             return TripTrendWeek(weekStart: start, trips: inWeek.count,

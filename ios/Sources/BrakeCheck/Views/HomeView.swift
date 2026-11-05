@@ -268,7 +268,8 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 14) {
             if model.tripActive {
                 Text("This trip").font(.brake(size: 16, weight: .bold))
-                stats(minutes: model.tripMinutes, maxMPH: model.maxSpeedMPH, hardBrakes: model.hardBrakes, closeCalls: model.closeCalls)
+                stats(minutes: model.tripMinutes, maxMPH: model.maxSpeedMPH,
+                      hardBrakes: model.hardBrakes + model.ownHardBrakes, closeCalls: model.closeCalls)
             } else if let trip = model.savedTrips.first {
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) { lastTripOpen.toggle() }
@@ -284,7 +285,7 @@ struct HomeView: View {
                                 .rotationEffect(.degrees(lastTripOpen ? 90 : 0))
                         }
                         stats(minutes: trip.durationSeconds / 60, maxMPH: trip.maxSpeedMPH,
-                              hardBrakes: trip.estimatedLeadHardBrakes, closeCalls: trip.estimatedCloseCalls)
+                              hardBrakes: trip.totalHardBrakes, closeCalls: trip.estimatedCloseCalls)
                     }
                     .contentShape(Rectangle())
                 }

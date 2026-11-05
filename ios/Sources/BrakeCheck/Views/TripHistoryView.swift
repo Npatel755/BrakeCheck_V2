@@ -142,9 +142,9 @@ struct TripHistoryView: View {
     }
 
     private func tripSummaryLine(_ trip: TripMetrics) -> String {
-        let events = "\(trip.estimatedLeadHardBrakes) estimated lead brakes · \(trip.estimatedCloseCalls) estimated closing events"
-        guard let score = TripSafetyScore(durationSeconds: trip.durationSeconds, hardBrakes: trip.estimatedLeadHardBrakes,
-                                          closeCalls: trip.estimatedCloseCalls) else { return events }
+        var events = "\(trip.estimatedLeadHardBrakes) estimated lead brakes · \(trip.estimatedCloseCalls) estimated closing events"
+        if let own = trip.ownHardBrakes, own > 0 { events += " · \(own) hard \(own == 1 ? "brake" : "brakes") by you" }
+        guard let score = TripSafetyScore(trip) else { return events }
         return "\(score.label) · \(score.value)/100 · " + events
     }
 
