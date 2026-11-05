@@ -104,6 +104,7 @@ struct SettingsView: View {
     @AppStorage("recording.limitGB") private var recordingLimitGB = 0
     @AppStorage("recording.retentionDays") private var recordingRetentionDays = 0
     @AppStorage("recording.autoSaveBrakeWarnings") private var autoSaveBrakeWarnings = true
+    @AppStorage(BrakeWarningTiming.defaultsKey) private var brakeWarningTiming = BrakeWarningTiming.standard.rawValue
     @AppStorage("checklist.skip") private var skipChecklist = false
     @AppStorage("diagnostics.developerOverlays") private var developerOverlays = false
     @State private var pendingRetentionDays = 0
@@ -486,6 +487,14 @@ struct SettingsView: View {
             Text("Check-in replies are recognized on this iPhone when on-device speech is supported. The I'm okay and Send help buttons remain available. Automatic contact alerts require a connected service.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .safety:
+            Picker("Brake warning timing", selection: $brakeWarningTiming) {
+                ForEach(BrakeWarningTiming.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("safety.brakeWarningTiming")
+            Text("Earlier also sounds the brake warning when a car ahead is closing fast with under about 2.6 seconds to impact, instead of waiting for the critical gate. Warnings are never delayed.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+            Divider()
             DrivingAssistControls(model: model)
             Divider()
             Toggle("Pre-drive checklist before each trip", isOn: Binding(

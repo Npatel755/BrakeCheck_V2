@@ -1834,8 +1834,12 @@ final class DriveModel {
 
     }
 
+    private var brakeWarningTiming: BrakeWarningTiming {
+        UserDefaults.standard.string(forKey: BrakeWarningTiming.defaultsKey).flatMap(BrakeWarningTiming.init) ?? .standard
+    }
+
     private func updateTripEvents() {
-        let critical = risk.level == .critical
+        let critical = brakeWarningTiming.warrantsBrakeWarning(level: risk.level, timeToCollision: risk.timeToCollision)
         let now = ProcessInfo.processInfo.systemUptime
         let alreadyVisible = brakeWarningLatch.isActive(at: now)
         if critical {
