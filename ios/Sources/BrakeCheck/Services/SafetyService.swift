@@ -579,12 +579,13 @@ final class SafetyService: ObservableObject {
         startPolling(client: client, id: id, generation: sessionGeneration)
     }
 
-    func sendTrip(minutes: Double, hardBrakes: Int, closeCalls: Int, maxSpeedMPH: Double) {
+    func sendTrip(minutes: Double, hardBrakes: Int, ownHardBrakes: Int, closeCalls: Int, maxSpeedMPH: Double) {
         guard let client = settings.client else { return }
         Task {
             do {
                 _ = try await client.data("trip", method: "POST", json: ["minutes": minutes, "hardBrakes": hardBrakes,
-                    "closeCalls": closeCalls, "maxSpeedMph": maxSpeedMPH, "time": Date().timeIntervalSince1970])
+                    "ownHardBrakes": ownHardBrakes, "closeCalls": closeCalls, "maxSpeedMph": maxSpeedMPH,
+                    "time": Date().timeIntervalSince1970])
             } catch { self.error = "Photon trip summary unavailable: \(error.localizedDescription)" }
         }
     }

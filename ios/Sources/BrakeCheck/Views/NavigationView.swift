@@ -128,7 +128,7 @@ struct NavigationView: View {
     }
 
     private func banner(large: Bool) -> some View {
-        NavigationBanner(navigation: navigation, presentation: model.arPresentation,
+        NavigationBanner(navigation: navigation, presentation: model.arPresentation, laneGuidance: model.laneGuidance, curveWarning: model.curveWarning,
                          compact: model.brakeWarningActive, large: large, alignmentDetail: false)
     }
 
@@ -481,6 +481,12 @@ struct NavigationView: View {
             HStack(spacing: 12) {
                 journeyMenu
                 Spacer(minLength: 0)
+                if !navigation.hasArrived, let seconds = navigation.remainingTime,
+                   let eta = ETAShareMessage.text(destination: navigation.destinationTitle, remainingSeconds: seconds) {
+                    ShareLink(item: eta) { Label("Share ETA", systemImage: "square.and.arrow.up") }
+                        .buttonStyle(.plain).frame(minHeight: 44)
+                        .accessibilityIdentifier("navigation.shareETA")
+                }
                 Button(action: openCamera) { Label("Camera", systemImage: "video") }
                     .buttonStyle(.plain).frame(minHeight: 44)
             }.font(.brake(.subheadline, weight: .semibold))

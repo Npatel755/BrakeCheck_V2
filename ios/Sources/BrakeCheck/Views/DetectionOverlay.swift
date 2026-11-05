@@ -138,7 +138,7 @@ struct CameraLanePredictionStatus: View {
     }
 }
 
-/// Road-model diagnostic for the SegFormer road mask. Draws raw pixels
+/// Road-model diagnostic for the Intel road mask. Draws raw pixels
 /// even when the alignment scanner declines to use them for navigation.
 struct CameraRoadMaskOverlay: View {
     let presentation: CameraARPresentation

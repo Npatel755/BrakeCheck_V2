@@ -24,14 +24,17 @@ public struct DetectorLightingSample {
     public let darkFraction: Double
     public let iso: Double?
     public let exposureSeconds: Double?
+    /// Luma between the 10th and 90th percentile; near zero when the frame is uniform.
+    public let spread: Double?
     public init(medianLuma: Double, darkFraction: Double,
-                iso: Double? = nil, exposureSeconds: Double? = nil) {
+                iso: Double? = nil, exposureSeconds: Double? = nil, spread: Double? = nil) {
         self.medianLuma = medianLuma; self.darkFraction = darkFraction
-        self.iso = iso; self.exposureSeconds = exposureSeconds
+        self.iso = iso; self.exposureSeconds = exposureSeconds; self.spread = spread
     }
     public var isUsable: Bool {
         medianLuma.isFinite && (0...1).contains(medianLuma)
             && darkFraction.isFinite && (0...1).contains(darkFraction)
+            && (spread.map { $0.isFinite && (0...1).contains($0) } ?? true)
             && (iso.map { $0.isFinite && (0...100_000).contains($0) } ?? true)
             && (exposureSeconds.map { $0.isFinite && (0...1).contains($0) } ?? true)
     }

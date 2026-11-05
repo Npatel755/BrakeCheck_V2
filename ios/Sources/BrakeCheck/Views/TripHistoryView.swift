@@ -50,7 +50,7 @@ struct TripHistoryView: View {
                                     metric("Duration", tripDuration(trip.durationSeconds))
                                     metric("Max. GPS speed", tripSpeed(trip.maxSpeedMPH, useMPH: useMPH))
                                 }
-                                Text("\(trip.estimatedLeadHardBrakes) estimated lead brakes · \(trip.estimatedCloseCalls) estimated closing events")
+                                Text(tripSummaryLine(trip))
                                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                             }.brakePanel()
                         }.buttonStyle(.plain)
@@ -96,11 +96,15 @@ struct TripHistoryView: View {
                     Text(week.trips == 0 ? "No trips" : "\(week.trips) \(week.trips == 1 ? "trip" : "trips") · \(tripDuration(week.drivingSeconds))")
                         .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                     Spacer(minLength: 8)
+                    Text(week.averageScore.map { "Score \($0)" } ?? "–")
+                        .font(.brake(.subheadline, weight: .semibold)).monospacedDigit()
+                        .foregroundStyle((week.averageScore ?? 100) >= 70 ? BrakeTheme.accentText : BrakeTheme.warning)
                     Text(week.hardBrakesPerHour.map { String(format: "%.1f / hr", $0) } ?? "–")
                         .font(.brake(.subheadline, weight: .semibold)).monospacedDigit()
+                        .frame(width: 64, alignment: .trailing)
                 }
             }
-            Text("Estimated hard brakes by the car ahead, per hour of driving. Camera estimates, not a driving score.")
+            Text("Average trip score (100 = smooth) and estimated hard brakes by the car ahead per hour of driving. Camera estimates from trips of two minutes or more.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         }.brakePanel()
     }
@@ -135,6 +139,13 @@ struct TripHistoryView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("history.locked")
+    }
+
+    private func tripSummaryLine(_ trip: TripMetrics) -> String {
+        var events = "\(trip.estimatedLeadHardBrakes) estimated lead brakes · \(trip.estimatedCloseCalls) estimated closing events"
+        if let own = trip.ownHardBrakes, own > 0 { events += " · \(own) hard \(own == 1 ? "brake" : "brakes") by you" }
+        guard let score = TripSafetyScore(trip) else { return events }
+        return "\(score.label) · \(score.value)/100 · " + events
     }
 
     private func exportCSV() {

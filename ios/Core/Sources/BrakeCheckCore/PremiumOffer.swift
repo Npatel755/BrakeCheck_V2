@@ -76,6 +76,13 @@ public struct TripTrendWeek: Equatable {
     public let drivingSeconds: Double
     public let hardBrakes: Int
     public let closeCalls: Int
+    /// Mean `TripSafetyScore` of the week's scored trips; nil when none lasted two minutes.
+    public let averageScore: Int?
+
+    init(weekStart: Date, trips: Int, drivingSeconds: Double, hardBrakes: Int, closeCalls: Int, averageScore: Int? = nil) {
+        self.weekStart = weekStart; self.trips = trips; self.drivingSeconds = drivingSeconds
+        self.hardBrakes = hardBrakes; self.closeCalls = closeCalls; self.averageScore = averageScore
+    }
 
     /// Estimated hard brakes per hour of driving; nil for a week with no driving time.
     public var hardBrakesPerHour: Double? {
@@ -92,10 +99,15 @@ public enum TripTrends {
             guard let start = calendar.date(byAdding: .weekOfYear, value: -offset, to: current),
                   let end = calendar.date(byAdding: .weekOfYear, value: 1, to: start) else { return nil }
             let inWeek = trips.filter { $0.startedAt >= start && $0.startedAt < end }
+            let scores = inWeek.compactMap {
+                TripSafetyScore($0)?.value
+            }
+            let average = scores.isEmpty ? nil : Int((Double(scores.reduce(0, +)) / Double(scores.count)).rounded())
             return TripTrendWeek(weekStart: start, trips: inWeek.count,
                                  drivingSeconds: inWeek.reduce(0) { $0 + $1.durationSeconds },
                                  hardBrakes: inWeek.reduce(0) { $0 + $1.estimatedLeadHardBrakes },
-                                 closeCalls: inWeek.reduce(0) { $0 + $1.estimatedCloseCalls })
+                                 closeCalls: inWeek.reduce(0) { $0 + $1.estimatedCloseCalls },
+                                 averageScore: average)
         }
     }
 }

@@ -69,6 +69,10 @@ struct ContentView: View {
     @State private var homeChecklistPresented = false
     @State private var practiceFlow = PracticeDriveFlow()
     @State private var onboardingVisible = false
+    @AppStorage("onboarding.appTourOffered") private var appTourOffered = false
+    @State private var showTourOffer = false
+    @State private var tourAccepted = false
+    @State private var tourStep: AppTourStep?
     @State private var showOnboardingPremium = false
 
     init(model: DriveModel) {
@@ -95,7 +99,8 @@ struct ContentView: View {
         switch destination {
         case .settings:
             SettingsScreen(model: model, service: safety, settings: safety.settings, requestDemo: $requestDemo,
-                openCameraSetup: { destinationPath = []; page = .camera; showCameraSetup = true }).equatable()
+                openCameraSetup: { destinationPath = []; page = .camera; showCameraSetup = true },
+                showTour: startTour).equatable()
         case .contacts: ContactsView(service: safety)
         case .incidents: IncidentListView(model: model)
         case .tripHistory: TripHistoryView(model: model, useMPH: useMPH)
@@ -178,6 +183,28 @@ struct ContentView: View {
         .confirmationDialog("End this trip? Remaining post-event recording will stop.", isPresented: $stopping, titleVisibility: .visible) {
             Button("End trip", role: .destructive) { finishTripAndPresentSummary() }
         }
+        .onChange(of: TripIntentBridge.shared.request, initial: true) { _, request in
+            guard let request else { return }
+            performIntent(request)
+        }
+    }
+
+    /// Siri / Shortcuts requests go through the same trip path as the buttons.
+    private func performIntent(_ request: TripIntentRequest) {
+        TripIntentBridge.shared.clear()
+        switch request.kind {
+        case .start:
+            guard !model.tripActive, !model.demo, !model.replaying, !model.stopping else { return }
+            stopping = false
+            showCameraSetup = false
+            destinationPath = []
+            page = .camera
+            model.startTrip()
+        case .end:
+            guard model.tripActive else { return }
+            stopping = false
+            finishTripAndPresentSummary()
+        }
     }
 
     private var messageShown: Binding<Bool> {
@@ -194,6 +221,41 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: showCameraSetup)
+        .overlay(alignment: .bottom) {
+            if let step = tourStep, destinationPath.isEmpty, !showCameraSetup {
+                AppTourCard(step: step, back: { showTourStep(step.previous) },
+                            advance: { showTourStep(step.next) }, skip: { showTourStep(nil) })
+                    .padding(.bottom, 96)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: tourStep)
+    }
+
+    /// The tour is offered once, after the driver-aid notice and the practice-drive flow
+    /// have had their turn, on an idle Home page.
+    private var tourOfferReady: Bool {
+        acceptedNotice >= 1 && practiceDriveOffered && !appTourOffered && !showPracticePrompt && !showOnboardingPremium
+            && page == .home && destinationPath.isEmpty && scenePhase == .active && !model.tripActive && !model.demo
+            && !model.replaying && !model.stopping && !showCheckin && !requestDemo && !safety.checkinPresented
+            && !showFirstTripPremium && !showCameraSetup && model.message == nil && completedTripID == nil
+            && !homeChecklistPresented && tourStep == nil
+    }
+
+    private func startTour() {
+        destinationPath = []
+        showCameraSetup = false
+        showTourStep(.startTrip)
+    }
+
+    private func showTourStep(_ step: AppTourStep?) {
+        tourStep = step
+        guard let step else { return }
+        switch step {
+        case .camera: page = .camera
+        case .navigate: page = .navigation
+        default: page = .home
+        }
     }
 
     private var practiceContext: PracticeDriveFlow.Context {
@@ -232,6 +294,22 @@ struct ContentView: View {
             presentPendingCheckin(); presentFinalizedTripSummary()
         }) {
             PremiumView(model: model, context: .onboarding, onClose: { showOnboardingPremium = false })
+        }
+        .task(id: tourOfferReady) {
+            guard tourOfferReady else { return }
+            // Let the practice flow's own follow-ups (the Premium offer) settle first.
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, tourOfferReady else { return }
+            appTourOffered = true
+            tourAccepted = false
+            showTourOffer = true
+        }
+        .sheet(isPresented: $showTourOffer, onDismiss: {
+            if tourAccepted { startTour() }
+        }) {
+            AppTourOfferView(accept: { tourAccepted = true; showTourOffer = false },
+                             skip: { showTourOffer = false })
+                .presentationDetents([.medium])
         }
         .task(id: practiceFlow.request) {
             guard let request = practiceFlow.request else { return }
@@ -393,8 +471,14 @@ struct ContentView: View {
                  openTripHistory: { destinationPath.append(.tripHistory) },
                  openReplay: { destinationPath.append(.replay) }, beginCalibration: beginCalibration,
                  openTrip: { destinationPath.append(.trip($0)) },
-                 openPremium: { destinationPath.append(.premium) },
-                 onChecklistChanged: { homeChecklistPresented = $0 })
+                 openPremium: { destinationPath.append(.premium) }, isSubscribed: premiumStore.isSubscribed,
+                 onChecklistChanged: { homeChecklistPresented = $0 },
+                 lastDestination: navigation.destinationTitle == nil && !navigation.isNavigating
+                     ? navigation.recentDestinations.first?.title : nil,
+                 navigateAgain: {
+                     if let recent = navigation.recentDestinations.first { navigation.chooseRecent(recent) }
+                     page = .navigation
+                 })
     }
 
     private func cameraPage(portrait: Bool) -> some View {

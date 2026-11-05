@@ -79,5 +79,7 @@ final class PremiumOfferTests: XCTestCase {
         XCTAssertEqual(weeks[0].hardBrakesPerHour ?? -1, 2, accuracy: 0.0001)
         XCTAssertNil(weeks[1].hardBrakesPerHour)
         XCTAssertEqual(weeks[2].hardBrakesPerHour ?? -1, 4, accuracy: 0.0001)
+        // Scores 90 and 98 in the current week, nothing scored last week, 92 the week before.
+        XCTAssertEqual(weeks.map(\.averageScore), [94, nil, 92, nil])
     }
 }

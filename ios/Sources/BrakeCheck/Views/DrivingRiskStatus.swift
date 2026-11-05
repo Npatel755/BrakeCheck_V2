@@ -71,13 +71,45 @@ struct DrivingAssistBanner: View {
     var body: some View {
         if let alert = model.drivingAssistAlert, premium.isSubscribed,
            !safety.checkinPresented, model.showsDrivingAssistAlert(selecting: selecting) {
-            Label(alert.feature.alertText, systemImage: alert.feature.icon)
+            Label(alert.text, systemImage: alert.feature.icon)
                 .font(.brake(size: large ? 14 : 12, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .foregroundStyle(BrakeTheme.text)
                 .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
                 .accessibilityIdentifier("drivingAssistAlert")
+                .allowsHitTesting(false)
+        } else if let prompt = model.parkedPrompt, !safety.checkinPresented {
+            HStack(spacing: 10) {
+                Label(prompt.text, systemImage: "parkingsign.circle.fill")
+                    .font(.brake(size: large ? 14 : 12, weight: .semibold))
+                Button("Keep going") { model.keepDriving() }
+                    .font(.brake(size: large ? 14 : 12, weight: .bold))
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("parked.keepGoing")
+            }
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .foregroundStyle(BrakeTheme.text)
+            .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
+            .accessibilityIdentifier("parkedPrompt")
+        } else if let notice = model.deviceNotice, !safety.checkinPresented {
+            Label(notice, systemImage: notice.hasPrefix("Low Power") ? "battery.25percent"
+                  : notice.hasPrefix("Battery low") ? "battery.0percent" : "thermometer.sun.fill")
+                .font(.brake(size: large ? 14 : 12, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .foregroundStyle(BrakeTheme.text)
+                .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityIdentifier("deviceNotice")
+                .allowsHitTesting(false)
+        } else if let notice = model.clipNotice, !safety.checkinPresented {
+            Label(notice, systemImage: notice.hasPrefix("Clip saved") ? "bookmark.fill" : "cup.and.saucer.fill")
+                .font(.brake(size: large ? 14 : 12, weight: .semibold))
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .foregroundStyle(BrakeTheme.text)
+                .background(BrakeTheme.cameraSurface, in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityIdentifier("clipNotice")
                 .allowsHitTesting(false)
         }
     }

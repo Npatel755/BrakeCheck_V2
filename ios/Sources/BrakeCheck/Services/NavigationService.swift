@@ -616,7 +616,7 @@ final class NavigationService: NSObject, ObservableObject {
     }
 
     private func calculateRoute() {
-        guard foreground, liveModeAllowed, let destination, !isCalculating, !userPaused,
+        guard foreground, liveModeAllowed, destination != nil, !isCalculating, !userPaused,
               recovery.canAttempt(at: Date().timeIntervalSinceReferenceDate) else { return }
         if let cached = manager.location { cacheLocation(cached) }
         guard let origin = isNavigating ? (hasFreshLocation ? location : nil) : routingLocation else {
@@ -1023,6 +1023,14 @@ final class NavigationService: NSObject, ObservableObject {
         }
         return meters >= 1000 ? String(format: "%.1f kilometers", meters / 1000)
             : "\(max(10, Int((meters / 10).rounded()) * 10)) meters"
+    }
+
+    /// Lane-level and curve advisories use the turn-prompt rules (fresh GPS, foreground, spoken
+    /// directions on, audio ownership) and yield to any maneuver prompt already speaking.
+    @discardableResult
+    func speakAdvisory(_ text: String, key: String) -> Bool {
+        guard !speech.isSpeaking else { return false }
+        return announce(text, key: "advisory:" + key)
     }
 
     @discardableResult

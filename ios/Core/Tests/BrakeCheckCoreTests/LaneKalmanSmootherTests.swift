@@ -37,12 +37,40 @@ final class LaneKalmanSmootherTests: XCTestCase {
         XCTAssertLessThan(changes(smoothed), changes(raw) * 0.85)
     }
 
-    func testMissingLaneClearsImmediatelyAndCannotBePredictedIntoDisplay() throws {
+    func testOneMissingCaptureIsNotDrawnButKeepsHistoryForTheNextObservation() throws {
         var filter = LaneKalmanSmoother()
         _ = filter.update(input(10), at: 10)
         XCTAssertNil(filter.update(nil, at: 10.1))
-        let fresh = input(10.2, shift: 0.02)
-        XCTAssertEqual(filter.update(fresh, at: 10.2), fresh)
+        let fresh = input(10.4, shift: 0.02)
+        let result = try XCTUnwrap(filter.update(fresh, at: 10.4))
+        XCTAssertNotEqual(result, fresh)
+        XCTAssertEqual(result.capturedAt, 10.4)
+        // Smoothed toward the earlier position, never beyond either measurement.
+        let x = result.boundaries[0].points[8].x
+        XCTAssertGreaterThan(x, boundary().points[8].x)
+        XCTAssertLessThan(x, fresh.boundaries[0].points[8].x)
+    }
+
+    func testMissingCaptureBeyondTheGapClearsHistory() {
+        var filter = LaneKalmanSmoother()
+        _ = filter.update(input(10), at: 10)
+        XCTAssertNil(filter.update(nil, at: 10.8))
+        let fresh = input(10.9, shift: 0.02)
+        XCTAssertEqual(filter.update(fresh, at: 10.9), fresh)
+    }
+
+    func testFarAnchorsAreSmoothedMoreThanNearAnchors() throws {
+        var filter = LaneKalmanSmoother()
+        _ = filter.update(input(10), at: 10)
+        let shifted = input(10.3, shift: 0.02)
+        let result = try XCTUnwrap(filter.update(shifted, at: 10.3))
+        let near = result.boundaries[0].points.first!, far = result.boundaries[0].points.last!
+        let nearMove = near.x - boundary().points.first!.x
+        let farMove = far.x - boundary().points.last!.x
+        XCTAssertGreaterThan(nearMove, 0); XCTAssertGreaterThan(farMove, 0)
+        XCTAssertLessThan(farMove, nearMove)
+        XCTAssertGreaterThan(LaneKalmanSmoother.variance(confidence: 0.9, y: 0.5),
+                             LaneKalmanSmoother.variance(confidence: 0.9, y: 0.1) * 3)
     }
 
     func testDuplicateCapturesDoNotUpdateFilterOrRenewTimestamp() throws {

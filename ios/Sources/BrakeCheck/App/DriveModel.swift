@@ -57,6 +57,10 @@ final class DriveModel {
     private(set) var brakeWarningActive = false
     @ObservationIgnored private var wasHardBrake = false
     @ObservationIgnored private var wasCloseCall = false
+    @ObservationIgnored private var lastAutoClipUptime: TimeInterval?
+    /// Short HUD/Home confirmation that footage is being kept; cleared a few seconds later.
+    private(set) var clipNotice: String?
+    @ObservationIgnored private var clipNoticeTask: Task<Void, Never>?
 
     private let speedService = SpeedService()
 
@@ -83,9 +87,30 @@ final class DriveModel {
     private var assistLane: LanePath?
     @ObservationIgnored private var assistSubscriptions = Set<AnyCancellable>()
     private(set) var drivingAssistAlert: DrivingAssistAlert?
+    /// Phone condition that degrades perception during a trip (heat, Low Power Mode).
+    private(set) var deviceNotice: String?
+    /// Countdown shown once the car has been parked long enough that the trip will end itself.
+    private(set) var parkedPrompt: ParkedTripPrompt?
+    @ObservationIgnored private var parkedMonitor = ParkedTripMonitor()
+    /// Times this trip's measured GPS deceleration showed the driver braking hard.
+    private(set) var ownHardBrakes = 0
+    @ObservationIgnored private var ownBrakeDetector = OwnBrakeDetector()
+    @ObservationIgnored private var breakReminder = BreakReminder()
+    @ObservationIgnored private var spokeParkedPrompt = false
+    @ObservationIgnored private var spokenDeviceNotices: Set<String> = []
+    /// True while the camera has seen only near-uniform frames on a moving car.
+    @ObservationIgnored private var cameraViewMonitor = CameraViewMonitor()
+    private(set) var cameraViewBlocked = false
     private(set) var drivingAssistStatuses: [DrivingAssistFeature: String] = [:]
     private var assistSignalTime: TimeInterval = -.infinity
     private var assistRearVehicleTime: TimeInterval = -.infinity
+    @ObservationIgnored private var laneGuidanceEngine = LaneLevelGuidance()
+    /// Lane-level preparation for the next turn or exit, from the lane model's slot boundaries.
+    private(set) var laneGuidance: LaneGuidanceAdvice?
+    @ObservationIgnored private var curveAdvisor = CurveSpeedAdvisor()
+    @ObservationIgnored private var curveRouteIdentity: (id: UUID, count: Int)?
+    /// Route-geometry curve warning for the current GPS speed.
+    private(set) var curveWarning: CurveSpeedWarning?
 
     private var lastTrackingUptime: TimeInterval = 0
 
@@ -111,7 +136,7 @@ final class DriveModel {
     var cameraReady = false
     var captureGeometry = CaptureFrameGeometry.standby
     var changingCameraGeometry = false
-    private var desiredCaptureOrientation: AVCaptureVideoOrientation = .portrait
+    private var desiredCaptureOrientation: CaptureOrientation = .portrait
     private var latestGeometryChangeUptime: TimeInterval = 0
     private var latestTrackingResetUptime: TimeInterval = 0
     private var lastDetectionsUptime: TimeInterval = 0
@@ -322,6 +347,12 @@ final class DriveModel {
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: RunLoop.main).sink { [weak self] _ in self?.syncDrivingAssists() }
             .store(in: &assistSubscriptions)
+        NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)
+            .merge(with: NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange),
+                   NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification),
+                   NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification))
+            .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshDeviceCondition() }
+            .store(in: &assistSubscriptions)
         SpeechVoicePreferences.restoreOriginalDefaultsIfNeeded()
         tripHistoryBusy = true
         let persistenceRevision = UUID(); tripPersistenceRevision = persistenceRevision
@@ -355,6 +386,8 @@ final class DriveModel {
 
             self.speedReading = reading
             self.camera.tracker.updateEgoSpeed(reading)
+            self.recordOwnBraking(reading)
+            self.processCurveWarning()
 
             self.gpsSimulated = reading?.simulated ?? false
 
@@ -497,6 +530,9 @@ final class DriveModel {
         camera.tracker.onLightingStatus = { [weak self] status in
             DispatchQueue.main.async { self?.detectorLightingStatus = status }
         }
+        camera.tracker.onSceneSample = { [weak self] sample, time in
+            DispatchQueue.main.async { self?.recordSceneSample(sample, at: time) }
+        }
         camera.tracker.onLeadStatus = { [weak self] status in
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo,
@@ -522,12 +558,13 @@ final class DriveModel {
             DispatchQueue.main.async {
                 guard let self, self.foreground, self.tripActive || self.replaying, !self.demo,
                       !self.changingCameraGeometry else { return }
+                let cutoff = max(self.latestGeometryChangeUptime, self.latestTrackingResetUptime)
+                guard observation.map({ $0.capturedAt >= cutoff }) ?? true else { return }
+                self.processLaneGuidance(observation)
                 guard UserDefaults.standard.bool(forKey: "display.laneGuides") else {
                     if self.lanePredictions != nil { self.lanePredictions = nil }
                     return
                 }
-                let cutoff = max(self.latestGeometryChangeUptime, self.latestTrackingResetUptime)
-                guard observation.map({ $0.capturedAt >= cutoff }) ?? true else { return }
                 let visible = LanePredictionDisplay.visible(observation, at: ProcessInfo.processInfo.systemUptime)
                 if self.lanePredictions != visible { self.lanePredictions = visible }
             }
@@ -697,13 +734,20 @@ final class DriveModel {
         camera.setVideoOrientation(desiredCaptureOrientation)
         clearTarget("Starting trip · acquiring the lead")
         tripActive = true
+        spokenDeviceNotices = []
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        refreshDeviceCondition()
+        parkedMonitor.reset(); parkedPrompt = nil; spokeParkedPrompt = false
         tripStarted = Date(); tripStartedUptime = ProcessInfo.processInfo.systemUptime; tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
+        ownHardBrakes = 0; ownBrakeDetector.reset()
+        cameraViewMonitor.reset(); cameraViewBlocked = false
+        breakReminder.reset()
         currentTripID = UUID()
         lastTripPublishedSecond = -1
         tripHadGPSSpeed = false
         lastLoggedGPSUptime = nil
         speedLog.start(at: tripStarted)
-        wasHardBrake = false; wasCloseCall = false
+        wasHardBrake = false; wasCloseCall = false; lastAutoClipUptime = nil
         tripRoute.start(destination: navigation.isNavigating ? navigation.destinationTitle : nil)
         Task { await safety.prepareVoice() }
 
@@ -772,6 +816,11 @@ final class DriveModel {
     }
 
     @discardableResult func endTrip() -> UUID? {
+        deviceNotice = nil
+        cameraViewMonitor.reset(); cameraViewBlocked = false
+        parkedMonitor.reset(); parkedPrompt = nil
+        clipNoticeTask?.cancel(); clipNotice = nil
+        UIDevice.current.isBatteryMonitoringEnabled = false
 
         guard tripActive, !stopping else { return nil }
 
@@ -783,12 +832,12 @@ final class DriveModel {
         tripMinutes = elapsed / 60
         let trip = TripMetrics(id: currentTripID, startedAt: tripStarted, endedAt: endedAt,
             maxSpeedMPH: tripHadGPSSpeed ? maxSpeedMPH : nil,
-            estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls)
+            estimatedLeadHardBrakes: hardBrakes, estimatedCloseCalls: closeCalls, ownHardBrakes: ownHardBrakes)
         let route = tripRoute.finish()
         pendingTripSaves[trip.id] = (trip, route)
         pendingTripSaveCount = max(pendingTripSaveCount, pendingTripSaves.count)
-        safety.sendTrip(minutes: tripMinutes,
-                        hardBrakes: hardBrakes, closeCalls: closeCalls, maxSpeedMPH: maxSpeedMPH)
+        safety.sendTrip(minutes: tripMinutes, hardBrakes: hardBrakes, ownHardBrakes: ownHardBrakes,
+                        closeCalls: closeCalls, maxSpeedMPH: maxSpeedMPH)
 
         stopping = true
         beginFinalizationTask()
@@ -806,6 +855,7 @@ final class DriveModel {
                 self.pendingTripSaves.removeValue(forKey: trip.id)
                 self.applyTripHistory(snapshot)
                 self.lastSavedTripID = trip.id
+                self.speakTripSummary(trip)
             } catch {
                 self?.tripHistoryError = "This trip is waiting to be saved. " + error.localizedDescription
             }
@@ -999,6 +1049,8 @@ final class DriveModel {
 
     private func clearTrackingDisplay(_ reason: String) {
         drivingAssist.reset(); drivingAssistAlert = nil; assistLane = nil
+        laneGuidanceEngine.reset(); laneGuidance = nil
+        curveWarning = nil
         latestTrackingResetUptime = ProcessInfo.processInfo.systemUptime
 
         targetID = nil
@@ -1041,7 +1093,7 @@ final class DriveModel {
 
         camera.markIncident(reason: "Manually marked incident", tripID: currentTripID)
 
-        message = "Available footage is being preserved. Keep BrakeSense visible to capture the next 15 minutes."
+        showClipNotice("Clip saved · keeping the next 15 minutes")
 
     }
 
@@ -1310,6 +1362,9 @@ final class DriveModel {
         currentCameraRisk = cameraRisk.score == nil ? nil : cameraRisk
         risk = CollisionApproachRules.combine(lead: risk, approach: cameraRisk)
         if risk.distance == nil { risk.distance = distance }
+        deliverAssist(drivingAssist.updateHeadway(leadID: reading.targetID, headway: risk.headway, speed: egoSpeed,
+            enabled: assistAllowed(.followingDistance) && reading.hasConfirmedRearIdentity,
+            capturedAt: reading.uptime, now: now))
         speedBlocker = ""
         collisionBlocker = ""
         if risk.leadSpeed == nil {
@@ -1422,6 +1477,7 @@ final class DriveModel {
         if Int(elapsed) != lastTripPublishedSecond {
             lastTripPublishedSecond = Int(elapsed)
             tripMinutes = elapsed / 60
+            remindAboutBreak(elapsed: elapsed, at: now)
         }
 
         if let reading = speedReading, now - reading.measurementUptime > 1.5 {
@@ -1432,6 +1488,7 @@ final class DriveModel {
 
         }
         refreshGPSDisplay(at: now)
+        refreshParkedPrompt(at: now)
 
         // A fusion estimate is only a display diagnostic. Its own source
         // reports GPS age; clear it when the source stops issuing estimates.
@@ -1616,6 +1673,46 @@ final class DriveModel {
         deliverAssist(alert)
     }
 
+    /// Lane advice is informational and never spoken over a brake warning, check-in
+    /// or an in-progress turn prompt. It is cleared with the rest of the tracking display.
+    private func processLaneGuidance(_ observation: LanePredictionObservation?) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let speed = speedReading.flatMap { $0.isConfidentlyMoving(at: now) && $0.accuracy <= 2 ? $0.metersPerSecond : nil }
+        let navigating = navigation.isNavigating && !navigation.isPaused && !navigation.userPaused
+            && !navigation.isRejoiningRoute && !navigation.hasArrived && !navigation.isCalculating && !replaying
+        let advice = laneGuidanceEngine.update(observation,
+            maneuver: LaneGuidanceManeuver(instruction: navigation.instruction),
+            maneuverKey: navigation.instruction, distance: navigation.maneuverDistance,
+            speed: speed, navigating: navigating, now: now)
+        if laneGuidance != advice { laneGuidance = advice }
+        guard let advice, advice.shouldSpeak, let spoken = advice.spoken,
+              !brakeWarningActive, risk.level != .critical, !safety.checkinPresented,
+              safety.settings.voiceEnabled, !safety.audio.isBusy else { return }
+        navigation.speakAdvisory(spoken, key: "lane:" + navigation.instruction + "|" + advice.text)
+    }
+
+    /// Curve warnings come from the active route's geometry and the latest GPS speed.
+    /// They are shown in the turn banner and spoken once per curve, behind the same
+    /// priority rules as lane guidance.
+    private func processCurveWarning() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let route = navigation.activeRoute
+        let identity = route.map { ($0.id, $0.coordinates.count) }
+        if identity?.0 != curveRouteIdentity?.id || identity?.1 != curveRouteIdentity?.count {
+            curveAdvisor.setRoute(route?.coordinates ?? [])
+            curveRouteIdentity = identity.map { (id: $0.0, count: $0.1) }
+        }
+        let speed = speedReading.flatMap { $0.isConfidentlyMoving(at: now) && $0.accuracy <= 2 ? $0.metersPerSecond : nil }
+        let navigating = navigation.isNavigating && !navigation.isPaused && !navigation.userPaused
+            && !navigation.isRejoiningRoute && !navigation.hasArrived && !navigation.isCalculating && !replaying && !demo
+        let warning = curveAdvisor.update(progressFraction: navigation.cameraRouteProgress, speed: speed,
+                                          navigating: navigating, now: now)
+        if curveWarning != warning { curveWarning = warning }
+        guard let warning, warning.shouldSpeak, !brakeWarningActive, risk.level != .critical,
+              !safety.checkinPresented, safety.settings.voiceEnabled, !safety.audio.isBusy else { return }
+        navigation.speakAdvisory(warning.spoken, key: "curve:" + String(Int(warning.distance + now)))
+    }
+
     private func processAssistVehicles(_ detections: [VehicleDetection], capturedAt: TimeInterval) {
         guard !assistFeatures.isEmpty else { return }
         let now = ProcessInfo.processInfo.systemUptime
@@ -1633,13 +1730,87 @@ final class DriveModel {
         deliverAssist(alert)
     }
 
+    /// Heat and Low Power Mode slow the camera pipeline; say so once per trip and keep a
+    /// line on the HUD while the condition lasts. Collision warnings are not suppressed.
+    /// The driver answered the parked countdown: the trip keeps going and the park timer restarts.
+    func keepDriving() {
+        parkedMonitor.keepDriving(at: ProcessInfo.processInfo.systemUptime)
+        parkedPrompt = nil
+        spokeParkedPrompt = false
+    }
+
+    private func refreshParkedPrompt(at now: TimeInterval) {
+        guard tripActive, !demo, !replaying, !stopping else {
+            if parkedPrompt != nil { parkedPrompt = nil }
+            return
+        }
+        let stationary: Bool? = hasStationaryGPS(at: now) ? true : hasMeasuredMovement(at: now) ? false : nil
+        let hold = (navigation.isNavigating && !navigation.hasArrived) || safety.checkinPresented
+        switch parkedMonitor.update(stationary: stationary, hold: hold, at: now) {
+        case .none:
+            if parkedPrompt != nil { parkedPrompt = nil }
+            spokeParkedPrompt = false
+        case .prompt(let seconds):
+            let prompt = ParkedTripPrompt(secondsRemaining: seconds)
+            if parkedPrompt != prompt { parkedPrompt = prompt }
+            if !spokeParkedPrompt {
+                spokeParkedPrompt = true
+                if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections {
+                    safety.audio.speakNotice(prompt.text, language: safety.settings.language)
+                }
+            }
+        case .endTrip:
+            parkedPrompt = nil
+            endTrip()
+            message = "Trip ended after about 10 minutes parked. Press Start trip when you drive again."
+        }
+    }
+
+    func refreshDeviceCondition() {
+        let info = ProcessInfo.processInfo
+        let device = UIDevice.current
+        let notice: String?
+        switch info.thermalState {
+        case .critical: notice = "Phone overheating · camera warnings may be late"
+        case .serious: notice = "Phone running hot · shade it or use a vent mount"
+        default:
+            // The Simulator and a disabled monitor report -1; only a measured level counts.
+            if cameraViewBlocked {
+                notice = "Camera view blocked · check the mount and windshield"
+            } else if device.isBatteryMonitoringEnabled, (0...0.15).contains(device.batteryLevel), device.batteryState == .unplugged {
+                notice = "Battery low · plug in to keep the camera running"
+            } else {
+                notice = info.isLowPowerModeEnabled ? "Low Power Mode on · camera runs slower" : nil
+            }
+        }
+        guard tripActive, !demo, !replaying, let notice else { deviceNotice = nil; return }
+        deviceNotice = notice
+        guard !spokenDeviceNotices.contains(notice) else { return }
+        spokenDeviceNotices.insert(notice)
+        if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections {
+            safety.audio.speakNotice(notice, language: safety.settings.language)
+        }
+    }
+
+    private func recordSceneSample(_ sample: DetectorLightingSample, at time: TimeInterval) {
+        guard tripActive, !demo, !replaying else { return }
+        let blocked = cameraViewMonitor.update(sample, speed: speedReading, at: time)
+        guard blocked != cameraViewBlocked else { return }
+        cameraViewBlocked = blocked
+        refreshDeviceCondition()
+    }
+
     private func deliverAssist(_ alert: DrivingAssistAlert?) {
         guard let alert, assistAllowed(alert.feature), risk.level != .high,
               ProcessInfo.processInfo.systemUptime - alert.capturedAt <= 0.5 else { return }
         drivingAssistAlert = alert
+        if alert.feature == .laneDeparture || alert.feature == .cutIn {
+            tripRoute.add(alert.feature == .laneDeparture ? .laneDeparture : .cutIn, at: speedService.latestLocation,
+                          speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: nil)
+        }
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections {
-            safety.audio.speakDrivingAssist(alert.feature, language: safety.settings.language)
+            safety.audio.speakDrivingAssist(alert, language: safety.settings.language)
         }
     }
 
@@ -1694,8 +1865,20 @@ final class DriveModel {
 
     }
 
+    private var brakeWarningTiming: BrakeWarningTiming {
+        UserDefaults.standard.string(forKey: BrakeWarningTiming.defaultsKey).flatMap(BrakeWarningTiming.init) ?? .standard
+    }
+
+    private func recordOwnBraking(_ reading: GPSSpeedSample?) {
+        guard let event = ownBrakeDetector.update(reading) else { return }
+        ownHardBrakes += 1
+        tripRoute.add(.ownHardBrake, at: speedService.latestLocation,
+                      speedMPH: event.speedAtOnset * 2.2369362921, closingSeconds: nil)
+        autoSaveClip(reason: "Hard brake", notice: "Clip saved · hard brake", at: reading?.measurementUptime ?? ProcessInfo.processInfo.systemUptime)
+    }
+
     private func updateTripEvents() {
-        let critical = risk.level == .critical
+        let critical = brakeWarningTiming.warrantsBrakeWarning(level: risk.level, timeToCollision: risk.timeToCollision)
         let now = ProcessInfo.processInfo.systemUptime
         let alreadyVisible = brakeWarningLatch.isActive(at: now)
         if critical {
@@ -1708,6 +1891,7 @@ final class DriveModel {
             safety.brakeWarning()
             tripRoute.add(.brakeAlert, at: speedService.latestLocation,
                 speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: risk.timeToCollision)
+            autoSaveClip(reason: "Brake warning", notice: "Clip saved · brake warning", at: now)
         }
         let braking = (risk.leadAcceleration ?? 0) < -3
         if braking && !wasHardBrake {
@@ -1723,6 +1907,47 @@ final class DriveModel {
                 speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: risk.timeToCollision)
         }
         wasCloseCall = close
+    }
+
+    /// Preserves the footage around a brake warning without a tap, at most once every
+    /// ten minutes so a busy stretch of traffic does not fill the recording budget.
+    /// Brake warnings and the driver's own hard brakes keep their footage, at most once per ten minutes.
+    private func autoSaveClip(reason: String, notice: String, at now: TimeInterval) {
+        guard tripActive, !demo, !replaying,
+              UserDefaults.standard.object(forKey: "recording.autoSaveBrakeWarnings") as? Bool ?? true else { return }
+        if let last = lastAutoClipUptime, now - last < 10 * 60 { return }
+        lastAutoClipUptime = now
+        camera.markIncident(reason: reason, tripID: currentTripID)
+        showClipNotice(notice)
+    }
+
+    /// Two hours in, then hourly: one HUD line and one spoken sentence, only while moving.
+    private func remindAboutBreak(elapsed: TimeInterval, at now: TimeInterval) {
+        guard !demo, !replaying, !stopping,
+              let hours = breakReminder.update(elapsedSeconds: elapsed, moving: hasMeasuredMovement(at: now)) else { return }
+        let text = BreakReminder.text(hours: hours)
+        showClipNotice(text, seconds: 20)
+        if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections, !brakeWarningActive {
+            safety.audio.speakNotice(text, language: safety.settings.language)
+        }
+    }
+
+    /// Spoken once the trip is on disk, so the driver hears the outcome without looking down.
+    private func speakTripSummary(_ trip: TripMetrics) {
+        guard foreground, !demo, !replaying, safety.settings.voiceEnabled,
+              !safety.audio.isBusy, !safety.checkinPresented else { return }
+        safety.audio.speakText(TripSummarySpeech.text(for: trip, language: safety.settings.language),
+                               language: safety.settings.language)
+    }
+
+    private func showClipNotice(_ text: String, seconds: Double = 5) {
+        clipNotice = text
+        clipNoticeTask?.cancel()
+        clipNoticeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            self?.clipNotice = nil
+        }
     }
 
     func simulateCheckin() {

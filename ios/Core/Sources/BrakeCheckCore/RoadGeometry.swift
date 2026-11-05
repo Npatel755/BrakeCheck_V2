@@ -38,6 +38,21 @@ public struct RoadRegion {
         return max(0, min(Double(box.maxX), interval.right) - max(Double(box.minX), interval.left))
             / Double(box.width)
     }
+    /// Whether a measured ego corridor lies on this observed road. nil when the mask
+    /// cannot judge (stale, low quality, under five shared rows); false when more than
+    /// 30% of the shared rows put a corridor edge over 6% of the frame outside the road,
+    /// which is a lane pair fitted to a kerb, barrier or the opposite carriageway.
+    public func encloses(_ lane: LanePath, at time: TimeInterval) -> Bool? {
+        guard isUsable(at: time), confidence >= 0.75 else { return nil }
+        var shared = 0, outside = 0
+        for band in lane.bands {
+            guard let road = bounds(at: band.y) else { continue }
+            shared += 1
+            if band.left < road.left - 0.06 || band.right > road.right + 0.06 { outside += 1 }
+        }
+        guard shared >= 5 else { return nil }
+        return Double(outside) / Double(shared) <= 0.30
+    }
     /// Reject clearly off-road marking peaks only where this mask observes road.
     /// Unobserved rows and low-quality masks never impose a camera-center crop.
     public func filter(_ rows: [LaneMarkingRow], at time: TimeInterval) -> [LaneMarkingRow] {

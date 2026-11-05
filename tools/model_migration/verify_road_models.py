@@ -17,10 +17,10 @@ EXPECTED_TRAINING_CODE = "5b88b3123c612e62997204666b71357ed4589163ab514c15f91eaa
 EXPECTED_OUTPUTS = {
     "UFLDv2Lane": {"loc_row": [1, 200, 72, 4], "loc_col": [1, 100, 81, 4],
                    "exist_row": [1, 2, 72, 4], "exist_col": [1, 2, 81, 4]},
-    "SegFormerRoad": {"road_scores": [1, 2, 384, 640]},
+    "IntelRoad": {"road_scores": [1, 2, 384, 640]},
 }
-EXPECTED_INPUTS = {"UFLDv2Lane": [1, 3, 320, 1600], "SegFormerRoad": [1, 3, 384, 640]}
-RETIRED_MODELS = tuple(f"{name}.{extension}" for name in ("UFLDLane", "IntelRoad", "YOLOPLane")
+EXPECTED_INPUTS = {"UFLDv2Lane": [1, 3, 320, 1600], "IntelRoad": [1, 3, 384, 640]}
+RETIRED_MODELS = tuple(f"{name}.{extension}" for name in ("UFLDLane", "SegFormerRoad", "YOLOPLane")
                        for extension in ("mlpackage", "mlmodel", "mlmodelc"))
 
 
@@ -106,9 +106,9 @@ def main():
             copies = [name for name in names if name.endswith("LaneModelData/manifest.json")]
             assert len(copies) == 1
             assert archive.read(copies[0]) == (RESOURCES / "manifest.json").read_bytes()
-            for license_name in ("Apache-2.0.txt", "UFLD-MIT.txt", "SegFormer-NVIDIA-License.txt"):
+            for license_name in ("Apache-2.0.txt", "UFLD-MIT.txt", "IntelRoad-MODEL-CARD.md"):
                 assert any(name.endswith("ModelLicenses/" + license_name) for name in names), license_name
-            print("IPA: UFLDv2 and unchanged SegFormer packages, provenance/hashes, licenses, retired-model exclusion and CRC PASS")
+            print("IPA: UFLDv2 and Intel road packages, provenance/hashes, licenses, retired-model exclusion and CRC PASS")
 
 
 if __name__ == "__main__":

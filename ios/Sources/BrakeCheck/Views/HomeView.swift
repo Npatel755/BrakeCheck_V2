@@ -25,7 +25,11 @@ struct HomeView: View {
     var beginCalibration: () -> Void
     var openTrip: (UUID) -> Void = { _ in }
     var openPremium: () -> Void = { }
+    var isSubscribed = false
     var onChecklistChanged: (Bool) -> Void = { _ in }
+    /// Most recent destination, when no route is set, so one tap routes there again.
+    var lastDestination: String? = nil
+    var navigateAgain: () -> Void = { }
 
     @State private var lastTripOpen = false
     @State private var showChecklist = false
@@ -45,6 +49,15 @@ struct HomeView: View {
                         TripSaveRecoveryView(model: model)
                     }
                     if model.tripActive && !model.demo && !model.replaying { tripControls }
+                    if let prompt = model.parkedPrompt, model.tripActive { parkedRow(prompt) }
+                    if let notice = model.clipNotice, model.tripActive {
+                        Label(notice, systemImage: notice.hasPrefix("Clip saved") ? "bookmark.fill" : "cup.and.saucer.fill")
+                            .font(.brake(.subheadline, weight: .semibold))
+                            .foregroundStyle(BrakeTheme.text)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .brakePanel()
+                            .accessibilityIdentifier("home.clipNotice")
+                    }
                     if model.canResumeRecording {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(model.recorderStatus).font(.brake(.caption)).foregroundStyle(BrakeTheme.warning)
@@ -69,7 +82,7 @@ struct HomeView: View {
                                   icon: "film.stack", iconColor: BrakeTheme.danger, iconBackground: BrakeTheme.danger.opacity(0.15), action: openIncidents)
                     }
                     Button(action: openPremium) {
-                        Label("Explore Premium", systemImage: "sparkles")
+                        Label(isSubscribed ? "Premium active · manage" : "Explore Premium", systemImage: "sparkles")
                             .font(.brake(.subheadline, weight: .semibold))
                             .foregroundStyle(BrakeTheme.accentText)
                             .frame(maxWidth: .infinity, minHeight: 44)
@@ -199,6 +212,24 @@ struct HomeView: View {
         }
     }
 
+    /// The parked countdown from the camera HUD, repeated here because Home hides the risk pill
+    /// unless a warning is active.
+    private func parkedRow(_ prompt: ParkedTripPrompt) -> some View {
+        HStack(spacing: 12) {
+            Label(prompt.text, systemImage: "parkingsign.circle.fill")
+                .font(.brake(.subheadline, weight: .semibold))
+                .foregroundStyle(BrakeTheme.text)
+            Spacer(minLength: 8)
+            Button("Keep going") { model.keepDriving() }
+                .font(.brake(.subheadline, weight: .bold))
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityIdentifier("home.parked.keepGoing")
+        }
+        .brakePanel()
+        .accessibilityIdentifier("home.parkedPrompt")
+    }
+
     private func chip(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
@@ -237,7 +268,8 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 14) {
             if model.tripActive {
                 Text("This trip").font(.brake(size: 16, weight: .bold))
-                stats(minutes: model.tripMinutes, maxMPH: model.maxSpeedMPH, hardBrakes: model.hardBrakes, closeCalls: model.closeCalls)
+                stats(minutes: model.tripMinutes, maxMPH: model.maxSpeedMPH,
+                      hardBrakes: model.hardBrakes + model.ownHardBrakes, closeCalls: model.closeCalls)
             } else if let trip = model.savedTrips.first {
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) { lastTripOpen.toggle() }
@@ -253,7 +285,12 @@ struct HomeView: View {
                                 .rotationEffect(.degrees(lastTripOpen ? 90 : 0))
                         }
                         stats(minutes: trip.durationSeconds / 60, maxMPH: trip.maxSpeedMPH,
-                              hardBrakes: trip.estimatedLeadHardBrakes, closeCalls: trip.estimatedCloseCalls)
+                              hardBrakes: trip.totalHardBrakes, closeCalls: trip.estimatedCloseCalls)
+                        if let today = TripDayDigest(model.savedTrips) {
+                            Text("Today · \(today.line)")
+                                .font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
+                                .accessibilityIdentifier("home.todayDigest")
+                        }
                     }
                     .contentShape(Rectangle())
                 }
@@ -292,6 +329,9 @@ struct HomeView: View {
             stat(maxMPH.map { String(format: "%.0f", $0 * (useMPH ? 1 : 1.609344)) } ?? "--", useMPH ? "max mph" : "max km/h", BrakeTheme.text)
             stat("\(hardBrakes)", hardBrakes == 1 ? "hard brake" : "hard brakes", BrakeTheme.warning)
             stat("\(closeCalls)", closeCalls == 1 ? "close call" : "close calls", BrakeTheme.danger)
+            if let score = TripSafetyScore(durationSeconds: minutes * 60, hardBrakes: hardBrakes, closeCalls: closeCalls) {
+                stat("\(score.value)", score.label.lowercased(), score.value >= 70 ? BrakeTheme.accentText : BrakeTheme.warning)
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -315,6 +355,11 @@ struct HomeView: View {
 
     private var moreCard: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let lastDestination {
+                navigationRow("Navigate again", detail: lastDestination, icon: "arrow.triangle.turn.up.right.circle", action: navigateAgain)
+                    .accessibilityIdentifier("home.navigateAgain")
+                rowDivider
+            }
             navigationRow("Trip history", detail: model.savedTrips.isEmpty ? "Completed trips save automatically" : "\(model.savedTrips.count) saved trips", icon: "chart.xyaxis.line", action: openTripHistory)
             rowDivider
             navigationRow("Emergency contacts", detail: contactsDetail, icon: "person.2", action: openContacts)

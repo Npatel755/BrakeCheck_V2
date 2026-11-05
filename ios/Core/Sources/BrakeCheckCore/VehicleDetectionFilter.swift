@@ -11,7 +11,10 @@ public enum VehicleDetectionFilter {
               box.width > 0, box.height > 0,
               box.minX >= -0.02, box.minY >= -0.02,
               box.maxX <= 1.02, box.maxY <= 1.02 else { return nil }
-        let clipped = box.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        // Clip only when needed: CGRect.intersection rebuilds the rect from its
+        // edges and can perturb an in-bounds box by one ulp on some platforms.
+        let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let clipped = unit.contains(box) ? box : box.intersection(unit)
         return LeadVehicle.validBox(clipped) ? clipped : nil
     }
 

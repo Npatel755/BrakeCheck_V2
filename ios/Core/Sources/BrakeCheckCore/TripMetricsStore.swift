@@ -7,19 +7,24 @@ public struct TripMetrics: Codable, Identifiable, Sendable {
     public let maxSpeedMPH: Double?
     public let estimatedLeadHardBrakes: Int
     public let estimatedCloseCalls: Int
+    /// Times the driver's own GPS deceleration showed hard braking; nil for trips saved before it was measured.
+    public let ownHardBrakes: Int?
     public var durationSeconds: Double { endedAt.timeIntervalSince(startedAt) }
 
     public init(id: UUID = UUID(), startedAt: Date, endedAt: Date, maxSpeedMPH: Double?,
-                estimatedLeadHardBrakes: Int, estimatedCloseCalls: Int) {
+                estimatedLeadHardBrakes: Int, estimatedCloseCalls: Int, ownHardBrakes: Int? = nil) {
         self.id = id; self.startedAt = startedAt; self.endedAt = endedAt
         self.maxSpeedMPH = maxSpeedMPH
         self.estimatedLeadHardBrakes = estimatedLeadHardBrakes
         self.estimatedCloseCalls = estimatedCloseCalls
+        self.ownHardBrakes = ownHardBrakes
     }
+    /// Lead-car and own hard brakes together, as shown in trip totals.
+    public var totalHardBrakes: Int { estimatedLeadHardBrakes + (ownHardBrakes ?? 0) }
     var valid: Bool {
         [startedAt, endedAt].allSatisfy { (-62_135_596_800...253_402_300_799).contains($0.timeIntervalSince1970) }
             && durationSeconds.isFinite && durationSeconds >= 0 && estimatedLeadHardBrakes >= 0 && estimatedCloseCalls >= 0
-            && (maxSpeedMPH.map { $0.isFinite && $0 >= 0 } ?? true)
+            && (maxSpeedMPH.map { $0.isFinite && $0 >= 0 } ?? true) && (ownHardBrakes ?? 0) >= 0
     }
 
     /// Explicit identity is authoritative for new incidents, even if the

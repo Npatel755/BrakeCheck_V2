@@ -45,9 +45,12 @@ final class AppRecoveryStorageTests: XCTestCase {
         let missing = TripMetrics(startedAt: Date(timeIntervalSince1970: 100), endedAt: Date(timeIntervalSince1970: 220),
             maxSpeedMPH: nil, estimatedLeadHardBrakes: 2, estimatedCloseCalls: 3)
         let zero = TripMetrics(startedAt: missing.startedAt, endedAt: missing.endedAt, maxSpeedMPH: 0,
-            estimatedLeadHardBrakes: 0, estimatedCloseCalls: 0)
+            estimatedLeadHardBrakes: 0, estimatedCloseCalls: 0, ownHardBrakes: 1)
         let rows = TripMetricsCSV.encode([missing, zero]).components(separatedBy: "\r\n")
         XCTAssertTrue(rows[0].contains("estimated_lead_hard_brakes"))
+        XCTAssertTrue(rows[0].hasSuffix(",own_hard_brakes"))
+        XCTAssertEqual(rows[1].components(separatedBy: ",")[7], "")
+        XCTAssertEqual(rows[2].components(separatedBy: ",")[7], "1")
         XCTAssertEqual(rows[1].components(separatedBy: ",")[4], "")
         XCTAssertEqual(rows[2].components(separatedBy: ",")[4], "0.00")
         XCTAssertEqual(rows[1].components(separatedBy: ",")[3], "120.00")

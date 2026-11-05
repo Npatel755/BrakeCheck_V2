@@ -53,20 +53,13 @@ let package = Package(
 
             path: "Sources/BrakeCheck",
 
-            // The old YOLO packages stay in the repo only for comparison. Xcode's SwiftPM treats any
-            // unlisted .mlmodel as a resource ("multiple resources named model.mlmodel") and would
-            // ship these AGPL models; xtool skips them, so this changes nothing for Linux builds.
-            exclude: [
-                "Resources/YOLOModelData"
-            ],
-
             resources: [
                 // Copy permissive RTMDet packages as ordinary resource data.
                 // Avoid triggering Apple's coremlc during
                 // the Linux/xtool build.
                 .copy("Resources/DetectorModelData"),
                 .copy("Resources/ModelLicenses"),
-                // UFLD and SegFormer weights are ordinary data on Linux.
+                // UFLDv2 and Intel road weights are ordinary data on Linux.
                 // Core ML compiles it on the iPhone and caches the result.
                 .copy("Resources/LaneModelData"),
                 .copy("Resources/ViewpointModelData"),

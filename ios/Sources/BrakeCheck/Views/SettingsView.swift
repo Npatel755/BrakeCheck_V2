@@ -41,10 +41,10 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .recordings: return "Manage video space and optional automatic cleanup."
         case .connection: return "Connect your private BrakeSense service."
         case .voice: return "Spoken alerts, language, and check-in replies."
-        case .safety: return "Impact detection and emergency check-ins."
+        case .safety: return "Impact detection, emergency check-ins, and driving alerts."
         case .permissions: return "Manage access to your iPhone's sensors."
         case .diagnostics: return "Camera, GPS, and measurement details."
-        case .demo: return "Explore sample driving and check-in features."
+        case .demo: return "App tour, sample driving, and check-in demo."
         case .about: return "How BrakeSense works, its limits, and model notices."
         }
     }
@@ -58,12 +58,13 @@ struct SettingsScreen: View, Equatable {
     let settings: ConnectionSettings
     @Binding var requestDemo: Bool
     var openCameraSetup: (() -> Void)? = nil
+    var showTour: (() -> Void)? = nil
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.model === rhs.model && lhs.service === rhs.service && lhs.settings === rhs.settings
             && lhs.requestDemo == rhs.requestDemo
     }
     var body: some View {
-        SettingsView(model: model, arPresentation: model.arPresentation, service: service, settings: settings, requestDemo: $requestDemo, openCameraSetup: openCameraSetup)
+        SettingsView(model: model, arPresentation: model.arPresentation, service: service, settings: settings, requestDemo: $requestDemo, openCameraSetup: openCameraSetup, showTour: showTour)
     }
 }
 
@@ -88,6 +89,7 @@ struct SettingsView: View {
     @State private var selectedCategory: SettingsCategory = .appearance
     @Binding var requestDemo: Bool
     var openCameraSetup: (() -> Void)? = nil
+    var showTour: (() -> Void)? = nil
     @AppStorage("display.appearance") private var appearance = "dark"
     @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
     @AppStorage("voice.selectedVoice") private var selectedVoice = ""
@@ -96,13 +98,13 @@ struct SettingsView: View {
     @AppStorage("display.mph") private var useMPH = true
     @AppStorage("display.detectionBoxes") private var showDetections = true
     @AppStorage("display.laneGuides") private var showLanes = false
-    @AppStorage("display.laneTrackingMode") private var laneTrackingMode = "kalman"
     @AppStorage("display.lanePresentation") private var lanePresentation = "corridor"
     @AppStorage("display.fullCameraFrame") private var showFullFrame = true
     @AppStorage("navigation.cameraAR") private var cameraAR = true
-    @AppStorage("navigation.cameraGuidance") private var cameraGuidance = true
     @AppStorage("recording.limitGB") private var recordingLimitGB = 0
     @AppStorage("recording.retentionDays") private var recordingRetentionDays = 0
+    @AppStorage("recording.autoSaveBrakeWarnings") private var autoSaveBrakeWarnings = true
+    @AppStorage(BrakeWarningTiming.defaultsKey) private var brakeWarningTiming = BrakeWarningTiming.standard.rawValue
     @AppStorage("checklist.skip") private var skipChecklist = false
     @AppStorage("diagnostics.developerOverlays") private var developerOverlays = false
     @State private var pendingRetentionDays = 0
@@ -331,23 +333,18 @@ struct SettingsView: View {
                 .onChange(of: lanePresentation) { _, _ in showLanes = true }
             Text("The cyan corridor follows the detected left and right lane boundaries. It appears where both sides are visible.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
-            Picker("Lane tracking test", selection: $laneTrackingMode) {
-                ForEach(LaneTrackingMode.allCases, id: \.rawValue) { mode in
-                    Text(mode.title).tag(mode.rawValue)
-                }
-            }.pickerStyle(.segmented)
-                .onChange(of: laneTrackingMode) { _, _ in showLanes = true }
-            Text("Compare lane-guide stability with Raw, Averaging, or Kalman. Changes apply to the next camera result.")
-                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Toggle("Show full camera frame", isOn: $showFullFrame)
             Toggle("Directions on the road", isOn: $cameraAR)
-            Toggle("Camera route overview", isOn: $cameraGuidance)
             CameraCalibrationControls(model: model, presentation: arPresentation, cameraAR: $cameraAR, openCameraSetup: openCameraSetup)
             Text("These preferences also apply to replayed drives.").foregroundStyle(BrakeTheme.muted)
         case .recordings:
             LabeledContent("Video space used", value: storageBytes.map {
                 ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
             } ?? "Checking…")
+            Toggle("Save a clip on brake warnings and hard brakes", isOn: $autoSaveBrakeWarnings)
+                .accessibilityIdentifier("recording.autoSaveBrakeWarnings")
+            Text("Keeps the footage around each brake warning or hard brake of yours without a tap, at most once every 10 minutes. Save clip on the Home trip card still works any time.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Picker("Recording storage limit", selection: $recordingLimitGB) {
                 Text("No app limit").tag(0)
                 ForEach([1, 2, 5, 10], id: \.self) { value in Text("\(value) GB").tag(value) }
@@ -490,6 +487,14 @@ struct SettingsView: View {
             Text("Check-in replies are recognized on this iPhone when on-device speech is supported. The I'm okay and Send help buttons remain available. Automatic contact alerts require a connected service.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .safety:
+            Picker("Brake warning timing", selection: $brakeWarningTiming) {
+                ForEach(BrakeWarningTiming.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("safety.brakeWarningTiming")
+            Text("Earlier also sounds the brake warning when a car ahead is closing fast with under about 2.6 seconds to impact, instead of waiting for the critical gate. Warnings are never delayed.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+            Divider()
             DrivingAssistControls(model: model)
             Divider()
             Toggle("Pre-drive checklist before each trip", isOn: Binding(
@@ -519,6 +524,12 @@ struct SettingsView: View {
             Text("Shows the road-model mask and the build number on the camera page, for test recordings.")
                 .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
         case .demo:
+            Button { showTour?() } label: {
+                Label("Show the app tour", systemImage: "map")
+            }
+            .accessibilityIdentifier("settings.tour")
+            Text("Six short tips: starting a trip, the road view, navigation, clips, and safety alerts.")
+                .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
             Toggle("Simulated driving metrics", isOn: Binding(get: { demoMode }, set: { model.setDemo($0) }))
                 .disabled(tripActive || stopping)
             Button("Run crash check-in demo") { requestDemo = true }
@@ -554,7 +565,7 @@ struct SettingsView: View {
     private static let noticeFiles = [
         NoticeFile(title: "Vehicle detectors", folder: "ModelLicenses", name: "NOTICE.md"),
         NoticeFile(title: "UFLDv2 lane detection", folder: "ModelLicenses", name: "UFLD-MIT.txt"),
-        NoticeFile(title: "SegFormer road segmentation", folder: "ModelLicenses", name: "SegFormer-NVIDIA-License.txt"),
+        NoticeFile(title: "Intel road segmentation", folder: "ModelLicenses", name: "IntelRoad-MODEL-CARD.md"),
         NoticeFile(title: "Vehicle orientation", folder: "ViewpointModelData", name: "CFV-LICENSE.txt"),
         NoticeFile(title: "Red Hat Display font", folder: "Fonts", name: "OFL.txt")
     ]

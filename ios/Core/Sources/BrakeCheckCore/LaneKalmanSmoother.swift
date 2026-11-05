@@ -12,10 +12,17 @@ public enum LaneTrackingMode: String, CaseIterable, Sendable {
 }
 
 /// A native, display-only position/velocity filter for real UFLDv2 captures.
-/// History can bridge the 3 Hz detector cadence, but is never emitted without
-/// a fresh observation. Missing fragments, endpoints and timestamps are not
-/// extended. This type cannot provide LanePath/lead-selection evidence.
+/// History can bridge the 3 Hz detector cadence and one dropped capture, but is
+/// never emitted without a fresh observation. Missing fragments, endpoints and
+/// timestamps are not extended. This type cannot provide LanePath/lead-selection evidence.
 public struct LaneKalmanSmoother {
+    /// History survives a gap between accepted captures up to this long.
+    public static let maximumGap: TimeInterval = 0.75
+    /// Far anchors (high y) are quantised more coarsely by perspective and jitter
+    /// more, so their measurements carry proportionally more noise.
+    static func variance(confidence: Double, y: Double) -> Double {
+        pow(0.008 / confidence * (1 + 2.5 * min(1, max(0, y))), 2)
+    }
     private typealias Observation = LanePredictionObservation
     private typealias Boundary = Observation.Boundary
     private typealias Point = Observation.Point
@@ -67,6 +74,11 @@ public struct LaneKalmanSmoother {
     public mutating func update(_ observation: LanePredictionObservation?, at now: TimeInterval)
         -> LanePredictionObservation? {
         guard let current = LanePredictionDisplay.visible(observation, at: now) else {
+            // One genuinely empty capture keeps the tracks for the next observation;
+            // nothing is drawn meanwhile. An invalid or stale observation, or a
+            // longer silence, starts fresh.
+            if observation == nil, let old = previousInput, now.isFinite, now >= old.capturedAt,
+               now - old.capturedAt <= Self.maximumGap { previousOutput = nil; return nil }
             reset(); return nil
         }
         if let old = previousInput {
@@ -75,7 +87,7 @@ public struct LaneKalmanSmoother {
                 reset() // conflicting same-time input is not another measurement
             } else if current.capturedAt < old.capturedAt {
                 reset(); return nil
-            } else if current.capturedAt - old.capturedAt > 0.75 {
+            } else if current.capturedAt - old.capturedAt > Self.maximumGap {
                 reset()
             }
         }
@@ -108,10 +120,10 @@ public struct LaneKalmanSmoother {
         let boundaries = current.boundaries.enumerated().map { index, boundary -> Boundary in
             let row = isRow(boundary)
             let prior = matches[index].map { predicted[$0] }
-            let variance = pow(0.008 / boundary.confidence, 2)
             var samples: [Sample] = []
             let points = boundary.points.map { point -> Point in
                 let a = anchor(point, row), measured = coordinate(point, row)
+                let variance = Self.variance(confidence: boundary.confidence, y: point.y)
                 let filter = interpolate(prior, at: a)?.corrected(measured, variance: variance)
                     ?? Filter(measured, variance: variance)
                 samples.append(Sample(anchor: a, filter: filter))
@@ -129,7 +141,7 @@ public struct LaneKalmanSmoother {
         tracks = stable && !crossing ? nextTracks : current.boundaries.map { boundary in
             let row = isRow(boundary)
             return Track(row: row, samples: boundary.points.map {
-                Sample(anchor: anchor($0, row), filter: Filter(coordinate($0, row), variance: pow(0.008 / boundary.confidence, 2)))
+                Sample(anchor: anchor($0, row), filter: Filter(coordinate($0, row), variance: Self.variance(confidence: boundary.confidence, y: $0.y)))
             }.sorted { $0.anchor < $1.anchor })
         }
         previousInput = current; previousOutput = output
@@ -164,9 +176,9 @@ public struct LaneKalmanSmoother {
         let steps = zip(anchors, anchors.dropFirst()).map { $1 - $0 }
         guard steps.allSatisfy({ $0 > 1e-9 }) || steps.allSatisfy({ $0 < -1e-9 }) else { return nil }
         var residuals: [Double] = [], accepted = 0
-        let variance = pow(0.008 / boundary.confidence, 2)
         for point in boundary.points {
             guard let old = interpolate(track, at: anchor(point, track.row)) else { continue }
+            let variance = Self.variance(confidence: boundary.confidence, y: point.y)
             let residual = abs(coordinate(point, track.row) - old.value)
             residuals.append(residual)
             if residual <= min(0.065, 3.5 * sqrt(max(0, old.p00 + variance))) { accepted += 1 }

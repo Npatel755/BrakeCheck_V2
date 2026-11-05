@@ -18,7 +18,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var watchdog: DispatchSourceTimer?
     private var visionCadence = FrameCadence()
     private var runRevision = 0
-    private var desiredOrientation: AVCaptureVideoOrientation = .portrait
+    private var desiredOrientation: CaptureOrientation = .portrait
     private var nativeHorizontalFOV: Double?
     private var geometry = CaptureFrameGeometry.standby
     private var geometryRevision = 0
@@ -84,7 +84,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     self.recoveryWork?.cancel(); self.recoveryWork = nil
                     self.recovery.stop()
                     if self.session.isRunning { self.session.stopRunning() }
-                    self.onCameraStatus?("Camera: \(description). Use Retry camera when ready.", false)
+                    self.onCameraStatus?("Camera: \(Self.sentence(description)) Use Retry camera when ready.", false)
                 }
             }
         })
@@ -172,7 +172,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         } catch {
             recovery.stop()
             if session.isRunning { session.stopRunning() }
-            onCameraStatus?("Camera: \(error.localizedDescription). Use Retry camera when ready.", false)
+            onCameraStatus?("Camera: \(Self.sentence(error.localizedDescription)) Use Retry camera when ready.", false)
         }
     }
 
@@ -188,7 +188,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     /// Called with the window scene's orientation, never the device's reversed left/right enum.
-    func setVideoOrientation(_ orientation: AVCaptureVideoOrientation) {
+    func setVideoOrientation(_ orientation: CaptureOrientation) {
         queue.async {
             guard self.desiredOrientation != orientation else { return }
             self.desiredOrientation = orientation
@@ -201,7 +201,8 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     private func applyGeometry() {
-        guard let connection = output.connection(with: .video), connection.isVideoOrientationSupported else {
+        guard let connection = output.connection(with: .video),
+              connection.isVideoRotationAngleSupported(desiredOrientation.rotationAngle) else {
             geometryAvailable = false
             recovery.stop()
             watchdog?.cancel(); watchdog = nil
@@ -217,7 +218,7 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         geometryChanging = true
         // Finish the old encoder before any frame with new dimensions reaches it.
         recorder.beginOrientationSegment()
-        connection.videoOrientation = desiredOrientation
+        connection.videoRotationAngle = desiredOrientation.rotationAngle
         if connection.isVideoMirroringSupported { connection.isVideoMirrored = false }
         geometryAvailable = true
         geometry = .preview(orientation: desiredOrientation, landscapeFOV: nativeHorizontalFOV)
@@ -310,7 +311,9 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             guard session.canAddOutput(output) else { throw CameraError.unavailable }
             session.addOutput(output)
             if let connection = output.connection(with: .video) {
-                if connection.isVideoOrientationSupported { connection.videoOrientation = desiredOrientation }
+                if connection.isVideoRotationAngleSupported(desiredOrientation.rotationAngle) {
+                    connection.videoRotationAngle = desiredOrientation.rotationAngle
+                }
                 if connection.isVideoStabilizationSupported { connection.preferredVideoStabilizationMode = .off }
             }
             try device.lockForConfiguration()
@@ -465,5 +468,11 @@ final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     enum CameraError: LocalizedError {
         case unavailable
         var errorDescription: String? { "A physical iPhone rear camera is required. Use Demo in Simulator." }
+    }
+
+    /// Error descriptions may or may not end with a full stop; avoid "Simulator.. Use".
+    private static func sentence(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasSuffix(".") || trimmed.hasSuffix("!") ? trimmed : trimmed + "."
     }
 }

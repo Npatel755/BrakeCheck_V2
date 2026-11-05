@@ -53,7 +53,7 @@ final class LocalCheckinSpeechRecognizer {
     func canRecognizeWithoutPrompt(language: String) -> Bool {
         Self.supportsOnDeviceRecognition(language: language)
             && SFSpeechRecognizer.authorizationStatus() == .authorized
-            && AVAudioSession.sharedInstance().recordPermission == .granted
+            && AVAudioApplication.shared.recordPermission == .granted
     }
 
     /// Settings can request this before a trip so the check-in is not interrupted by a prompt.

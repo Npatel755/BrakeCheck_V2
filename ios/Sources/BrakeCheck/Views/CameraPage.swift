@@ -52,16 +52,6 @@ struct CameraPage: View {
             if showsPlaceholder { placeholder }
             if colorScheme == .dark { scrims(portrait: portrait).ignoresSafeArea().allowsHitTesting(false) }
             if portrait { portraitHUD } else { landscapeHUD }
-            if cameraVisible && navigation.isNavigating && !critical && !selecting {
-                VStack {
-                    Spacer()
-                    NavigationCameraGuidanceView(navigation: navigation, useMPH: useMPH, showsInstruction: false)
-                        .padding(.horizontal, portrait ? 14 : 24)
-                        .padding(.bottom, portrait ? 100 : 64)
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .allowsHitTesting(false)
-            }
             if developerOverlays && cameraAR && model.cameraReady && !model.replaying && !model.demo && !selecting {
                 CameraRoadMaskStatus(presentation: model.arPresentation, portrait: portrait)
             }
@@ -202,7 +192,7 @@ struct CameraPage: View {
     private var showsDirections: Bool { cameraVisible && navigation.isNavigating && !selecting }
 
     private func directionsBanner(large: Bool) -> some View {
-        NavigationBanner(navigation: navigation, presentation: model.arPresentation,
+        NavigationBanner(navigation: navigation, presentation: model.arPresentation, laneGuidance: model.laneGuidance, curveWarning: model.curveWarning,
             compact: critical || (premiumStore.isSubscribed && premiumCompactBanner),
             large: large, onSetup: { showCameraSetup = true })
     }

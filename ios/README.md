@@ -17,7 +17,7 @@ validation are recorded in [N34-SETTINGS-PERFORMANCE.md](N34-SETTINGS-PERFORMANC
 - iOS 17+, landscape-right camera pipeline, Swift 6 toolchain with Swift 5 language mode.
 - App product: `BrakeCheck`; math/storage module: `BrakeCheckCore`.
 - `Info.plist`: camera, precise location, motion, local network, Bonjour, and microphone descriptions.
-- `Sources/BrakeCheck/Resources/YOLOModelData`: copied as ordinary package data so xtool does not need to run Apple's Core ML compiler. The tracker reconstructs an `.mlpackage` and compiles it on the iPhone.
+- `Sources/BrakeCheck/Resources/DetectorModelData`, `LaneModelData`, `ViewpointModelData`: Core ML packages copied as ordinary package data so xtool does not need to run Apple's Core ML compiler; the trackers compile them on the iPhone and cache the result. All bundled models are commercially licensed (see `THIRD_PARTY_NOTICES.md`).
 - `Sources/BrakeCheck/App/DriveModel.swift`: trip lifecycle, sensor integration, speech-trigger transitions, impact check-ins, and trip summaries.
 - `Services/BackendClient.swift`: authenticated requests, QR pairing, and per-phone Keychain tokens.
 - `Services/BonjourServiceDiscovery.swift`: finds the backend after pairing and when its local IP changes.

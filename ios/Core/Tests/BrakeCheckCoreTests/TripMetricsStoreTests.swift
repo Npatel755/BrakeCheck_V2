@@ -58,4 +58,19 @@ final class TripMetricsStoreTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: store.url), corrupt)
         }
     }
+
+    func testTripsSavedBeforeOwnBrakingWasMeasuredDecodeWithoutIt() throws {
+        let legacy = Data("""
+        [{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","startedAt":"2026-01-01T10:00:00Z","endedAt":"2026-01-01T10:10:00Z",
+          "estimatedLeadHardBrakes":1,"estimatedCloseCalls":0}]
+        """.utf8)
+        let decoded = try RecordingMetadataCodec.decoder().decode([TripMetrics].self, from: legacy)
+        XCTAssertEqual(decoded.count, 1)
+        XCTAssertNil(decoded[0].ownHardBrakes)
+        XCTAssertEqual(decoded[0].totalHardBrakes, 1)
+        XCTAssertTrue(decoded[0].valid)
+        let negative = TripMetrics(startedAt: Date(timeIntervalSince1970: 0), endedAt: Date(timeIntervalSince1970: 600),
+                                   maxSpeedMPH: nil, estimatedLeadHardBrakes: 0, estimatedCloseCalls: 0, ownHardBrakes: -1)
+        XCTAssertFalse(negative.valid)
+    }
 }

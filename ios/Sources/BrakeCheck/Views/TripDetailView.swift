@@ -11,6 +11,7 @@ struct TripDetailView: View {
     let trip: TripMetrics
     let useMPH: Bool
     @State private var route: TripRoute?
+    @State private var gpxURL: URL?
     @State private var loaded = false
     @State private var routeError: String?
     @State private var loadRevision = 0
@@ -104,11 +105,20 @@ struct TripDetailView: View {
         .foregroundStyle(BrakeTheme.text)
         .navigationTitle("Trip")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let gpxURL {
+                ShareLink(item: gpxURL, preview: SharePreview(title, image: Image(systemName: "map"))) {
+                    Label("Share route", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("trip.shareGPX")
+            }
+        }
         .task(id: loadRevision) {
             do {
                 let loadedRoute = try await model.loadTripRoute(trip.id)
                 guard !Task.isCancelled else { return }
                 route = loadedRoute; routeError = nil
+                gpxURL = loadedRoute.flatMap(writeGPX)
             } catch {
                 guard !Task.isCancelled else { return }
                 route = nil; routeError = error.localizedDescription
@@ -138,13 +148,31 @@ struct TripDetailView: View {
 
     // MARK: - Totals
 
+    /// Writes the trail as GPX into Caches so Share can hand a file to Maps, Files or Messages.
+    private func writeGPX(_ route: TripRoute) -> URL? {
+        let name = "BrakeSense trip \(trip.startedAt.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour().minute()))"
+        guard let document = route.gpxDocument(name: name),
+              let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let safeName = name.replacingOccurrences(of: "[/:]", with: "-", options: .regularExpression)
+        let url = caches.appendingPathComponent("\(safeName).gpx")
+        do {
+            try document.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
     private var stats: some View {
         HStack(alignment: .top, spacing: 8) {
             stat("\(Int((trip.durationSeconds / 60).rounded()))", "minutes", BrakeTheme.text)
             stat(trip.maxSpeedMPH.map { String(format: "%.0f", $0 * (useMPH ? 1 : 1.609344)) } ?? "--",
                  useMPH ? "max mph" : "max km/h", BrakeTheme.text)
-            stat("\(trip.estimatedLeadHardBrakes)", trip.estimatedLeadHardBrakes == 1 ? "hard brake" : "hard brakes", BrakeTheme.warning)
+            stat("\(trip.totalHardBrakes)", trip.totalHardBrakes == 1 ? "hard brake" : "hard brakes", BrakeTheme.warning)
             stat("\(trip.estimatedCloseCalls)", trip.estimatedCloseCalls == 1 ? "close call" : "close calls", BrakeTheme.danger)
+            if let score = TripSafetyScore(trip) {
+                stat("\(score.value)", score.label.lowercased(), score.value >= 70 ? BrakeTheme.accentText : BrakeTheme.warning)
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -165,16 +193,17 @@ struct TripDetailView: View {
                 .padding(.top, 14).padding(.bottom, 4)
             if let events = route?.events, !events.isEmpty {
                 ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                    HStack(spacing: 12) {
-                        Circle().fill(color(event.kind)).frame(width: 10, height: 10)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(headline(event)).font(.brake(size: 15, weight: .semibold))
-                            Text(detail(event)).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+                    if let clip = clip(for: event) {
+                        NavigationLink {
+                            IncidentDetailView(model: model, id: clip.id)
+                        } label: {
+                            eventRow(event, hasClip: true)
                         }
-                        Spacer(minLength: 0)
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the saved clip")
+                    } else {
+                        eventRow(event, hasClip: false)
                     }
-                    .frame(minHeight: 54)
-                    .accessibilityElement(children: .combine)
                     if index < events.count - 1 {
                         Rectangle().fill(BrakeTheme.text.opacity(0.06)).frame(height: 1)
                     }
@@ -190,6 +219,30 @@ struct TripDetailView: View {
         .padding(.bottom, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(BrakeTheme.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func eventRow(_ event: TripRoute.Event, hasClip: Bool) -> some View {
+        HStack(spacing: 12) {
+            Circle().fill(color(event.kind)).frame(width: 10, height: 10)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headline(event)).font(.brake(size: 15, weight: .semibold))
+                Text(detail(event)).font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
+            }
+            Spacer(minLength: 0)
+            if hasClip {
+                Label("Watch clip", systemImage: "play.rectangle.fill")
+                    .font(.brake(size: 13, weight: .bold)).foregroundStyle(BrakeTheme.accentText)
+            }
+        }
+        .frame(minHeight: 54)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The saved clip whose trigger fell within 20 s of the moment, if any.
+    private func clip(for event: TripRoute.Event) -> IncidentManifest? {
+        incidents.filter { abs($0.triggerTime.timeIntervalSince(event.time)) <= 20 }
+            .min { abs($0.triggerTime.timeIntervalSince(event.time)) < abs($1.triggerTime.timeIntervalSince(event.time)) }
     }
 
     private func headline(_ event: TripRoute.Event) -> String {
@@ -208,7 +261,8 @@ struct TripDetailView: View {
     }
 
     private func color(_ kind: TripRoute.Kind) -> Color {
-        kind == .hardBrake ? BrakeTheme.warning : BrakeTheme.danger
+        if kind.isLaneAlert { return BrakeTheme.accentText }
+        return kind == .hardBrake || kind == .ownHardBrake ? BrakeTheme.warning : BrakeTheme.danger
     }
 
     // MARK: - Clips
@@ -274,14 +328,16 @@ private struct TripRouteMapView: UIViewRepresentable {
         for event in route.events {
             guard let latitude = event.latitude, let longitude = event.longitude else { continue }
             map.addAnnotation(Pin(CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-                                  title: event.kind.title, kind: event.kind == .hardBrake ? .brake : .alert))
+                                  title: event.kind.title,
+                                  kind: event.kind.isLaneAlert ? .lane
+                                      : event.kind == .hardBrake || event.kind == .ownHardBrake ? .brake : .alert))
         }
         map.setVisibleMapRect(path.boundingMapRect,
             edgePadding: UIEdgeInsets(top: 32, left: 32, bottom: 32, right: 32), animated: false)
     }
 
     private final class Pin: NSObject, MKAnnotation {
-        enum Kind { case start, end, brake, alert }
+        enum Kind { case start, end, brake, alert, lane }
         let coordinate: CLLocationCoordinate2D
         let title: String?
         let kind: Kind
@@ -306,6 +362,7 @@ private struct TripRouteMapView: UIViewRepresentable {
                 view.markerTintColor = BrakeTheme.accentUIColor(for: mapView.traitCollection.userInterfaceStyle)
             case .brake: view.markerTintColor = .systemOrange
             case .alert: view.markerTintColor = .systemRed
+            case .lane: view.markerTintColor = .systemTeal
             }
             view.canShowCallout = true
             return view

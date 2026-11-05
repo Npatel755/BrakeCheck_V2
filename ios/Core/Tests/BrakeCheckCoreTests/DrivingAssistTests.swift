@@ -10,8 +10,32 @@ final class DrivingAssistTests: XCTestCase {
         for feature in DrivingAssistFeature.allCases { defaults.set(true, forKey: feature.preferenceKey) }
         XCTAssertEqual(DrivingAssistFeature.enabled(in: defaults, premium: false), [])
         XCTAssertEqual(DrivingAssistFeature.enabled(in: defaults, premium: true), Set(DrivingAssistFeature.offered))
-        XCTAssertFalse(DrivingAssistFeature.enabled(in: defaults, premium: true).contains(.laneDeparture))
-        XCTAssertFalse(DrivingAssistFeature.enabled(in: defaults, premium: true).contains(.cutIn))
+        XCTAssertEqual(Set(DrivingAssistFeature.offered), Set(DrivingAssistFeature.allCases))
+        XCTAssertEqual(Set(DrivingAssistFeature.stopped + DrivingAssistFeature.moving), Set(DrivingAssistFeature.offered))
+        XCTAssertTrue(DrivingAssistFeature.enabled(in: defaults, premium: true).contains(.laneDeparture))
+        XCTAssertTrue(DrivingAssistFeature.enabled(in: defaults, premium: true).contains(.cutIn))
+    }
+
+    func testFollowingDistanceNeedsFourSecondsOfCloseHeadwayAtSpeedThenRestsAMinute() {
+        var engine = DrivingAssistEngine()
+        let id = UUID()
+        var alerts: [DrivingAssistAlert] = []
+        for step in 0...60 {
+            let time = Double(step) * 0.2
+            if let alert = engine.updateHeadway(leadID: id, headway: 0.8, speed: 20, enabled: true,
+                                                capturedAt: time, now: time) { alerts.append(alert) }
+        }
+        XCTAssertEqual(alerts.map(\.feature), [.followingDistance])
+        XCTAssertEqual(alerts.first?.capturedAt ?? -1, 4.0, accuracy: 1e-9)
+        XCTAssertEqual(alerts.first?.text, "Leave more room ahead")
+        // Comfortable headway, slow speed or a new lead restart the clock.
+        var fresh = DrivingAssistEngine()
+        for step in 0...30 {
+            let time = Double(step) * 0.2
+            XCTAssertNil(fresh.updateHeadway(leadID: id, headway: 1.4, speed: 20, enabled: true, capturedAt: time, now: time))
+            XCTAssertNil(fresh.updateHeadway(leadID: UUID(), headway: 0.8, speed: 20, enabled: true, capturedAt: time, now: time))
+            XCTAssertNil(fresh.updateHeadway(leadID: id, headway: 0.8, speed: 6, enabled: true, capturedAt: time, now: time))
+        }
     }
 
     func testTrafficStartRequiresStoppedLeadThenSustainedOpeningOnSameID() {
@@ -102,6 +126,11 @@ final class DrivingAssistTests: XCTestCase {
                 aligned: true, enabled: true, now: time) { alerts.append(alert) }
         }
         XCTAssertEqual(alerts.map(\.feature), [.laneDeparture])
+        // The lane centre moved left of the camera, so the vehicle drifts toward the right line.
+        XCTAssertEqual(alerts.first?.side, .right)
+        XCTAssertEqual(alerts.first?.text, "Drifting right — check your lane")
+        XCTAssertEqual(DrivingAssistAlert(.laneDeparture, at: 0).text, DrivingAssistFeature.laneDeparture.alertText)
+        XCTAssertEqual(DrivingAssistAlert(.cutIn, at: 0, side: .left).text, DrivingAssistFeature.cutIn.alertText)
     }
 
     func testPaintFallbackUnalignedAndRepeatedCapturesCannotArmLaneDeparture() {

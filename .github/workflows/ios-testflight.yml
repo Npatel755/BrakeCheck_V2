@@ -58,16 +58,8 @@ jobs:
           old = "PRODUCT_BUNDLE_IDENTIFIER: com.brakecheck.prototype"
           assert old in text, "project.yml bundle ID line changed; update ios-testflight.yml"
           spec.write_text(text.replace(old, "PRODUCT_BUNDLE_IDENTIFIER: " + os.environ["BUNDLE_ID"]))
-          # This release export intentionally omits the experimental lane model weights. They must
-          # not ship: SegFormer's licence is non-commercial and UFLD was trained on CULane
-          # (non-commercial). Leave them out before signing rather than strip them after.
-          package = pathlib.Path("Package.swift")
-          text = package.read_text()
-          copy = '.copy("Resources/LaneModelData"),'
-          exclude = '"Resources/YOLOModelData"'
-          assert copy in text and exclude in text, "Package.swift lane lines changed; update ios-testflight.yml"
-          text = text.replace(copy, "").replace(exclude, exclude + ',\n                "Resources/LaneModelData"')
-          package.write_text(text)
+          # Lane (UFLDv2, locally trained) and road (Intel, Apache-2.0) models ship in this build;
+          # tools/model_migration/verify_model_assets.py checks their provenance below.
           PY
           bash scripts/generate_app_project.sh
           # Each upload needs a higher build number; 40 was the last hand-set one.
@@ -95,11 +87,18 @@ jobs:
           [ $status -ne 0 ] && tail -30 archive.log | while IFS= read -r line; do echo "::notice title=archive.log tail::$line"; done
           exit $status
 
+      - name: Verify bundled model provenance and licences
+        run: python3 ../tools/model_migration/verify_model_assets.py
+
       - name: Check what ships
         run: |
           app=build/BrakeCheck.xcarchive/Products/Applications/BrakeCheck.app
           test -d "$app"
-          if find "$app" -name "*.mlpackage" -path "*LaneModelData*" | grep -q .; then echo "::error::Lane models are in the app"; exit 1; fi
+          for model in UFLDv2Lane IntelRoad; do
+            find "$app" -path "*LaneModelData/$model.mlpackage/*" -name weight.bin | grep -q . \
+              || { echo "::error::$model weights are missing"; exit 1; }
+          done
+          if find "$app" -path "*SegFormerRoad*" -o -path "*YOLOModelData*" | grep -q .; then echo "::error::Non-commercial model assets are in the app"; exit 1; fi
           for size in Day Night; do
             find "$app" -path "*DetectorModelData/$size/*" -name 0-weight.bin | grep -q . \
               || { echo "::error::$size detector weights are missing"; exit 1; }

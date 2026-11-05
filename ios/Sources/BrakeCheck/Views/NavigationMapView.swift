@@ -229,7 +229,7 @@ struct NavigationMapView: UIViewRepresentable {
         coordinator.recenterTrigger = recenterTrigger
     }
 
-    @MainActor final class Coordinator: NSObject, @preconcurrency MKMapViewDelegate, UIGestureRecognizerDelegate {
+    @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var userPanned = false
         var accentName = ""
         private var circleBudget = MapOverlayCoalescer()

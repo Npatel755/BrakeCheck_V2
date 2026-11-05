@@ -8,8 +8,13 @@ import SwiftUI
 struct NavigationBanner: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("display.accent") private var accentChoice = BrakeTheme.defaultAccent
+    @AppStorage("display.mph") private var useMPH = true
     @ObservedObject var navigation: NavigationService
     let presentation: CameraARPresentation
+    /// Lane-level preparation for the next turn, shown in place of the "Then" strip.
+    var laneGuidance: LaneGuidanceAdvice? = nil
+    /// Route-geometry curve warning; it outranks lane advice in the strip.
+    var curveWarning: CurveSpeedWarning? = nil
     /// During a brake warning the card drops to one line so the alert reads first.
     var compact = false
     var large = false
@@ -20,6 +25,16 @@ struct NavigationBanner: View {
     /// Dark accents are light, so they take dark ink; light-mode accents are deep enough for white.
     private var ink: Color { colorScheme == .dark ? Color(red: 0.03, green: 0.06, blue: 0.13) : .white }
     private var fill: Color { BrakeTheme.accentColor(named: accentChoice) }
+    /// "Curve ahead · ease off to ~35 mph": the comfortable speed for the bend, rounded to 5,
+    /// only when it is meaningfully below the current speed.
+    private func curveText(_ warning: CurveSpeedWarning) -> String {
+        let factor = useMPH ? 2.23694 : 3.6
+        let advised = (warning.advisedSpeed * factor / 5).rounded() * 5
+        let current = warning.currentSpeed * factor
+        guard advised >= 10, current - advised >= 5 else { return warning.text }
+        return warning.text + " to ~\(Int(advised)) \(useMPH ? "mph" : "km/h")"
+    }
+
     private var distance: (value: String, unit: String)? {
         guard !navigation.hasArrived, !navigation.isCalculating,
               let meters = navigation.maneuverDistance else { return nil }
@@ -96,6 +111,14 @@ struct NavigationBanner: View {
             if let pauseNote {
                 Image(systemName: "location.slash").font(.brake(size: 15, weight: .bold))
                 Text(pauseNote).lineLimit(1).minimumScaleFactor(0.8)
+            } else if let warning = curveWarning, !navigation.hasArrived {
+                Image(systemName: warning.symbol).font(.brake(size: 15, weight: .bold))
+                Text(curveText(warning)).lineLimit(1).minimumScaleFactor(0.8)
+                    .accessibilityIdentifier("curveWarning")
+            } else if let advice = laneGuidance, !navigation.hasArrived {
+                Image(systemName: advice.symbol).font(.brake(size: 15, weight: .bold))
+                Text(advice.text).lineLimit(1).minimumScaleFactor(0.8)
+                    .accessibilityIdentifier("laneGuidance")
             } else if let next = navigation.upcomingInstruction, !navigation.hasArrived {
                 Text("Then").font(.brake(size: 15, weight: .semibold)).opacity(0.75)
                 Image(systemName: NavigationManeuver.symbol(for: next)).font(.brake(size: 15, weight: .bold))
@@ -148,6 +171,8 @@ struct NavigationBanner: View {
     private var accessibilitySummary: String {
         var parts = [distance.map { navigation.isPaused
             ? "Last known distance \($0.value) \($0.unit)" : "In \($0.value) \($0.unit)" }, primary].compactMap { $0 }
+        if let warning = curveWarning { parts.append(warning.text) }
+        if let advice = laneGuidance { parts.append(advice.text) }
         if !navigation.isPaused, let next = navigation.upcomingInstruction { parts.append("Then \(next)") }
         return parts.joined(separator: ". ")
     }

@@ -102,7 +102,8 @@ final class QueuedSpeedLogWriterTests: XCTestCase {
         XCTAssertEqual(files.count, 13)
         XCTAssertEqual(Set(files.map(\.lastPathComponent)).count, 13)
         var observedSpeeds: Set<Int> = []
-        for file in files where file != existing {
+        // contentsOfDirectory returns the resolved tmp path (/private/var on macOS).
+        for file in files where file.lastPathComponent != existing.lastPathComponent {
             let rows = try String(contentsOf: file, encoding: .utf8).split(separator: "\n")
             XCTAssertEqual(rows.count, 3)
             XCTAssertEqual(rows.first, "unix_time,speed_mps,accuracy_mps")

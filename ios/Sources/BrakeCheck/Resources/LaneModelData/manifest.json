@@ -234,7 +234,7 @@
       "camera_coordinates": "full-frame bottom-left normalized; ego slots only for corridor fitting"
     },
     {
-      "name": "SegFormerRoad",
+      "name": "IntelRoad",
       "input": [
         1,
         3,
@@ -242,18 +242,24 @@
         640
       ],
       "output": "road_scores",
-      "source": "https://huggingface.co/nvidia/segformer-b0-finetuned-cityscapes-1024-1024",
-      "revision": "21b3847fae21ddee674abd31129307b6a1235bd9",
-      "license": "NVIDIA Source Code License for SegFormer; non-commercial research/evaluation",
-      "license_url": "https://github.com/NVlabs/SegFormer/blob/master/LICENSE",
-      "preprocessing": "RGB bytes; ImageNet normalization; stretch full frame",
-      "decoder": "[1,2,384,640] softmax probabilities: non-road, road"
+      "source": "https://github.com/openvinotoolkit/open_model_zoo/tree/master/models/intel/road-segmentation-adas-0001",
+      "release": "open_model_zoo 2023.0 FP32",
+      "source_sha384": {
+        "road-segmentation-adas-0001.xml": "76248abe41e6cc1e4286c21d1d2447a73d29dc86d7343056d37dccefccee65793ab7b3a9bfeda4f17c89c2978112e1ee",
+        "road-segmentation-adas-0001.bin": "00391dd817115d2b076cade11062a4ff8c70659eb629d30b4babae3b6888f7c180e7ef306e8e5f14fde33f0bb23e1207"
+      },
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/openvinotoolkit/open_model_zoo/blob/master/LICENSE",
+      "notice": "ModelLicenses/IntelRoad-MODEL-CARD.md",
+      "preprocessing": "RGB bytes 640x384 full-frame stretch; graph converts to BGR and resizes to 896x512",
+      "decoder": "[1,2,384,640] probabilities: non-road, road+marking",
+      "status": "commercially licensed; on-device accuracy, latency and AR alignment validation pending"
     }
   ],
   "files": {
-    "SegFormerRoad.mlpackage/Data/com.apple.CoreML/model.mlmodel": "943e8fbfa71663c8218e69e9580248260c17248a869786bbb75f2c370b83f439",
-    "SegFormerRoad.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "477f10bd51a02cfac0db2a819c454ffb09709e2011e23a00d8ee337e6ce6f0a1",
-    "SegFormerRoad.mlpackage/Manifest.json": "02821e7a6f902a2312469dce6e6c4e859ddc728e9f2af13c832ec5ebf7c40717",
+    "IntelRoad.mlpackage/Data/com.apple.CoreML/model.mlmodel": "d69f1576a4fc4a0a7eeae0ca21ebfb06abe7e1a1824a1a8fb262319b5c0e3d7a",
+    "IntelRoad.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "b9198b4fac60a3ded1955d642c3b5a921c0840a06e4735473bd746e60fbcc002",
+    "IntelRoad.mlpackage/Manifest.json": "8a14fe998cd92b878a6ff18fda09b754a97387355b7c4e531e59f19e247f6e3a",
     "UFLDv2Lane-provenance.json": "0a751c966337acbb74a0bca0bad424b721d4a43d0b84f24baabfc8a8c6eaab9b",
     "UFLDv2Lane.mlpackage/Data/com.apple.CoreML/model.mlmodel": "46dac01d87d7424153dcd3e2c970fb759dabdea5fa6cc7b60f4d15b9f74f95aa",
     "UFLDv2Lane.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "dc5e2f2c6b15523035aec1eca0bd4b6588e9a30ef775c122cd36903231f91472",

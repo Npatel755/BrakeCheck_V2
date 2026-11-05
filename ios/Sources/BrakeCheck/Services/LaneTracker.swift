@@ -6,7 +6,7 @@ import CoreVideo
 import CryptoKit
 import Foundation
 
-/// The marking fallback runs on VehicleTracker's queue. UFLD and SegFormer road model
+/// The marking fallback runs on VehicleTracker's queue. UFLD and the Intel road model
 /// each retain at most one camera frame on independent queues. Segmentation
 /// decoding cannot hold the lane worker busy after a UFLD observation is ready.
 /// The shared prediction gate still gives vehicle requests priority.
@@ -87,6 +87,7 @@ final class LaneTracker {
     private var displayTrackingMode = LaneTrackingMode.kalman
     private let context = CIContext(options: [.cacheIntermediates: false])
     private var inputPool: CVPixelBufferPool?
+    private var roadVetoes = 0
     private var lastStatusTime: TimeInterval = -.infinity
     private var consecutiveErrors = 0
     private var inputWidth = UFLDv2InputTransform.inputWidth
@@ -122,7 +123,7 @@ final class LaneTracker {
         loadingStarted = true
         stateLock.unlock()
         modelQueue.async {
-            self.onStatus?("UFLDv2 + SegFormer road model loading…")
+            self.onStatus?("UFLDv2 + Intel road model loading…")
             do {
                 let source = try self.locateModel(named: "UFLDv2Lane")
                 let compiled = try self.compiledModel(from: source)
@@ -160,7 +161,7 @@ final class LaneTracker {
                 self.loadingStarted = false; self.modelReady = false
                 self.rawPrediction = nil; self.diagnostic = "Lane model error"
                 self.stateLock.unlock()
-                self.onStatus?("UFLDv2/SegFormer road model unavailable: \(error.localizedDescription) · paint fallback")
+                self.onStatus?("UFLDv2/Intel road model unavailable: \(error.localizedDescription) · paint fallback")
             }
         }
     }
@@ -178,7 +179,7 @@ final class LaneTracker {
                 self.stateLock.lock(); self.roadLoadingStarted = false; self.stateLock.unlock()
             }
             do {
-                let source = try self.locateModel(named: "SegFormerRoad")
+                let source = try self.locateModel(named: "IntelRoad")
                 let compiled = try self.compiledModel(from: source)
                 let options = MLModelConfiguration(); options.computeUnits = .all
                 let road: MLModel
@@ -191,7 +192,7 @@ final class LaneTracker {
                       image.pixelsWide == 640, image.pixelsHigh == 384,
                       road.modelDescription.outputDescriptionsByName["road_scores"]?.multiArrayConstraint?.shape.map({ $0.intValue }) == [1, 2, 384, 640] else { throw LaneModelError.contract }
                 self.stateLock.lock(); self.roadModel = road; self.stateLock.unlock()
-                self.onStatus?("UFLDv2 lanes + SegFormer road ready")
+                self.onStatus?("UFLDv2 lanes + Intel road ready")
             } catch {
                 self.stateLock.lock(); self.roadModel = nil; self.stateLock.unlock()
                 self.onStatus?("UFLDv2 lanes ready · road segmentation unavailable: \(error.localizedDescription)")
@@ -378,7 +379,16 @@ final class LaneTracker {
                 // Decode and publish lanes before waiting for segmentation.
                 // Road-model failure/cadence must not suppress UFLDv2 observations.
                 let decoded = try self.decode(result)
-                let lane = self.neuralEstimator.update(decoded.ego, excluding: boxes, at: time)
+                var lane = self.neuralEstimator.update(decoded.ego, excluding: boxes, at: time)
+                // The previous cycle's road mask can veto a corridor fitted off the
+                // drivable surface (kerb, barrier, oncoming side). It never adds one.
+                self.stateLock.lock()
+                let priorRoad = self.roadMeasurements.last?.region
+                self.stateLock.unlock()
+                if let corridor = lane, let priorRoad, priorRoad.encloses(corridor, at: time) == false {
+                    lane = nil
+                    self.roadVetoes += 1
+                }
                 let observation = LanePredictionDisplay.observation(candidates: decoded.display, at: time)
                 let geometry = LanePredictionGeometry.filtered(observation)
                 // Use real pre-temporal observations, with independent pair
@@ -436,7 +446,7 @@ final class LaneTracker {
                     let count = displayed.map { Set($0.boundaries.map(\.laneSlot)).count } ?? 0
                     self.onStatus?(finished - time > 1.0
                         ? "UFLDv2 · \(duration) ms · frame too old to track"
-                        : "UFLDv2 · \(mode.title) · \(duration) ms · \(count) display boundaries · road \(roadRows) rows · \(self.neuralEstimator.status) · lead \(self.leadLaneEstimator.status)")
+                        : "UFLDv2 · \(mode.title) · \(duration) ms · \(count) display boundaries · road \(roadRows) rows · \(self.roadVetoes) road vetoes · \(self.neuralEstimator.status) · lead \(self.leadLaneEstimator.status)")
                 }
             } catch {
                 self.consecutiveErrors += 1
@@ -454,13 +464,13 @@ final class LaneTracker {
                 self.leadLaneEstimator.reset()
                 self.displaySmoother.reset()
                 self.kalmanSmoother.reset()
-                self.onStatus?("UFLDv2/SegFormer road model inference error: \(error.localizedDescription) · retrying · paint fallback")
+                self.onStatus?("UFLDv2/Intel road model inference error: \(error.localizedDescription) · retrying · paint fallback")
             }
         }
     }
 
     /// Road inference is optional and never makes UFLD's one-frame slot wait
-    /// for SegFormer road model prediction or mask decoding. Both still share the vehicle-
+    /// for Intel road model prediction or mask decoding. Both still share the vehicle-
     /// first accelerator gate, and an old frame cannot publish after reset.
     private func scheduleRoad(_ roadModel: MLModel, buffer: CVPixelBuffer, frame: LaneLumaFrame,
                               lane: LanePath?, excluding boxes: [CGRect], at time: TimeInterval,
@@ -507,7 +517,7 @@ final class LaneTracker {
                 }
             } catch {
                 failed = true
-                self.onStatus?("UFLDv2 lanes active - SegFormer road model retrying: \(error.localizedDescription)")
+                self.onStatus?("UFLDv2 lanes active - Intel road model retrying: \(error.localizedDescription)")
             }
             guard attempted else { return }
             let finished = ProcessInfo.processInfo.systemUptime
@@ -574,7 +584,8 @@ final class LaneTracker {
         // then keeps the bottom 320 rows. Core Image's origin is bottom-left,
         // so cropping to rect below removes the top 213 resized rows.
         // Output anchors still refer to the full camera frame, not the crop.
-        // SegFormer retains its existing full-frame 640 x 384 stretch.
+        // The Intel road model takes the same full-frame 640 x 384 RGB stretch and
+        // converts to BGR 896 x 512 inside the Core ML graph.
         let resizedHeight = laneCrop ? UFLDv2InputTransform.resizedHeight : height
         let image = source.transformed(by: CGAffineTransform(translationX: -source.extent.minX, y: -source.extent.minY))
             .transformed(by: CGAffineTransform(scaleX: CGFloat(width) / source.extent.width, y: CGFloat(resizedHeight) / source.extent.height))
@@ -759,8 +770,8 @@ private enum LaneModelError: LocalizedError {
     case missing, contract, frame, output
     var errorDescription: String? {
         switch self {
-        case .missing: return "UFLDv2Lane or SegFormerRoad model package is missing"
-        case .contract: return "expected UFLDv2 1600×320 four-head outputs and SegFormer 640×384 road_scores"
+        case .missing: return "UFLDv2Lane or IntelRoad model package is missing"
+        case .contract: return "expected UFLDv2 1600×320 four-head outputs and IntelRoad 640×384 road_scores"
         case .frame: return "camera frame could not be resized"
         case .output: return "unexpected floating-point lane or road output contract"
         }
