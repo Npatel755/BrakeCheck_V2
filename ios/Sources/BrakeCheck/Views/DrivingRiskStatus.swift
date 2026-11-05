@@ -104,7 +104,7 @@ struct DrivingAssistBanner: View {
                 .accessibilityIdentifier("deviceNotice")
                 .allowsHitTesting(false)
         } else if let notice = model.clipNotice, !safety.checkinPresented {
-            Label(notice, systemImage: "bookmark.fill")
+            Label(notice, systemImage: notice.hasPrefix("Clip saved") ? "bookmark.fill" : "cup.and.saucer.fill")
                 .font(.brake(size: large ? 14 : 12, weight: .semibold))
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .foregroundStyle(BrakeTheme.text)

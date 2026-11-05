@@ -51,7 +51,7 @@ struct HomeView: View {
                     if model.tripActive && !model.demo && !model.replaying { tripControls }
                     if let prompt = model.parkedPrompt, model.tripActive { parkedRow(prompt) }
                     if let notice = model.clipNotice, model.tripActive {
-                        Label(notice, systemImage: "bookmark.fill")
+                        Label(notice, systemImage: notice.hasPrefix("Clip saved") ? "bookmark.fill" : "cup.and.saucer.fill")
                             .font(.brake(.subheadline, weight: .semibold))
                             .foregroundStyle(BrakeTheme.text)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -286,6 +286,11 @@ struct HomeView: View {
                         }
                         stats(minutes: trip.durationSeconds / 60, maxMPH: trip.maxSpeedMPH,
                               hardBrakes: trip.totalHardBrakes, closeCalls: trip.estimatedCloseCalls)
+                        if let today = TripDayDigest(model.savedTrips) {
+                            Text("Today · \(today.line)")
+                                .font(.brake(.subheadline, weight: .semibold)).foregroundStyle(BrakeTheme.muted)
+                                .accessibilityIdentifier("home.todayDigest")
+                        }
                     }
                     .contentShape(Rectangle())
                 }

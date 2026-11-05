@@ -69,6 +69,9 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
             spoken = language == "es" ? "El teléfono se está sobrecalentando. Las alertas de cámara pueden retrasarse." : "Phone overheating. Camera warnings may be late."
         } else if text.hasPrefix("Camera view blocked") {
             spoken = language == "es" ? "La cámara no ve la carretera. Revisa el soporte y el parabrisas." : "Camera view blocked. Check the mount and windshield."
+        } else if text.contains("hours on the road") {
+            let hours = text.prefix { $0.isNumber }
+            spoken = language == "es" ? "Llevas \(hours) horas conduciendo. Haz una pausa cuando puedas." : "\(hours) hours on the road. Take a break when you can."
         } else if text.hasPrefix("Battery low") {
             spoken = language == "es" ? "Batería baja. Conecta el teléfono para que la cámara siga funcionando." : "Battery low. Plug in to keep the camera running."
         } else if text.hasPrefix("Parked") {
@@ -79,6 +82,12 @@ final class VoiceAudio: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDele
             spoken = language == "es" ? "Modo de bajo consumo activado. La cámara funciona más lenta." : "Low Power Mode is on. The camera runs slower."
         }
         speak(spoken, language: language, urgent: false)
+    }
+
+    /// Already-localised text, e.g. the saved-trip summary.
+    func speakText(_ text: String, language: String) {
+        guard !isBusy else { return }
+        speak(text, language: language, urgent: false)
     }
 
     func speakPreview(language: String) {

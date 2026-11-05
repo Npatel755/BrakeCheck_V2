@@ -95,6 +95,7 @@ final class DriveModel {
     /// Times this trip's measured GPS deceleration showed the driver braking hard.
     private(set) var ownHardBrakes = 0
     @ObservationIgnored private var ownBrakeDetector = OwnBrakeDetector()
+    @ObservationIgnored private var breakReminder = BreakReminder()
     @ObservationIgnored private var spokeParkedPrompt = false
     @ObservationIgnored private var spokenDeviceNotices: Set<String> = []
     /// True while the camera has seen only near-uniform frames on a moving car.
@@ -740,6 +741,7 @@ final class DriveModel {
         tripStarted = Date(); tripStartedUptime = ProcessInfo.processInfo.systemUptime; tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
         ownHardBrakes = 0; ownBrakeDetector.reset()
         cameraViewMonitor.reset(); cameraViewBlocked = false
+        breakReminder.reset()
         currentTripID = UUID()
         lastTripPublishedSecond = -1
         tripHadGPSSpeed = false
@@ -853,6 +855,7 @@ final class DriveModel {
                 self.pendingTripSaves.removeValue(forKey: trip.id)
                 self.applyTripHistory(snapshot)
                 self.lastSavedTripID = trip.id
+                self.speakTripSummary(trip)
             } catch {
                 self?.tripHistoryError = "This trip is waiting to be saved. " + error.localizedDescription
             }
@@ -1474,6 +1477,7 @@ final class DriveModel {
         if Int(elapsed) != lastTripPublishedSecond {
             lastTripPublishedSecond = Int(elapsed)
             tripMinutes = elapsed / 60
+            remindAboutBreak(elapsed: elapsed, at: now)
         }
 
         if let reading = speedReading, now - reading.measurementUptime > 1.5 {
@@ -1911,11 +1915,30 @@ final class DriveModel {
         showClipNotice("Clip saved · brake warning")
     }
 
-    private func showClipNotice(_ text: String) {
+    /// Two hours in, then hourly: one HUD line and one spoken sentence, only while moving.
+    private func remindAboutBreak(elapsed: TimeInterval, at now: TimeInterval) {
+        guard !demo, !replaying, !stopping,
+              let hours = breakReminder.update(elapsedSeconds: elapsed, moving: hasMeasuredMovement(at: now)) else { return }
+        let text = BreakReminder.text(hours: hours)
+        showClipNotice(text, seconds: 20)
+        if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections, !brakeWarningActive {
+            safety.audio.speakNotice(text, language: safety.settings.language)
+        }
+    }
+
+    /// Spoken once the trip is on disk, so the driver hears the outcome without looking down.
+    private func speakTripSummary(_ trip: TripMetrics) {
+        guard foreground, !demo, !replaying, safety.settings.voiceEnabled,
+              !safety.audio.isBusy, !safety.checkinPresented else { return }
+        safety.audio.speakText(TripSummarySpeech.text(for: trip, language: safety.settings.language),
+                               language: safety.settings.language)
+    }
+
+    private func showClipNotice(_ text: String, seconds: Double = 5) {
         clipNotice = text
         clipNoticeTask?.cancel()
         clipNoticeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
             self?.clipNotice = nil
         }
