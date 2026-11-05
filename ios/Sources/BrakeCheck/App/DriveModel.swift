@@ -92,6 +92,9 @@ final class DriveModel {
     /// Countdown shown once the car has been parked long enough that the trip will end itself.
     private(set) var parkedPrompt: ParkedTripPrompt?
     @ObservationIgnored private var parkedMonitor = ParkedTripMonitor()
+    /// Times this trip's measured GPS deceleration showed the driver braking hard.
+    private(set) var ownHardBrakes = 0
+    @ObservationIgnored private var ownBrakeDetector = OwnBrakeDetector()
     @ObservationIgnored private var spokeParkedPrompt = false
     @ObservationIgnored private var spokenDeviceNotices: Set<String> = []
     private(set) var drivingAssistStatuses: [DrivingAssistFeature: String] = [:]
@@ -379,6 +382,7 @@ final class DriveModel {
 
             self.speedReading = reading
             self.camera.tracker.updateEgoSpeed(reading)
+            self.recordOwnBraking(reading)
             self.processCurveWarning()
 
             self.gpsSimulated = reading?.simulated ?? false
@@ -728,6 +732,7 @@ final class DriveModel {
         refreshDeviceCondition()
         parkedMonitor.reset(); parkedPrompt = nil; spokeParkedPrompt = false
         tripStarted = Date(); tripStartedUptime = ProcessInfo.processInfo.systemUptime; tripMinutes = 0; hardBrakes = 0; closeCalls = 0; maxSpeedMPH = 0
+        ownHardBrakes = 0; ownBrakeDetector.reset()
         currentTripID = UUID()
         lastTripPublishedSecond = -1
         tripHadGPSSpeed = false
@@ -1836,6 +1841,13 @@ final class DriveModel {
 
     private var brakeWarningTiming: BrakeWarningTiming {
         UserDefaults.standard.string(forKey: BrakeWarningTiming.defaultsKey).flatMap(BrakeWarningTiming.init) ?? .standard
+    }
+
+    private func recordOwnBraking(_ reading: GPSSpeedSample?) {
+        guard let event = ownBrakeDetector.update(reading) else { return }
+        ownHardBrakes += 1
+        tripRoute.add(.ownHardBrake, at: speedService.latestLocation,
+                      speedMPH: event.speedAtOnset * 2.2369362921, closingSeconds: nil)
     }
 
     private func updateTripEvents() {

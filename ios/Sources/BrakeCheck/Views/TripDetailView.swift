@@ -237,7 +237,7 @@ struct TripDetailView: View {
     }
 
     private func color(_ kind: TripRoute.Kind) -> Color {
-        kind == .hardBrake ? BrakeTheme.warning : BrakeTheme.danger
+        kind == .hardBrake || kind == .ownHardBrake ? BrakeTheme.warning : BrakeTheme.danger
     }
 
     // MARK: - Clips
@@ -303,7 +303,7 @@ private struct TripRouteMapView: UIViewRepresentable {
         for event in route.events {
             guard let latitude = event.latitude, let longitude = event.longitude else { continue }
             map.addAnnotation(Pin(CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-                                  title: event.kind.title, kind: event.kind == .hardBrake ? .brake : .alert))
+                                  title: event.kind.title, kind: event.kind == .hardBrake || event.kind == .ownHardBrake ? .brake : .alert))
         }
         map.setVisibleMapRect(path.boundingMapRect,
             edgePadding: UIEdgeInsets(top: 32, left: 32, bottom: 32, right: 32), animated: false)

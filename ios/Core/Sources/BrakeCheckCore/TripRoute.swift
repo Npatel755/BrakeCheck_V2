@@ -15,10 +15,11 @@ public struct TripRoute: Codable, Sendable {
         }
     }
     public enum Kind: String, Codable, Sendable {
-        case hardBrake, closeCall, brakeAlert
+        case hardBrake, closeCall, brakeAlert, ownHardBrake
         public var title: String {
             switch self {
             case .hardBrake: return "Car ahead braked hard"
+            case .ownHardBrake: return "You braked hard"
             case .closeCall: return "Close call"
             case .brakeAlert: return "BRAKE alert"
             }
