@@ -323,6 +323,9 @@ struct HomeView: View {
             stat(maxMPH.map { String(format: "%.0f", $0 * (useMPH ? 1 : 1.609344)) } ?? "--", useMPH ? "max mph" : "max km/h", BrakeTheme.text)
             stat("\(hardBrakes)", hardBrakes == 1 ? "hard brake" : "hard brakes", BrakeTheme.warning)
             stat("\(closeCalls)", closeCalls == 1 ? "close call" : "close calls", BrakeTheme.danger)
+            if let score = TripSafetyScore(durationSeconds: minutes * 60, hardBrakes: hardBrakes, closeCalls: closeCalls) {
+                stat("\(score.value)", score.label.lowercased(), score.value >= 70 ? BrakeTheme.accentText : BrakeTheme.warning)
+            }
         }
         .accessibilityElement(children: .combine)
     }

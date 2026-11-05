@@ -50,7 +50,7 @@ struct TripHistoryView: View {
                                     metric("Duration", tripDuration(trip.durationSeconds))
                                     metric("Max. GPS speed", tripSpeed(trip.maxSpeedMPH, useMPH: useMPH))
                                 }
-                                Text("\(trip.estimatedLeadHardBrakes) estimated lead brakes · \(trip.estimatedCloseCalls) estimated closing events")
+                                Text(tripSummaryLine(trip))
                                     .font(.brake(.caption)).foregroundStyle(BrakeTheme.muted)
                             }.brakePanel()
                         }.buttonStyle(.plain)
@@ -135,6 +135,13 @@ struct TripHistoryView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("history.locked")
+    }
+
+    private func tripSummaryLine(_ trip: TripMetrics) -> String {
+        let events = "\(trip.estimatedLeadHardBrakes) estimated lead brakes · \(trip.estimatedCloseCalls) estimated closing events"
+        guard let score = TripSafetyScore(durationSeconds: trip.durationSeconds, hardBrakes: trip.estimatedLeadHardBrakes,
+                                          closeCalls: trip.estimatedCloseCalls) else { return events }
+        return "\(score.label) · \(score.value)/100 · " + events
     }
 
     private func exportCSV() {

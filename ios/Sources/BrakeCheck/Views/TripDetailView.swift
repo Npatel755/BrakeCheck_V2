@@ -145,6 +145,10 @@ struct TripDetailView: View {
                  useMPH ? "max mph" : "max km/h", BrakeTheme.text)
             stat("\(trip.estimatedLeadHardBrakes)", trip.estimatedLeadHardBrakes == 1 ? "hard brake" : "hard brakes", BrakeTheme.warning)
             stat("\(trip.estimatedCloseCalls)", trip.estimatedCloseCalls == 1 ? "close call" : "close calls", BrakeTheme.danger)
+            if let score = TripSafetyScore(durationSeconds: trip.durationSeconds, hardBrakes: trip.estimatedLeadHardBrakes,
+                                           closeCalls: trip.estimatedCloseCalls) {
+                stat("\(score.value)", score.label.lowercased(), score.value >= 70 ? BrakeTheme.accentText : BrakeTheme.warning)
+            }
         }
         .accessibilityElement(children: .combine)
     }
