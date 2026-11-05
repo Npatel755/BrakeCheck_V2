@@ -15,15 +15,19 @@ public struct TripRoute: Codable, Sendable {
         }
     }
     public enum Kind: String, Codable, Sendable {
-        case hardBrake, closeCall, brakeAlert, ownHardBrake
+        case hardBrake, closeCall, brakeAlert, ownHardBrake, laneDeparture, cutIn
         public var title: String {
             switch self {
             case .hardBrake: return "Car ahead braked hard"
             case .ownHardBrake: return "You braked hard"
             case .closeCall: return "Close call"
             case .brakeAlert: return "BRAKE alert"
+            case .laneDeparture: return "Drifted toward the lane line"
+            case .cutIn: return "Vehicle cut in ahead"
             }
         }
+        /// Lane alerts are coaching moments, not collision evidence.
+        public var isLaneAlert: Bool { self == .laneDeparture || self == .cutIn }
     }
     public struct Event: Codable, Identifiable, Sendable {
         public let id: UUID

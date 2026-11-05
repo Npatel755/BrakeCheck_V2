@@ -261,7 +261,8 @@ struct TripDetailView: View {
     }
 
     private func color(_ kind: TripRoute.Kind) -> Color {
-        kind == .hardBrake || kind == .ownHardBrake ? BrakeTheme.warning : BrakeTheme.danger
+        if kind.isLaneAlert { return BrakeTheme.accentText }
+        return kind == .hardBrake || kind == .ownHardBrake ? BrakeTheme.warning : BrakeTheme.danger
     }
 
     // MARK: - Clips
@@ -327,14 +328,16 @@ private struct TripRouteMapView: UIViewRepresentable {
         for event in route.events {
             guard let latitude = event.latitude, let longitude = event.longitude else { continue }
             map.addAnnotation(Pin(CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-                                  title: event.kind.title, kind: event.kind == .hardBrake || event.kind == .ownHardBrake ? .brake : .alert))
+                                  title: event.kind.title,
+                                  kind: event.kind.isLaneAlert ? .lane
+                                      : event.kind == .hardBrake || event.kind == .ownHardBrake ? .brake : .alert))
         }
         map.setVisibleMapRect(path.boundingMapRect,
             edgePadding: UIEdgeInsets(top: 32, left: 32, bottom: 32, right: 32), animated: false)
     }
 
     private final class Pin: NSObject, MKAnnotation {
-        enum Kind { case start, end, brake, alert }
+        enum Kind { case start, end, brake, alert, lane }
         let coordinate: CLLocationCoordinate2D
         let title: String?
         let kind: Kind
@@ -359,6 +362,7 @@ private struct TripRouteMapView: UIViewRepresentable {
                 view.markerTintColor = BrakeTheme.accentUIColor(for: mapView.traitCollection.userInterfaceStyle)
             case .brake: view.markerTintColor = .systemOrange
             case .alert: view.markerTintColor = .systemRed
+            case .lane: view.markerTintColor = .systemTeal
             }
             view.canShowCallout = true
             return view
