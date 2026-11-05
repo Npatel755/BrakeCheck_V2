@@ -1804,6 +1804,10 @@ final class DriveModel {
         guard let alert, assistAllowed(alert.feature), risk.level != .high,
               ProcessInfo.processInfo.systemUptime - alert.capturedAt <= 0.5 else { return }
         drivingAssistAlert = alert
+        if alert.feature == .laneDeparture || alert.feature == .cutIn {
+            tripRoute.add(alert.feature == .laneDeparture ? .laneDeparture : .cutIn, at: speedService.latestLocation,
+                          speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: nil)
+        }
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         if safety.settings.voiceEnabled, !safety.audio.isBusy, !navigation.isSpeakingDirections {
             safety.audio.speakDrivingAssist(alert, language: safety.settings.language)
@@ -1870,6 +1874,7 @@ final class DriveModel {
         ownHardBrakes += 1
         tripRoute.add(.ownHardBrake, at: speedService.latestLocation,
                       speedMPH: event.speedAtOnset * 2.2369362921, closingSeconds: nil)
+        autoSaveClip(reason: "Hard brake", notice: "Clip saved · hard brake", at: reading?.measurementUptime ?? ProcessInfo.processInfo.systemUptime)
     }
 
     private func updateTripEvents() {
@@ -1886,7 +1891,7 @@ final class DriveModel {
             safety.brakeWarning()
             tripRoute.add(.brakeAlert, at: speedService.latestLocation,
                 speedMPH: speed.map { $0 * 2.2369362921 }, closingSeconds: risk.timeToCollision)
-            autoSaveClipForBrakeWarning(at: now)
+            autoSaveClip(reason: "Brake warning", notice: "Clip saved · brake warning", at: now)
         }
         let braking = (risk.leadAcceleration ?? 0) < -3
         if braking && !wasHardBrake {
@@ -1906,13 +1911,14 @@ final class DriveModel {
 
     /// Preserves the footage around a brake warning without a tap, at most once every
     /// ten minutes so a busy stretch of traffic does not fill the recording budget.
-    private func autoSaveClipForBrakeWarning(at now: TimeInterval) {
+    /// Brake warnings and the driver's own hard brakes keep their footage, at most once per ten minutes.
+    private func autoSaveClip(reason: String, notice: String, at now: TimeInterval) {
         guard tripActive, !demo, !replaying,
               UserDefaults.standard.object(forKey: "recording.autoSaveBrakeWarnings") as? Bool ?? true else { return }
         if let last = lastAutoClipUptime, now - last < 10 * 60 { return }
         lastAutoClipUptime = now
-        camera.markIncident(reason: "Brake warning", tripID: currentTripID)
-        showClipNotice("Clip saved · brake warning")
+        camera.markIncident(reason: reason, tripID: currentTripID)
+        showClipNotice(notice)
     }
 
     /// Two hours in, then hourly: one HUD line and one spoken sentence, only while moving.
